@@ -1,0 +1,633 @@
+// ============================================================
+//  VİTES — Motosiklet Ekipman Pazarı · Veri Modeli
+//  Prisma + PostgreSQL · mobil-hazır (web + Android + iOS)
+// ------------------------------------------------------------
+//  Tasarım ilkeleri:
+//   - Kimlikler CUID (tahmin edilemez, mobil senkron dostu)
+//   - Her kritik tabloda updatedAt + soft delete (deletedAt)
+//   - Para alanları Decimal(12,2), kuruş hatası yok
+//   - Emanet (escrow) bir durum makinesi (OrderStatus)
+//   - Çift yönlü yorum (alıcı<->satıcı), siparişe bağlı
+//   - Ücretsiz->ücretli geçiş PlatformSetting + Plan ile feature-flag'li
+//   - Cihaz/oturum ve push token mobil için baştan modelde
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+//  1) KİMLİK & DOĞRULAMA
+// ============================================================
+
+enum UserRole {
+  USER
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  PENDING   // e-posta/telefon doğrulaması bekliyor
+  ACTIVE
+  SUSPENDED // geçici askı
+  BANNED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  phone        String?    @unique
+  passwordHash String
+  displayName  String
+  avatarUrl    String?
+  bio          String?
+  city         String?
+  role         UserRole   @default(USER)
+  status       UserStatus @default(PENDING)
+
+  // Doğrulama zaman damgaları — hızlı sorgu için User üstünde tutulur.
+  // Detaylı KYC inceleme akışı ise VerificationRequest tablosunda.
+  phoneVerifiedAt    DateTime?
+  emailVerifiedAt    DateTime?
+  identityVerifiedAt DateTime?
+  ibanVerifiedAt     DateTime?
+
+  // Banka/IBAN (satıcıya aktarım için; gerçek IBAN şifreli saklanır)
+  payoutIban   String?
+  payoutName   String?
+
+  // Denormalize itibar alanları (sipariş/yorum sonrası job ile güncellenir)
+  ratingAvg    Float    @default(0)
+  ratingCount  Int      @default(0)
+  salesCount   Int      @default(0)
+  isFounder    Boolean  @default(false) // "Kurucu Üye" rozeti
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // İlişkiler
+  listings        Listing[]
+  favorites       Favorite[]
+  offers          Offer[]
+  ordersAsBuyer   Order[]               @relation("BuyerOrders")
+  ordersAsSeller  Order[]               @relation("SellerOrders")
+  reviewsWritten  Review[]              @relation("ReviewAuthor")
+  reviewsReceived Review[]              @relation("ReviewTarget")
+  devices         Device[]
+  pushTokens      PushToken[]
+  verifications   VerificationRequest[]
+  subscription    Subscription?
+  notifications   Notification[]
+  disputesOpened  Dispute[]             @relation("DisputeOpener")
+  reportsMade     Report[]              @relation("Reporter")
+  auditLogs       AuditLog[]            @relation("AuditActor")
+  payouts         Payout[]
+
+  @@index([status, createdAt])
+  @@index([city])
+}
+
+enum Platform {
+  WEB
+  IOS
+  ANDROID
+}
+
+/// Her giriş yapılan cihaz/oturum. Mobil "bu cihazdan çıkış yap" için ayrı kayıt.
+model Device {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform         Platform
+  model            String?   // "iPhone 15", "Pixel 8" vb.
+  refreshTokenHash String    // refresh token'ın hash'i; iptal/rotasyon için
+  appVersion       String?   // zorunlu güncelleme kontrolü için
+  lastSeenAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+
+  pushTokens PushToken[]
+
+  @@index([userId])
+}
+
+/// FCM (Android) / APNs (iOS) push bildirim anahtarları.
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId  String?
+  device    Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  platform  Platform
+  token     String   @unique
+  createdAt DateTime @default(now())
+  disabledAt DateTime?
+
+  @@index([userId])
+}
+
+enum VerificationType {
+  PHONE
+  EMAIL
+  IDENTITY // TC kimlik / KYC
+  IBAN
+}
+
+enum VerificationState {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// KYC inceleme kuyruğu (admin moderasyonu). Onaylanınca User üstündeki
+/// *VerifiedAt alanı set edilir.
+model VerificationRequest {
+  id         String            @id @default(cuid())
+  userId     String
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       VerificationType
+  state      VerificationState @default(PENDING)
+  // Sağlayıcı referansı / belge bağlantısı (şifreli depolanır)
+  providerRef String?
+  documentUrl String?
+  reviewNote  String?
+  reviewedBy  String?
+  createdAt   DateTime          @default(now())
+  reviewedAt  DateTime?
+
+  @@index([state, createdAt])
+  @@index([userId])
+}
+
+// ============================================================
+//  2) KATALOG (KATEGORİ / MARKA / İLAN)
+// ============================================================
+
+/// Hiyerarşik kategori: Kask > Tam Yüz, Mont > Deri vb.
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  slug      String     @unique
+  parentId  String?
+  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryTree")
+  iconKey   String?    // arayüzdeki ikon eşlemesi
+  sortOrder Int        @default(0)
+  isActive  Boolean    @default(true)
+  listings  Listing[]
+
+  @@index([parentId])
+}
+
+model Brand {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  slug     String    @unique
+  logoUrl  String?
+  listings Listing[]
+}
+
+enum ListingCondition {
+  NEW       // Sıfır / Etiketli
+  LIKE_NEW  // Çok iyi
+  GOOD      // İyi
+  FAIR      // İdare eder
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING_REVIEW // moderasyon kuyruğunda
+  ACTIVE
+  RESERVED       // teklif/sipariş ile rezerve
+  SOLD
+  REJECTED
+  ARCHIVED
+}
+
+model Listing {
+  id          String           @id @default(cuid())
+  sellerId    String
+  seller      User             @relation(fields: [sellerId], references: [id])
+  categoryId  String
+  category    Category         @relation(fields: [categoryId], references: [id])
+  brandId     String?
+  brand       Brand?           @relation(fields: [brandId], references: [id])
+
+  title       String
+  description String
+  condition   ListingCondition
+  sizeLabel   String?          // "M (57-58)", "52", "43" vb.
+  price       Decimal          @db.Decimal(12, 2)
+  originalPrice Decimal?       @db.Decimal(12, 2) // üstü çizili fiyat
+  currency    String           @default("TRY")
+  city        String?
+  status      ListingStatus    @default(PENDING_REVIEW)
+
+  // Para kazandıran alanlar (vitrin / öne çıkarma)
+  isFeatured    Boolean   @default(false)
+  featuredUntil DateTime?
+
+  // Denormalize sayaçlar
+  viewCount     Int @default(0)
+  favoriteCount Int @default(0)
+
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  images    ListingImage[]
+  favorites Favorite[]
+  offers    Offer[]
+  orders    Order[]
+  reports   Report[]
+
+  // Cursor tabanlı sayfalama ve filtreleme için indeksler
+  @@index([status, createdAt])
+  @@index([categoryId, status])
+  @@index([sellerId])
+  @@index([isFeatured, featuredUntil])
+}
+
+model ListingImage {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  url       String
+  sortOrder Int     @default(0)
+  width     Int?
+  height    Int?
+
+  @@index([listingId])
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, listingId])
+  @@index([userId])
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  WITHDRAWN
+}
+
+/// "Teklif ver" akışı: alıcı pazarlık fiyatı önerir.
+model Offer {
+  id        String      @id @default(cuid())
+  listingId String
+  listing   Listing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerId   String
+  buyer     User        @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  amount    Decimal     @db.Decimal(12, 2)
+  message   String?
+  status    OfferStatus @default(PENDING)
+  expiresAt DateTime?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([listingId, status])
+  @@index([buyerId])
+}
+
+// ============================================================
+//  3) SİPARİŞ & EMANET (ESCROW) DURUM MAKİNESİ
+// ------------------------------------------------------------
+//  Akış:
+//  CREATED -> AWAITING_PAYMENT -> PAID_ESCROW -> SHIPPED
+//          -> DELIVERED -> COMPLETED (para satıcıya aktarılır)
+//  Sapmalar: DISPUTED -> REFUNDED | (çözüm) COMPLETED, ya da CANCELLED
+// ============================================================
+
+enum OrderStatus {
+  CREATED
+  AWAITING_PAYMENT
+  PAID_ESCROW // ödeme alındı, para emanette bekliyor
+  SHIPPED
+  DELIVERED
+  COMPLETED   // alıcı onayladı, satıcıya aktarıldı
+  DISPUTED
+  REFUNDED
+  CANCELLED
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  listingId String
+  listing   Listing     @relation(fields: [listingId], references: [id])
+  buyerId   String
+  buyer     User        @relation("BuyerOrders", fields: [buyerId], references: [id])
+  sellerId  String
+  seller    User        @relation("SellerOrders", fields: [sellerId], references: [id])
+
+  status    OrderStatus @default(CREATED)
+
+  // Tutar/komisyon — komisyon oranı sipariş anında dondurulur (sonradan
+  // plan değişse bile bu sipariş etkilenmez).
+  amount           Decimal @db.Decimal(12, 2)
+  commissionRate   Decimal @db.Decimal(5, 4) @default(0) // 0.0800 = %8 (lansmanda 0)
+  commissionAmount Decimal @db.Decimal(12, 2) @default(0)
+  sellerPayout     Decimal @db.Decimal(12, 2) @default(0) // amount - commission
+  currency         String  @default("TRY")
+
+  // Durum geçiş zaman damgaları (izlenebilirlik)
+  paidAt          DateTime?
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
+  completedAt     DateTime?
+  escrowReleasedAt DateTime?
+  cancelledAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payments Payment[]
+  shipment Shipment?
+  dispute  Dispute?
+  reviews  Review[]
+  payout   Payout?
+
+  @@index([buyerId, status])
+  @@index([sellerId, status])
+  @@index([status, createdAt])
+}
+
+model Shipment {
+  id         String   @id @default(cuid())
+  orderId    String   @unique
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  carrier    String?  // "Yurtiçi", "Aras" vb.
+  trackingNo String?
+  shippedAt  DateTime?
+  deliveredAt DateTime?
+  createdAt  DateTime @default(now())
+}
+
+// ============================================================
+//  4) ÖDEME / SANAL POS
+// ============================================================
+
+enum PaymentProvider {
+  IYZICO
+  PAYTR
+  PARAM
+  SIPAY
+}
+
+enum PaymentType {
+  CHARGE // alıcıdan tahsilat (emanete)
+  REFUND // alıcıya iade
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+/// Sanal POS işlem kaydı. Sağlayıcı tarafındaki gerçek işlemin aynası.
+model Payment {
+  id          String          @id @default(cuid())
+  orderId     String
+  order       Order           @relation(fields: [orderId], references: [id])
+  provider    PaymentProvider
+  type        PaymentType     @default(CHARGE)
+  status      PaymentStatus   @default(PENDING)
+  amount      Decimal         @db.Decimal(12, 2)
+  currency    String          @default("TRY")
+  providerRef String?         // sağlayıcının işlem/iade referansı
+  rawPayload  Json?           // sağlayıcı yanıtı (denetim/uzlaşma için)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([orderId])
+  @@index([provider, status])
+  @@index([status, createdAt])
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+}
+
+/// Emanetten satıcıya aktarım (teslim onayı sonrası).
+model Payout {
+  id          String       @id @default(cuid())
+  orderId     String       @unique
+  order       Order        @relation(fields: [orderId], references: [id])
+  sellerId    String
+  seller      User         @relation(fields: [sellerId], references: [id])
+  amount      Decimal      @db.Decimal(12, 2)
+  status      PayoutStatus @default(PENDING)
+  providerRef String?
+  createdAt   DateTime     @default(now())
+  paidAt      DateTime?
+
+  @@index([sellerId, status])
+}
+
+// ============================================================
+//  5) ÇİFT YÖNLÜ YORUM & İTİBAR
+// ============================================================
+
+enum ReviewDirection {
+  BUYER_TO_SELLER
+  SELLER_TO_BUYER
+}
+
+/// Yorum daima tamamlanmış bir siparişe bağlıdır (sahte yorum engeli).
+/// Her sipariş için her yönde en fazla 1 yorum.
+model Review {
+  id           String          @id @default(cuid())
+  orderId      String
+  order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       User            @relation("ReviewAuthor", fields: [authorId], references: [id])
+  targetUserId String
+  targetUser   User            @relation("ReviewTarget", fields: [targetUserId], references: [id])
+  direction    ReviewDirection
+  rating       Int             // 1..5
+  comment      String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([orderId, direction])
+  @@index([targetUserId, createdAt])
+}
+
+// ============================================================
+//  6) ANLAŞMAZLIK ÇÖZÜMÜ
+// ============================================================
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED_REFUND  // alıcıya iade
+  RESOLVED_RELEASE // satıcıya aktarım
+  CLOSED
+}
+
+model Dispute {
+  id            String           @id @default(cuid())
+  orderId       String           @unique
+  order         Order            @relation(fields: [orderId], references: [id])
+  openedById    String
+  openedBy      User             @relation("DisputeOpener", fields: [openedById], references: [id])
+  reason        String
+  status        DisputeStatus    @default(OPEN)
+  resolutionNote String?
+  resolvedBy    String?          // admin id
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  resolvedAt    DateTime?
+
+  messages DisputeMessage[]
+
+  @@index([status, createdAt])
+}
+
+model DisputeMessage {
+  id        String   @id @default(cuid())
+  disputeId String
+  dispute   Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  senderId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([disputeId])
+}
+
+// ============================================================
+//  7) ÜYELİK PLANLARI & GELİR (ücretsiz -> ücretli)
+// ============================================================
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+/// Plan tanımı (Sürücü / Sürücü+ / Mağaza). commissionRate ve limitler
+/// burada tutulur; lansmanda komisyon 0, sonra güncellenir.
+model Plan {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  slug              String   @unique
+  priceMonthly      Decimal  @db.Decimal(10, 2) @default(0)
+  commissionRate    Decimal  @db.Decimal(5, 4)  @default(0) // 0.0800 = %8
+  maxActiveListings Int?     // null = sınırsız
+  featuredCredits   Int      @default(0)        // aylık öne çıkarma hakkı
+  features          Json?    // serbest özellik bayrakları
+  isActive          Boolean  @default(true)
+  sortOrder         Int      @default(0)
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id               String             @id @default(cuid())
+  userId           String             @unique
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId           String
+  plan             Plan               @relation(fields: [planId], references: [id])
+  status           SubscriptionStatus @default(ACTIVE)
+  founderDiscount  Boolean            @default(false) // kurucu üye indirimi
+  currentPeriodEnd DateTime?
+  cancelAt         DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([status])
+}
+
+// ============================================================
+//  8) MODERASYON, BİLDİRİM, AYAR & DENETİM
+// ============================================================
+
+enum ReportTargetType {
+  LISTING
+  USER
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWED
+  ACTIONED
+  DISMISSED
+}
+
+/// İlan/üye şikayeti (sahte ürün, kural ihlali vb.).
+model Report {
+  id         String           @id @default(cuid())
+  reporterId String
+  reporter   User             @relation("Reporter", fields: [reporterId], references: [id])
+  targetType ReportTargetType
+  listingId  String?
+  listing    Listing?         @relation(fields: [listingId], references: [id])
+  targetUserId String?
+  reason     String
+  status     ReportStatus     @default(OPEN)
+  createdAt  DateTime         @default(now())
+  reviewedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+/// Çok kanallı bildirim (push + uygulama içi). type serbest string + payload.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String    // "order.shipped", "offer.received" vb.
+  title     String
+  body      String?
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
+
+/// Global platform ayarları (feature-flag). Ücretsiz->ücretli geçiş anahtarı
+/// burada yaşar: örn. { "monetizationEnabled": false, "launchMode": true }.
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+/// Admin işlem günlüğü (kim, neyi, ne zaman değiştirdi).
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  actor     User     @relation("AuditActor", fields: [actorId], references: [id])
+  action    String   // "listing.approve", "user.suspend" vb.
+  entity    String
+  entityId  String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt])
+}
