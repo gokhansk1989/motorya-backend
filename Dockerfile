@@ -13,6 +13,7 @@ RUN npx prisma generate
 COPY . .
 
 RUN npm run build
+RUN tsc -p tsconfig.seed.json
 RUN npm prune --omit=dev && npm cache clean --force
 
 
@@ -25,6 +26,7 @@ RUN apk add --no-cache dumb-init openssl
 COPY package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dist-seed ./dist-seed
 COPY --from=builder /app/prisma ./prisma
 
 EXPOSE 3000
