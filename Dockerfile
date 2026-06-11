@@ -13,7 +13,7 @@ RUN npx prisma generate
 COPY . .
 
 RUN npm run build
-RUN tsc -p tsconfig.seed.json
+RUN npx tsc -p tsconfig.seed.json
 RUN npm prune --omit=dev && npm cache clean --force
 
 
