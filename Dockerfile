@@ -14,7 +14,7 @@ COPY . .
 
 RUN npm run build
 RUN npx tsc -p tsconfig.seed.json
-RUN npm prune --omit=dev && npm cache clean --force
+RUN npm prune --omit=dev --legacy-peer-deps && npm cache clean --force
 
 
 FROM node:20-alpine
