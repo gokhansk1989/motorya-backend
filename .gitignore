@@ -6,8 +6,13 @@ pnpm-lock.yaml
 
 # Build
 dist/
+dist-seed/
 build/
 *.tsbuildinfo
+
+# Nested repos
+vites-frontend/
+docker-compose.yml.bak
 
 # Environment
 .env
