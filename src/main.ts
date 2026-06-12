@@ -20,7 +20,7 @@ async function bootstrap() {
   });
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Vites API')
+    .setTitle('Motorya API')
     .setDescription('Motosiklet ekipman pazarı — REST API')
     .setVersion('1.0')
     .addBearerAuth()
@@ -33,7 +33,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`🚀 Vites backend running on http://localhost:${port}`);
+  console.log(`🚀 Motorya backend running on http://localhost:${port}`);
   console.log(`📖 Swagger UI: http://localhost:${port}/api`);
 }
 

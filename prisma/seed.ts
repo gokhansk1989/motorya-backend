@@ -40,11 +40,11 @@ async function main() {
   const users = await Promise.all([
     // Admin kullanıcısı
     prisma.user.upsert({
-      where: { email: 'admin@vites.app' },
+      where: { email: 'admin@motorya.com.tr' },
       update: {},
       create: {
-        email: 'admin@vites.app',
-        displayName: 'Vites Admin',
+        email: 'admin@motorya.com.tr',
+        displayName: 'Motorya Admin',
         passwordHash: adminPassword,
         role: 'SUPER_ADMIN',
         status: 'ACTIVE',
@@ -251,7 +251,7 @@ async function main() {
 
   console.log('✅ Seeding completed!');
   console.log('\n🔐 Test hesapları:');
-  console.log('  - Email: admin@vites.app     / Şifre: admin123!   (SUPER_ADMIN)');
+  console.log('  - Email: admin@motorya.com.tr     / Şifre: admin123!   (SUPER_ADMIN)');
   console.log('  - Email: ahmet@example.com   / Şifre: password123');
   console.log('  - Email: selin@example.com   / Şifre: password123');
   console.log('  - Email: burak@example.com   / Şifre: password123');
