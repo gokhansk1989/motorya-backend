@@ -38,6 +38,14 @@ export class ListingsService {
     };
   }
 
+  async getCategories() {
+    return this.prisma.category.findMany({ orderBy: { name: 'asc' } });
+  }
+
+  async getBrands() {
+    return this.prisma.brand.findMany({ orderBy: { name: 'asc' } });
+  }
+
   async createListing(sellerId: string, dto: CreateListingDto) {
     const { imageUrls = [], ...rest } = dto;
 

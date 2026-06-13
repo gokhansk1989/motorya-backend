@@ -26,6 +26,16 @@ export class ListingsController {
     return this.listingsService.createListing(req.user.id, dto);
   }
 
+  @Get('meta/categories')
+  getCategories() {
+    return this.listingsService.getCategories();
+  }
+
+  @Get('meta/brands')
+  getBrands() {
+    return this.listingsService.getBrands();
+  }
+
   @Get()
   findAll(@Query() query: ListingsQueryDto) {
     return this.listingsService.getListings(query);
