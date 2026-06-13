@@ -12,6 +12,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { HealthController } from './health.controller';
 import { SearchModule } from './modules/search/search.module';
+import { UploadModule } from './modules/upload/upload.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { SearchModule } from './modules/search/search.module';
     AdminModule,
     OffersModule,
     SearchModule,
+    UploadModule,
   ],
   controllers: [HealthController],
 })
