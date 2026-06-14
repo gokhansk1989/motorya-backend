@@ -2,11 +2,14 @@ import {
   Controller,
   Get,
   Patch,
+  Delete,
   Param,
   Body,
   UseGuards,
   Request,
   Query,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminService } from './admin.service';
@@ -33,6 +36,16 @@ export class AdminController {
     return this.adminService.getPendingListings(Number(page) || 1, Number(limit) || 20);
   }
 
+  @Get('listings')
+  getAllListings(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.getAllListings(Number(page) || 1, Number(limit) || 20, status, search);
+  }
+
   @Patch('listings/:id/moderate')
   moderateListing(
     @Param('id') id: string,
@@ -40,6 +53,12 @@ export class AdminController {
     @Body() dto: ModerateListingDto,
   ) {
     return this.adminService.moderateListing(id, req.user.id, dto);
+  }
+
+  @Delete('listings/:id')
+  @HttpCode(HttpStatus.OK)
+  deleteListing(@Param('id') id: string, @Request() req) {
+    return this.adminService.deleteListing(id, req.user.id);
   }
 
   @Get('users')

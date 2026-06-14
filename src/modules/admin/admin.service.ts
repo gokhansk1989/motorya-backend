@@ -124,9 +124,51 @@ export class AdminService {
     } else if (dto.action === 'REJECTED') {
       this.mail.sendListingRejectedEmail(listing.seller.email, listing.seller.displayName, listing.title, dto.note).catch(() => null);
       this.search.removeListing(id).catch(() => null);
+    } else if (dto.action === 'ARCHIVED') {
+      this.search.removeListing(id).catch(() => null);
     }
 
     return updated;
+  }
+
+  async deleteListing(id: string, adminId: string) {
+    const listing = await this.prisma.listing.findFirst({ where: { id, deletedAt: null } });
+    if (!listing) throw new NotFoundException('Listing not found');
+
+    await this.prisma.$transaction([
+      this.prisma.listing.update({ where: { id }, data: { deletedAt: new Date(), status: 'ARCHIVED' } }),
+      this.prisma.auditLog.create({
+        data: { actorId: adminId, action: 'listing.delete', entity: 'Listing', entityId: id, meta: {} },
+      }),
+    ]);
+
+    this.search.removeListing(id).catch(() => null);
+    return { success: true };
+  }
+
+  async getAllListings(page = 1, limit = 20, status?: string, search?: string) {
+    const skip = (page - 1) * limit;
+    const where: any = { deletedAt: null };
+    if (status) where.status = status;
+    if (search) where.OR = [
+      { title: { contains: search, mode: 'insensitive' } },
+      { seller: { displayName: { contains: search, mode: 'insensitive' } } },
+    ];
+
+    const [items, total] = await Promise.all([
+      this.prisma.listing.findMany({
+        where, skip, take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          seller: { select: { id: true, displayName: true, email: true } },
+          category: { select: { id: true, name: true } },
+        },
+      }),
+      this.prisma.listing.count({ where }),
+    ]);
+
+    return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
   async moderateUser(id: string, adminId: string, dto: ModerateUserDto) {

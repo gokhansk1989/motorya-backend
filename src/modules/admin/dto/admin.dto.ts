@@ -2,8 +2,8 @@ import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { UserStatus } from '@prisma/client';
 
 export class ModerateListingDto {
-  @IsEnum(['ACTIVE', 'REJECTED'])
-  action: 'ACTIVE' | 'REJECTED';
+  @IsEnum(['ACTIVE', 'REJECTED', 'ARCHIVED'])
+  action: 'ACTIVE' | 'REJECTED' | 'ARCHIVED';
 
   @IsOptional()
   @IsString()
