@@ -51,6 +51,12 @@ export class UsersController {
     return this.usersService.markNotificationsRead(req.user.id, ids);
   }
 
+  @Patch('me/vacation')
+  @UseGuards(AuthGuard('jwt'))
+  setVacation(@Request() req, @Body('enabled') enabled: boolean) {
+    return this.usersService.setVacationMode(req.user.id, enabled);
+  }
+
   @Get(':id')
   getPublic(@Param('id') id: string) {
     return this.usersService.getPublicProfile(id);

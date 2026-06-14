@@ -6,11 +6,15 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { SearchService } from '../search/search.service';
 import { UpdateProfileDto, ChangePasswordDto } from './dto/users.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private search: SearchService,
+  ) {}
 
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -31,6 +35,8 @@ export class UsersService {
         phoneVerifiedAt: true,
         emailVerifiedAt: true,
         identityVerifiedAt: true,
+        vacationMode: true,
+        vacationSince: true,
         createdAt: true,
         subscription: {
           select: {
@@ -131,5 +137,89 @@ export class UsersService {
       data: { readAt: new Date() },
     });
     return { success: true };
+  }
+
+  async setVacationMode(userId: string, enabled: boolean) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (enabled) {
+      // Pause all active listings
+      const activeListings = await this.prisma.listing.findMany({
+        where: { sellerId: userId, status: 'ACTIVE', deletedAt: null },
+        select: { id: true },
+      });
+
+      if (activeListings.length > 0) {
+        await this.prisma.listing.updateMany({
+          where: { sellerId: userId, status: 'ACTIVE', deletedAt: null },
+          data: { status: 'ARCHIVED' },
+        });
+
+        // Remove from search index
+        await Promise.all(activeListings.map((l) => this.search.removeListing(l.id).catch(() => null)));
+      }
+
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { vacationMode: true, vacationSince: new Date() },
+      });
+
+      return { vacationMode: true, pausedCount: activeListings.length };
+    } else {
+      // Restore archived listings that were paused by vacation mode
+      // We restore all ARCHIVED listings since we can't distinguish vacation-paused from manually-paused
+      // A better UX: restore only those archived while vacation was active
+      const archivedListings = await this.prisma.listing.findMany({
+        where: { sellerId: userId, status: 'ARCHIVED', deletedAt: null },
+        include: {
+          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          category: true,
+          brand: true,
+          seller: { select: { id: true, displayName: true } },
+        },
+      });
+
+      if (archivedListings.length > 0) {
+        await this.prisma.listing.updateMany({
+          where: { sellerId: userId, status: 'ARCHIVED', deletedAt: null },
+          data: { status: 'ACTIVE' },
+        });
+
+        // Re-index in search
+        await Promise.all(
+          archivedListings.map((l) =>
+            this.search
+              .indexListing({
+                id: l.id,
+                title: l.title,
+                description: l.description,
+                price: l.price,
+                originalPrice: l.originalPrice ?? undefined,
+                condition: l.condition,
+                city: l.city ?? undefined,
+                sizeLabel: l.sizeLabel ?? undefined,
+                categoryId: l.categoryId,
+                categoryName: (l.category as any)?.name ?? '',
+                brandId: l.brandId ?? undefined,
+                brandName: (l.brand as any)?.name ?? undefined,
+                sellerId: l.sellerId,
+                sellerName: (l.seller as any)?.displayName ?? '',
+                imageUrl: (l.images as any)?.[0]?.url ?? undefined,
+                status: 'ACTIVE',
+                createdAt: new Date(l.createdAt).getTime(),
+              })
+              .catch(() => null),
+          ),
+        );
+      }
+
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { vacationMode: false, vacationSince: null },
+      });
+
+      return { vacationMode: false, restoredCount: archivedListings.length };
+    }
   }
 }

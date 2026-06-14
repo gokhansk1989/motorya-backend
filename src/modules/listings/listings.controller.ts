@@ -65,6 +65,13 @@ export class ListingsController {
     return this.listingsService.deleteListing(id, req.user.id);
   }
 
+  @Patch(':id/toggle-status')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  toggleStatus(@Param('id') id: string, @Request() req) {
+    return this.listingsService.toggleListingStatus(id, req.user.id);
+  }
+
   @Post(':id/favorite')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)

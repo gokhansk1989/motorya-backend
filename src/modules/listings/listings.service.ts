@@ -178,7 +178,7 @@ export class ListingsService {
     const listing = await this.prisma.listing.findFirst({ where: { id, deletedAt: null } });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.sellerId !== sellerId) throw new ForbiddenException();
-    if (['SOLD', 'ARCHIVED', 'REJECTED'].includes(listing.status)) {
+    if (['SOLD', 'REJECTED'].includes(listing.status)) {
       throw new BadRequestException('Cannot edit listing with status: ' + listing.status);
     }
 
@@ -192,16 +192,47 @@ export class ListingsService {
         });
       }
 
-      return tx.listing.update({
+      // ARCHIVED → düzenlenince tekrar moderasyona gönder; ACTIVE → yeniden moderasyon
+      const newStatus = ['ACTIVE', 'ARCHIVED'].includes(listing.status) ? 'PENDING_REVIEW' : listing.status;
+
+      const updated = await tx.listing.update({
         where: { id },
-        data: {
-          ...rest,
-          // Active ilan güncellendi → yeniden moderasyona gönder
-          status: listing.status === 'ACTIVE' ? 'PENDING_REVIEW' : listing.status,
-        },
-        include: { images: { orderBy: { sortOrder: 'asc' } }, category: true, brand: true },
+        data: { ...rest, status: newStatus as any },
+        include: { images: { orderBy: { sortOrder: 'asc' } }, category: true, brand: true, seller: true },
       });
+
+      if (listing.status === 'ACTIVE') {
+        this.search.removeListing(id).catch(() => null);
+      }
+
+      return updated;
     });
+  }
+
+  async toggleListingStatus(id: string, sellerId: string) {
+    const listing = await this.prisma.listing.findFirst({ where: { id, deletedAt: null } });
+    if (!listing) throw new NotFoundException('Listing not found');
+    if (listing.sellerId !== sellerId) throw new ForbiddenException();
+
+    if (!['ACTIVE', 'ARCHIVED'].includes(listing.status)) {
+      throw new BadRequestException('Yalnızca aktif veya arşivlenmiş ilanlar değiştirilebilir');
+    }
+
+    const newStatus = listing.status === 'ACTIVE' ? ListingStatus.ARCHIVED : ListingStatus.ACTIVE;
+
+    const updated = await this.prisma.listing.update({
+      where: { id },
+      data: { status: newStatus },
+      include: { images: { orderBy: { sortOrder: 'asc' }, take: 1 }, category: true },
+    });
+
+    if (newStatus === ListingStatus.ACTIVE) {
+      this.search.indexListing(this.toSearchDoc(updated)).catch(() => null);
+    } else {
+      this.search.removeListing(id).catch(() => null);
+    }
+
+    return updated;
   }
 
   async deleteListing(id: string, sellerId: string) {
