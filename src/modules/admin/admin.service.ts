@@ -2,10 +2,15 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ModerateListingDto, ModerateUserDto } from './dto/admin.dto';
 import { MailService } from '../mail/mail.service';
+import { SearchService } from '../search/search.service';
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService, private mail: MailService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mail: MailService,
+    private search: SearchService,
+  ) {}
 
   async getMetrics() {
     const [
@@ -85,8 +90,40 @@ export class AdminService {
 
     if (dto.action === 'ACTIVE') {
       this.mail.sendListingApprovedEmail(listing.seller.email, listing.seller.displayName, listing.title, id).catch(() => null);
+      // Index in search after approval
+      const full = await this.prisma.listing.findFirst({
+        where: { id },
+        include: {
+          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          category: true,
+          brand: true,
+          seller: { select: { id: true, displayName: true } },
+        },
+      });
+      if (full) {
+        this.search.indexListing({
+          id: full.id,
+          title: full.title,
+          description: full.description,
+          price: Number(full.price),
+          originalPrice: full.originalPrice ? Number(full.originalPrice) : undefined,
+          condition: full.condition,
+          city: full.city ?? undefined,
+          sizeLabel: full.sizeLabel ?? undefined,
+          categoryId: full.categoryId,
+          categoryName: (full.category as any)?.name ?? '',
+          brandId: full.brandId ?? undefined,
+          brandName: (full.brand as any)?.name ?? undefined,
+          sellerId: full.sellerId,
+          sellerName: (full.seller as any)?.displayName ?? '',
+          imageUrl: (full.images as any)?.[0]?.url ?? undefined,
+          status: 'ACTIVE',
+          createdAt: new Date(full.createdAt).getTime(),
+        }).catch(() => null);
+      }
     } else if (dto.action === 'REJECTED') {
       this.mail.sendListingRejectedEmail(listing.seller.email, listing.seller.displayName, listing.title, dto.note).catch(() => null);
+      this.search.removeListing(id).catch(() => null);
     }
 
     return updated;
