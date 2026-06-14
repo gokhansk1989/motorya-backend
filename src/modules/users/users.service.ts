@@ -63,11 +63,14 @@ export class UsersService {
         ratingCount: true,
         salesCount: true,
         isFounder: true,
+        phoneVerifiedAt: true,
+        emailVerifiedAt: true,
+        identityVerifiedAt: true,
         createdAt: true,
         listings: {
-          where: { status: 'ACTIVE', deletedAt: null },
+          where: { deletedAt: null, status: { in: ['ACTIVE', 'SOLD'] } },
           orderBy: { createdAt: 'desc' },
-          take: 10,
+          take: 30,
           include: {
             images: { take: 1, orderBy: { sortOrder: 'asc' } },
             category: { select: { id: true, name: true } },
@@ -75,9 +78,20 @@ export class UsersService {
         },
         reviewsReceived: {
           orderBy: { createdAt: 'desc' },
-          take: 5,
+          take: 20,
           include: {
             author: { select: { id: true, displayName: true, avatarUrl: true } },
+            order: {
+              select: {
+                listing: {
+                  select: {
+                    id: true,
+                    title: true,
+                    images: { take: 1, orderBy: { sortOrder: 'asc' } },
+                  },
+                },
+              },
+            },
           },
         },
       },
