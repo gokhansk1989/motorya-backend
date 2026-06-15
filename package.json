@@ -18,9 +18,12 @@
     "@nestjs/jwt": "^11.0.1",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.4.22",
+    "@nestjs/platform-socket.io": "^11.1.26",
     "@nestjs/swagger": "^11.4.4",
+    "@nestjs/websockets": "^11.1.26",
     "@prisma/client": "^5.6.0",
     "@sendgrid/mail": "^8.1.6",
+    "@socket.io/redis-adapter": "^8.3.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/multer": "^2.1.0",
     "@types/passport-jwt": "^4.0.1",
@@ -32,7 +35,8 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.1.13",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.2.1",

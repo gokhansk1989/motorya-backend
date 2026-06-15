@@ -97,10 +97,12 @@ model User {
   verifications   VerificationRequest[]
   subscription    Subscription?
   notifications   Notification[]
-  disputesOpened  Dispute[]             @relation("DisputeOpener")
-  reportsMade     Report[]              @relation("Reporter")
-  auditLogs       AuditLog[]            @relation("AuditActor")
-  payouts         Payout[]
+  disputesOpened          Dispute[]                 @relation("DisputeOpener")
+  reportsMade             Report[]                  @relation("Reporter")
+  auditLogs               AuditLog[]                @relation("AuditActor")
+  payouts                 Payout[]
+  conversationParticipants ConversationParticipant[]
+  sentMessages            Message[]                 @relation("SentMessages")
 
   @@index([status, createdAt])
   @@index([city])
@@ -255,11 +257,12 @@ model Listing {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  images    ListingImage[]
-  favorites Favorite[]
-  offers    Offer[]
-  orders    Order[]
-  reports   Report[]
+  images        ListingImage[]
+  favorites     Favorite[]
+  offers        Offer[]
+  orders        Order[]
+  reports       Report[]
+  conversations Conversation[]
 
   // Cursor tabanlı sayfalama ve filtreleme için indeksler
   @@index([status, createdAt])
@@ -584,7 +587,63 @@ model Subscription {
 }
 
 // ============================================================
-//  8) MODERASYON, BİLDİRİM, AYAR & DENETİM
+//  8) MESAJLAŞMA
+// ------------------------------------------------------------
+//  Her konuşma (Conversation) iki kullanıcı arasında, isteğe
+//  bağlı bir ilan bağlamında açılır. Mesajlar AES-256-GCM ile
+//  şifreli saklanır; anahtar her konuşmaya özel üretilip
+//  master key ile sarmalanır (key escrow). SUPER_ADMIN dispute
+//  durumunda admin endpoint üzerinden açabilir; her erişim
+//  AuditLog'a düşer.
+// ============================================================
+
+model Conversation {
+  id          String    @id @default(cuid())
+  listingId   String?
+  listing     Listing?  @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  // Şifreli konuşma anahtarı (AES-256 key, master key ile wrap edilmiş)
+  encryptedKey String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([listingId])
+}
+
+model ConversationParticipant {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Son okunma zamanı — okunmamış sayısı buradan hesaplanır
+  lastReadAt     DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  // Şifreli içerik: IV + şifreli metin, base64 formatında
+  encryptedBody  String
+  // Silindi mi? (soft delete — şifreli içerik silinir, kayıt kalır)
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+// ============================================================
+//  9) MODERASYON, BİLDİRİM, AYAR & DENETİM
 // ============================================================
 
 enum ReportTargetType {

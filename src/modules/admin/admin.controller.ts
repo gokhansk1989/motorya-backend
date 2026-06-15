@@ -16,12 +16,16 @@ import { AdminService } from './admin.service';
 import { ModerateListingDto, ModerateUserDto } from './dto/admin.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { MessagesService } from '../messages/messages.service';
 
 @Controller('admin')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('ADMIN', 'SUPER_ADMIN', 'MODERATOR')
 export class AdminController {
-  constructor(private adminService: AdminService) {}
+  constructor(
+    private adminService: AdminService,
+    private messagesService: MessagesService,
+  ) {}
 
   @Get('metrics')
   getMetrics() {
@@ -95,5 +99,16 @@ export class AdminController {
     @Query('limit') limit?: string,
   ) {
     return this.adminService.getAuditLog(Number(page) || 1, Number(limit) || 50);
+  }
+
+  // Dispute için konuşma mesajlarını şifresiz oku (SUPER_ADMIN only, audit log düşer)
+  @Get('conversations/:id/messages')
+  @Roles('SUPER_ADMIN')
+  getConversationMessages(
+    @Param('id') id: string,
+    @Request() req,
+    @Query('reason') reason: string,
+  ) {
+    return this.messagesService.getMessagesForAdmin(req.user.id, id, reason || 'admin_review');
   }
 }

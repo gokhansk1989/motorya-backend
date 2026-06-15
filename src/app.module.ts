@@ -13,6 +13,7 @@ import { OffersModule } from './modules/offers/offers.module';
 import { HealthController } from './health.controller';
 import { SearchModule } from './modules/search/search.module';
 import { UploadModule } from './modules/upload/upload.module';
+import { MessagesModule } from './modules/messages/messages.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { UploadModule } from './modules/upload/upload.module';
     OffersModule,
     SearchModule,
     UploadModule,
+    MessagesModule,
   ],
   controllers: [HealthController],
 })
