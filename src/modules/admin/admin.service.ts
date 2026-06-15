@@ -171,6 +171,26 @@ export class AdminService {
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
+  async changeUserRole(id: string, adminId: string, role: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id }, data: { role: role as any } }),
+      this.prisma.auditLog.create({
+        data: {
+          actorId: adminId,
+          action: 'user.role_change',
+          entity: 'User',
+          entityId: id,
+          meta: { oldRole: user.role, newRole: role },
+        },
+      }),
+    ]);
+
+    return updated;
+  }
+
   async moderateUser(id: string, adminId: string, dto: ModerateUserDto) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');

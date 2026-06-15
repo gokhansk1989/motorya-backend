@@ -70,6 +70,16 @@ export class AdminController {
     return this.adminService.getUsers(Number(page) || 1, Number(limit) || 20, search);
   }
 
+  @Patch('users/:id/role')
+  @Roles('SUPER_ADMIN')
+  changeUserRole(
+    @Param('id') id: string,
+    @Request() req,
+    @Body('role') role: string,
+  ) {
+    return this.adminService.changeUserRole(id, req.user.id, role);
+  }
+
   @Patch('users/:id/moderate')
   moderateUser(
     @Param('id') id: string,
