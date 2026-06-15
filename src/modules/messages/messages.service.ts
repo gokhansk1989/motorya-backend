@@ -13,17 +13,21 @@ export class MessagesService {
   async getOrCreateConversation(userId: string, otherUserId: string, listingId?: string) {
     if (userId === otherUserId) throw new ForbiddenException('Kendinizle mesajlaşamazsınız');
 
-    // Mevcut konuşmayı bul — her iki kullanıcının ortak konuşması
-    const existing = await this.prisma.conversation.findFirst({
+    // Mevcut konuşmayı bul — kullanıcının konuşmalarına bak, karşı tarafın da katılımcı olduğunu filtrele
+    const myConversations = await this.prisma.conversationParticipant.findMany({
+      where: { userId },
+      select: { conversationId: true },
+    });
+    const myConvIds = myConversations.map(p => p.conversationId);
+
+    const existing = myConvIds.length > 0 ? await this.prisma.conversation.findFirst({
       where: {
+        id: { in: myConvIds },
         ...(listingId ? { listingId } : {}),
-        AND: [
-          { participants: { some: { userId } } },
-          { participants: { some: { userId: otherUserId } } },
-        ],
+        participants: { some: { userId: otherUserId } },
       },
       include: { participants: { include: { user: { select: { id: true, displayName: true, avatarUrl: true } } } } },
-    });
+    }) : null;
 
     if (existing) return existing;
 
