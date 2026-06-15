@@ -13,6 +13,6 @@ import { JwtModule } from '@nestjs/jwt';
   ],
   controllers: [MessagesController],
   providers: [MessagesService, MessagesGateway, EncryptionService],
-  exports: [MessagesGateway],
+  exports: [MessagesGateway, MessagesService],
 })
 export class MessagesModule {}
