@@ -64,7 +64,7 @@ export class ListingsService {
     });
   }
 
-  async getListings(query: ListingsQueryDto) {
+  async getListings(query: ListingsQueryDto, viewerId?: string) {
     const {
       search,
       categoryId,
@@ -124,8 +124,17 @@ export class ListingsService {
       this.prisma.listing.count({ where }),
     ]);
 
+    let favoritedIds = new Set<string>();
+    if (viewerId) {
+      const favs = await this.prisma.favorite.findMany({
+        where: { userId: viewerId, listingId: { in: items.map(i => i.id) } },
+        select: { listingId: true },
+      });
+      favoritedIds = new Set(favs.map(f => f.listingId));
+    }
+
     return {
-      items,
+      items: items.map(item => ({ ...item, isFavorited: favoritedIds.has(item.id) })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -203,6 +212,14 @@ export class ListingsService {
 
       if (listing.status === 'ACTIVE') {
         this.search.removeListing(id).catch(() => null);
+      }
+
+      // Fiyat düştüyse favorileyen kullanıcılara bildirim
+      if (rest.price !== undefined && Number(rest.price) < Number(listing.price)) {
+        this.notifyFavorites(id, listing.title, 'price_drop', {
+          oldPrice: Number(listing.price),
+          newPrice: Number(rest.price),
+        }).catch(() => null);
       }
 
       return updated;
@@ -345,7 +362,38 @@ export class ListingsService {
       this.search.removeListing(id).catch(() => null);
     }
 
+    if (status === ListingStatus.SOLD) {
+      this.notifyFavorites(id, listing.title, 'listing_sold', {}).catch(() => null);
+    }
+
     return updated;
+  }
+
+  private async notifyFavorites(
+    listingId: string,
+    listingTitle: string,
+    type: 'price_drop' | 'listing_sold',
+    meta: Record<string, any>,
+  ) {
+    const favorites = await this.prisma.favorite.findMany({
+      where: { listingId },
+      select: { userId: true },
+    });
+    if (favorites.length === 0) return;
+
+    const notifications = favorites.map(f => ({
+      userId: f.userId,
+      type: `favorite.${type}`,
+      title: type === 'price_drop'
+        ? '💰 Fiyat düştü!'
+        : '🔴 Favori ilan satıldı',
+      body: type === 'price_drop'
+        ? `"${listingTitle}" ilanında fiyat ${meta.oldPrice.toFixed(0)} ₺ → ${meta.newPrice.toFixed(0)} ₺ oldu.`
+        : `"${listingTitle}" ilanı satılmış. Benzer ilanları keşfet!`,
+      payload: { listingId, ...meta },
+    }));
+
+    await this.prisma.notification.createMany({ data: notifications });
   }
 
   async reindexAll() {

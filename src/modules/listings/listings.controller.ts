@@ -13,6 +13,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { OptionalJwtGuard } from '../../common/guards/optional-jwt.guard';
 import { ListingsService } from './listings.service';
 import { CreateListingDto, UpdateListingDto, ListingsQueryDto } from './dto/listings.dto';
 
@@ -37,8 +38,9 @@ export class ListingsController {
   }
 
   @Get()
-  findAll(@Query() query: ListingsQueryDto) {
-    return this.listingsService.getListings(query);
+  @UseGuards(OptionalJwtGuard)
+  findAll(@Query() query: ListingsQueryDto, @Request() req) {
+    return this.listingsService.getListings(query, req.user?.id);
   }
 
   @Get('mine')
@@ -48,6 +50,7 @@ export class ListingsController {
   }
 
   @Get(':id')
+  @UseGuards(OptionalJwtGuard)
   findOne(@Param('id') id: string, @Request() req) {
     return this.listingsService.getListingById(id, req.user?.id);
   }
