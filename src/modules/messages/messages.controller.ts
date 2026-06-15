@@ -19,12 +19,12 @@ export class MessagesController {
 
   @Post('conversations')
   startConversation(@Request() req: any, @Body() dto: StartConversationDto) {
-    return this.messages.getOrCreateConversation(req.user.sub, dto.otherUserId, dto.listingId);
+    return this.messages.getOrCreateConversation(req.user.id, dto.otherUserId, dto.listingId);
   }
 
   @Get('conversations')
   getConversations(@Request() req: any) {
-    return this.messages.getConversations(req.user.sub);
+    return this.messages.getConversations(req.user.id);
   }
 
   @Get('conversations/:id')
@@ -34,16 +34,16 @@ export class MessagesController {
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.messages.getMessages(req.user.sub, id, cursor, limit ? parseInt(limit) : 30);
+    return this.messages.getMessages(req.user.id, id, cursor, limit ? parseInt(limit) : 30);
   }
 
   @Post('conversations/:id')
   sendMessage(@Request() req: any, @Param('id') id: string, @Body() dto: SendMessageDto) {
-    return this.messages.sendMessage(req.user.sub, id, dto.body);
+    return this.messages.sendMessage(req.user.id, id, dto.body);
   }
 
   @Post('conversations/:id/read')
   markRead(@Request() req: any, @Param('id') id: string) {
-    return this.messages.markRead(req.user.sub, id);
+    return this.messages.markRead(req.user.id, id);
   }
 }

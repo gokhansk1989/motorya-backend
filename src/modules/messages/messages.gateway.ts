@@ -26,7 +26,7 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
   async handleConnection(client: Socket) {
     try {
       const token = client.handshake.auth?.token || client.handshake.headers?.authorization?.split(' ')[1];
-      const payload = this.jwt.verify(token);
+      const payload = this.jwt.verify(token) as { sub: string };
       client.data.userId = payload.sub;
 
       if (!this.onlineUsers.has(payload.sub)) this.onlineUsers.set(payload.sub, new Set());
