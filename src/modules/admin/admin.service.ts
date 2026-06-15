@@ -258,6 +258,7 @@ export class AdminService {
           role: true,
           status: true,
           ratingAvg: true,
+          ratingCount: true,
           salesCount: true,
           createdAt: true,
         },
@@ -265,6 +266,21 @@ export class AdminService {
       this.prisma.user.count({ where }),
     ]);
 
-    return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+    // Sosyal istatistikler: ayrı sorgular (tablolar henüz Prisma client'ta olmayabilir, graceful fallback)
+    const enriched = await Promise.all(items.map(async u => {
+      try {
+        const [followerCount, blockedByCount, listingCount, favoriteCount] = await Promise.all([
+          (this.prisma as any).userFollow?.count({ where: { followingId: u.id } }) ?? 0,
+          (this.prisma as any).userBlock?.count({ where: { blockedId: u.id } }) ?? 0,
+          this.prisma.listing.count({ where: { sellerId: u.id, deletedAt: null } }),
+          this.prisma.favorite.count({ where: { userId: u.id } }),
+        ]);
+        return { ...u, followerCount, blockedByCount, listingCount, favoriteCount };
+      } catch {
+        return { ...u, followerCount: 0, blockedByCount: 0, listingCount: 0, favoriteCount: 0 };
+      }
+    }));
+
+    return { items: enriched, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 }

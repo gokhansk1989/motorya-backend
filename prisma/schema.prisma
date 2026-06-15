@@ -103,6 +103,10 @@ model User {
   payouts                 Payout[]
   conversationParticipants ConversationParticipant[]
   sentMessages            Message[]                 @relation("SentMessages")
+  following               UserFollow[]              @relation("Follower")
+  followers               UserFollow[]              @relation("Following")
+  blockedUsers            UserBlock[]               @relation("Blocker")
+  blockedBy               UserBlock[]               @relation("Blocked")
 
   @@index([status, createdAt])
   @@index([city])
@@ -293,6 +297,32 @@ model Favorite {
 
   @@unique([userId, listingId])
   @@index([userId])
+}
+
+model UserFollow {
+  id          String   @id @default(cuid())
+  followerId  String
+  follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+model UserBlock {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
 }
 
 enum OfferStatus {

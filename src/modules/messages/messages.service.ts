@@ -1,17 +1,20 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from './encryption.service';
+import { SocialService } from '../social/social.service';
 
 @Injectable()
 export class MessagesService {
   constructor(
     private prisma: PrismaService,
     private encryption: EncryptionService,
+    private social: SocialService,
   ) {}
 
   // Konuşma başlat veya mevcut olanı getir
   async getOrCreateConversation(userId: string, otherUserId: string, listingId?: string) {
     if (userId === otherUserId) throw new ForbiddenException('Kendinizle mesajlaşamazsınız');
+    if (await this.social.isBlocked(userId, otherUserId)) throw new ForbiddenException('Bu kullanıcıyla mesajlaşamazsınız');
 
     // Mevcut konuşmayı bul — kullanıcının konuşmalarına bak, karşı tarafın da katılımcı olduğunu filtrele
     const myConversations = await this.prisma.conversationParticipant.findMany({
