@@ -38,7 +38,10 @@ export class MessagesService {
         listingId: listingId || null,
         encryptedKey,
         participants: {
-          create: [{ userId }, { userId: otherUserId }],
+          create: [
+            { user: { connect: { id: userId } } },
+            { user: { connect: { id: otherUserId } } },
+          ],
         },
       },
       include: { participants: { include: { user: { select: { id: true, displayName: true, avatarUrl: true } } } } },
