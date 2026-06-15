@@ -61,6 +61,35 @@ export class MailService {
     `);
   }
 
+  async sendAdminWelcomeEmail(email: string, name: string, role: string, adminUrl: string) {
+    const roleLabel: Record<string, string> = {
+      MODERATOR: 'Moderatör', ADMIN: 'Admin', SUPER_ADMIN: 'Süper Admin',
+    };
+    await this.send(email, 'Motorya Admin Paneline Hoş Geldiniz', `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#f97316">Admin Paneline Erişim Açıldı</h2>
+        <p>Merhaba ${name},</p>
+        <p>Motorya platformunda sana <strong>${roleLabel[role] ?? role}</strong> yetkisi verildi. Aşağıdaki linkten yönetim paneline erişebilirsin.</p>
+        <a href="${adminUrl}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Admin Panelini Aç</a>
+        <p style="color:#888;font-size:13px">Giriş yaparken e-posta adresin ve hesap şifreni kullan. Her girişte e-posta ile doğrulama kodu gönderilecektir.</p>
+        <p style="color:#888;font-size:13px">Bu yetkiyi sen talep etmediysen lütfen destek ekibiyle iletişime geç.</p>
+      </div>
+    `);
+  }
+
+  async sendAdminMfaEmail(email: string, name: string, otp: string) {
+    await this.send(email, `${otp} — Motorya Admin Giriş Kodu`, `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#f97316">Admin Giriş Doğrulama</h2>
+        <p>Merhaba ${name},</p>
+        <p>Motorya Admin Paneli'ne giriş için doğrulama kodun:</p>
+        <div style="font-size:36px;font-weight:800;letter-spacing:10px;color:#f97316;text-align:center;padding:24px;background:#fff7ed;border-radius:12px;margin:20px 0">${otp}</div>
+        <p style="color:#888;font-size:13px">Bu kod <strong>10 dakika</strong> geçerlidir. Kodu kimseyle paylaşma.</p>
+        <p style="color:#888;font-size:13px">Bu giriş isteğini sen yapmadıysan şifreni hemen değiştir.</p>
+      </div>
+    `);
+  }
+
   private async send(to: string, subject: string, html: string) {
     try {
       await sgMail.send({ to, from: { email: this.from, name: 'Motorya' }, subject, html });

@@ -188,6 +188,13 @@ export class AdminService {
       }),
     ]);
 
+    // Yeni admin/moderatör ise hoş geldiniz maili gönder
+    const adminRoles = ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'];
+    if (adminRoles.includes(role) && !adminRoles.includes(user.role)) {
+      const adminUrl = process.env.ADMIN_URL ?? 'https://admin.motorya.com.tr';
+      this.mail.sendAdminWelcomeEmail(user.email, user.displayName, role, adminUrl).catch(() => null);
+    }
+
     return updated;
   }
 

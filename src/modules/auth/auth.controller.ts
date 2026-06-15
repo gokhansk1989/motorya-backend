@@ -6,6 +6,7 @@ import { IsEmail, IsString, MinLength } from 'class-validator';
 class ForgotPasswordDto { @IsEmail() email: string; }
 class ResetPasswordDto { @IsString() token: string; @IsString() @MinLength(8) password: string; }
 class ResendVerificationDto { @IsEmail() email: string; }
+class AdminMfaVerifyDto { @IsEmail() email: string; @IsString() otp: string; }
 
 @Controller('auth')
 export class AuthController {
@@ -39,5 +40,10 @@ export class AuthController {
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.token, dto.password);
+  }
+
+  @Post('admin-mfa-verify')
+  verifyAdminMfa(@Body() dto: AdminMfaVerifyDto) {
+    return this.authService.verifyAdminMfa(dto.email, dto.otp);
   }
 }

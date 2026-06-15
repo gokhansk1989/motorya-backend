@@ -121,6 +121,40 @@ export class AuthService {
       throw new UnauthorizedException('Hesabınız askıya alınmıştır.');
     }
 
+    // Admin kullanıcılar için MFA — JWT dönme, OTP gönder
+    const isAdminUser = ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'].includes(user.role);
+    if (isAdminUser) {
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 dakika
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { adminMfaOtp: otp, adminMfaOtpExpiry: expiry },
+      });
+      this.mail.sendAdminMfaEmail(user.email, user.displayName, otp).catch(() => null);
+      return { mfaRequired: true, email: user.email } as any;
+    }
+
+    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
+    return {
+      accessToken,
+      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+    };
+  }
+
+  async verifyAdminMfa(email: string, otp: string): Promise<AuthResponseDto> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || !user.adminMfaOtp) throw new UnauthorizedException('Geçersiz doğrulama isteği');
+
+    if (user.adminMfaOtp !== otp) throw new UnauthorizedException('Doğrulama kodu hatalı');
+    if (!user.adminMfaOtpExpiry || user.adminMfaOtpExpiry < new Date()) {
+      throw new UnauthorizedException('Doğrulama kodu süresi dolmuş. Tekrar giriş yapın.');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { adminMfaOtp: null, adminMfaOtpExpiry: null },
+    });
+
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
     return {
       accessToken,
