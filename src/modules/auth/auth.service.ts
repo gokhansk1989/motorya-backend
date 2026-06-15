@@ -106,7 +106,7 @@ export class AuthService {
     return { message: 'Doğrulama linki tekrar gönderildi.' };
   }
 
-  async login(dto: LoginDto): Promise<AuthResponseDto> {
+  async login(dto: LoginDto, isAdminPanel = false): Promise<AuthResponseDto> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user) throw new UnauthorizedException('E-posta veya şifre hatalı');
 
@@ -121,11 +121,11 @@ export class AuthService {
       throw new UnauthorizedException('Hesabınız askıya alınmıştır.');
     }
 
-    // Admin kullanıcılar için MFA — JWT dönme, OTP gönder
+    // MFA sadece admin panelinden gelen isteklerde ve admin rolündeyse devreye girer
     const isAdminUser = ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'].includes(user.role);
-    if (isAdminUser) {
+    if (isAdminPanel && isAdminUser) {
       const otp = String(Math.floor(100000 + Math.random() * 900000));
-      const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 dakika
+      const expiry = new Date(Date.now() + 10 * 60 * 1000);
       await this.prisma.user.update({
         where: { id: user.id },
         data: { adminMfaOtp: otp, adminMfaOtpExpiry: expiry },
