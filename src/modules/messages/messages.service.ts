@@ -13,13 +13,10 @@ export class MessagesService {
   async getOrCreateConversation(userId: string, otherUserId: string, listingId?: string) {
     if (userId === otherUserId) throw new ForbiddenException('Kendinizle mesajlaşamazsınız');
 
-    // Mevcut konuşmayı bul (aynı iki kullanıcı + aynı listing)
+    // Mevcut konuşmayı bul — her iki kullanıcının ortak konuşması
     const existing = await this.prisma.conversation.findFirst({
       where: {
         ...(listingId ? { listingId } : {}),
-        participants: {
-          every: { userId: { in: [userId, otherUserId] } },
-        },
         AND: [
           { participants: { some: { userId } } },
           { participants: { some: { userId: otherUserId } } },
