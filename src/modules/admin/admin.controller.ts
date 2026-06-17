@@ -32,6 +32,11 @@ export class AdminController {
     return this.adminService.getMetrics();
   }
 
+  @Get('notifications/summary')
+  getNotificationSummary() {
+    return this.adminService.getNotificationSummary();
+  }
+
   @Get('listings/pending')
   getPendingListings(
     @Query('page') page?: string,
@@ -99,6 +104,25 @@ export class AdminController {
     @Query('limit') limit?: string,
   ) {
     return this.adminService.getAuditLog(Number(page) || 1, Number(limit) || 50);
+  }
+
+  @Get('reports')
+  getReports(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.adminService.getReports(Number(page) || 1, Number(limit) || 20, status);
+  }
+
+  @Patch('reports/:id/status')
+  updateReportStatus(
+    @Param('id') id: string,
+    @Request() req,
+    @Body('status') status: string,
+    @Body('note') note?: string,
+  ) {
+    return this.adminService.updateReportStatus(id, req.user.id, status, note);
   }
 
   // Dispute için konuşma mesajlarını şifresiz oku (SUPER_ADMIN only, audit log düşer)

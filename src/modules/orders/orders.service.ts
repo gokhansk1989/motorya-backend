@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SearchService } from '../search/search.service';
 import { OrderStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { CreateOrderDto, ConfirmCashPaymentDto, ConfirmHandoffDto } from './dto/orders.dto';
@@ -26,7 +27,7 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private search: SearchService) {}
 
   async createOrder(buyerId: string, dto: CreateOrderDto) {
     const listing = await this.prisma.listing.findUnique({
@@ -67,6 +68,9 @@ export class OrdersService {
 
       return created;
     });
+
+    // Sipariş oluşturunca ilan aramadan kaldır
+    this.search.removeListing(listing.id).catch(() => null);
 
     await this.notify(order.sellerId, {
       type: 'order.created',
@@ -211,6 +215,9 @@ export class OrdersService {
       return o;
     });
 
+    // Tamamlanan sipariş ilanını aramadan kaldır
+    this.search.removeListing(order.listingId).catch(() => null);
+
     await this.notify(order.sellerId, {
       type: 'order.completed',
       title: 'Sipariş tamamlandı',
@@ -276,10 +283,24 @@ export class OrdersService {
         where: { id: orderId },
         data: { status: 'CANCELLED', cancelledAt: new Date() },
       });
-      await tx.listing.update({
+      const restoredListing = await tx.listing.update({
         where: { id: order.listingId },
         data: { status: 'ACTIVE' },
+        include: { images: { orderBy: { sortOrder: 'asc' }, take: 1 }, category: true, brand: true, seller: { select: { id: true, displayName: true } } },
       });
+      return { updated, listing: restoredListing };
+    }).then(async ({ updated, listing }) => {
+      // İlan iptal edilince tekrar aramaya ekle
+      this.search.indexListing({
+        id: listing.id, title: listing.title, description: listing.description,
+        price: Number(listing.price), condition: listing.condition,
+        city: listing.city ?? undefined, sizeLabel: listing.sizeLabel ?? undefined,
+        categoryId: listing.categoryId, categoryName: (listing.category as any)?.name ?? '',
+        brandId: listing.brandId ?? undefined, brandName: (listing.brand as any)?.name ?? undefined,
+        sellerId: listing.sellerId, sellerName: (listing.seller as any)?.displayName ?? '',
+        imageUrl: (listing.images as any)?.[0]?.url ?? undefined,
+        status: 'ACTIVE', createdAt: new Date(listing.createdAt).getTime(),
+      }).catch(() => null);
       return updated;
     });
   }

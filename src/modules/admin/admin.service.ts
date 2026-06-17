@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ModerateListingDto, ModerateUserDto } from './dto/admin.dto';
 import { MailService } from '../mail/mail.service';
 import { SearchService } from '../search/search.service';
+import { SavedSearchService } from '../saved-search/saved-search.service';
 
 @Injectable()
 export class AdminService {
@@ -10,6 +11,7 @@ export class AdminService {
     private prisma: PrismaService,
     private mail: MailService,
     private search: SearchService,
+    private savedSearch: SavedSearchService,
   ) {}
 
   async getMetrics() {
@@ -42,6 +44,21 @@ export class AdminService {
     };
   }
 
+  async getNotificationSummary() {
+    const [pendingListings, openReports, openDisputes] = await Promise.all([
+      this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null } }),
+      this.prisma.report.count({ where: { status: 'OPEN' } }),
+      this.prisma.dispute.count({ where: { status: 'OPEN' } }),
+    ]);
+
+    return {
+      pendingListings,
+      openReports,
+      openDisputes,
+      total: pendingListings + openReports + openDisputes,
+    };
+  }
+
   async getPendingListings(page = 1, limit = 20) {
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
@@ -65,7 +82,7 @@ export class AdminService {
   async moderateListing(id: string, adminId: string, dto: ModerateListingDto) {
     const listing = await this.prisma.listing.findFirst({
       where: { id, deletedAt: null },
-      include: { seller: { select: { email: true, displayName: true } } },
+      include: { seller: { select: { id: true, email: true, displayName: true } } },
     });
     if (!listing) throw new NotFoundException('Listing not found');
 
@@ -90,6 +107,15 @@ export class AdminService {
 
     if (dto.action === 'ACTIVE') {
       this.mail.sendListingApprovedEmail(listing.seller.email, listing.seller.displayName, listing.title, id).catch(() => null);
+      this.prisma.notification.create({
+        data: {
+          userId: listing.seller.id,
+          type: 'listing.approved',
+          title: 'İlanın yayında! 🎉',
+          body: `"${listing.title}" ilanın onaylandı ve yayına alındı.`,
+          payload: { listingId: id },
+        },
+      }).catch(() => null);
       // Index in search after approval
       const full = await this.prisma.listing.findFirst({
         where: { id },
@@ -120,10 +146,31 @@ export class AdminService {
           status: 'ACTIVE',
           createdAt: new Date(full.createdAt).getTime(),
         }).catch(() => null);
+
+        this.savedSearch.notifyMatching({
+          id: full.id,
+          title: full.title,
+          price: Number(full.price),
+          categoryId: full.categoryId,
+          brandId: full.brandId,
+          city: full.city,
+          condition: full.condition,
+        }).catch(() => null);
       }
     } else if (dto.action === 'REJECTED') {
       this.mail.sendListingRejectedEmail(listing.seller.email, listing.seller.displayName, listing.title, dto.note).catch(() => null);
       this.search.removeListing(id).catch(() => null);
+      this.prisma.notification.create({
+        data: {
+          userId: listing.seller.id,
+          type: 'listing.rejected',
+          title: 'İlanın onaylanmadı',
+          body: dto.note
+            ? `"${listing.title}" ilanın reddedildi. Sebep: ${dto.note}`
+            : `"${listing.title}" ilanın reddedildi. Düzenleyip tekrar gönderebilirsin.`,
+          payload: { listingId: id },
+        },
+      }).catch(() => null);
     } else if (dto.action === 'ARCHIVED') {
       this.search.removeListing(id).catch(() => null);
     }
@@ -282,5 +329,56 @@ export class AdminService {
     }));
 
     return { items: enriched, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  }
+
+  // Reports
+  async getReports(page = 1, limit = 20, status?: string) {
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (status) where.status = status;
+
+    const [items, total] = await Promise.all([
+      this.prisma.report.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          reporter: { select: { id: true, displayName: true, email: true } },
+          listing: {
+            select: {
+              id: true, title: true, status: true,
+              images: { take: 1, orderBy: { sortOrder: 'asc' } },
+              seller: { select: { id: true, displayName: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.report.count({ where }),
+    ]);
+
+    return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  }
+
+  async updateReportStatus(id: string, adminId: string, status: string, note?: string) {
+    const report = await this.prisma.report.findUnique({ where: { id } });
+    if (!report) throw new NotFoundException('Report not found');
+
+    const updated = await this.prisma.report.update({
+      where: { id },
+      data: { status: status as any, reviewedAt: new Date() },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        action: `report.${status.toLowerCase()}`,
+        entity: 'Report',
+        entityId: id,
+        meta: { note },
+      },
+    });
+
+    return updated;
   }
 }

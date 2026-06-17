@@ -110,6 +110,7 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user) throw new UnauthorizedException('E-posta veya şifre hatalı');
 
+    if (!user.passwordHash) throw new UnauthorizedException('Bu hesap Google ile oluşturulmuştur. Google ile giriş yapın.');
     const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordValid) throw new UnauthorizedException('E-posta veya şifre hatalı');
 
@@ -132,6 +133,51 @@ export class AuthService {
       });
       this.mail.sendAdminMfaEmail(user.email, user.displayName, otp).catch(() => null);
       return { mfaRequired: true, email: user.email } as any;
+    }
+
+    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
+    return {
+      accessToken,
+      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+    };
+  }
+
+  async loginWithGoogle(profile: {
+    googleId: string;
+    email: string;
+    displayName: string;
+    avatarUrl?: string;
+  }): Promise<AuthResponseDto> {
+    const { googleId, email, displayName, avatarUrl } = profile;
+
+    let user = await this.prisma.user.findUnique({ where: { googleId } });
+
+    if (!user) {
+      // e-posta eşleşmesi varsa mevcut hesabı bağla
+      const byEmail = await this.prisma.user.findUnique({ where: { email } });
+      if (byEmail) {
+        user = await this.prisma.user.update({
+          where: { id: byEmail.id },
+          data: { googleId, avatarUrl: byEmail.avatarUrl ?? avatarUrl, emailVerifiedAt: byEmail.emailVerifiedAt ?? new Date(), status: byEmail.status === 'PENDING' ? 'ACTIVE' : byEmail.status },
+        });
+      } else {
+        // Yeni Google kullanıcısı oluştur
+        user = await this.prisma.user.create({
+          data: {
+            email,
+            googleId,
+            displayName,
+            avatarUrl,
+            passwordHash: null,
+            status: 'ACTIVE',
+            emailVerifiedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    if (user.status === 'SUSPENDED' || user.status === 'BANNED') {
+      throw new UnauthorizedException('Hesabınız askıya alınmıştır.');
     }
 
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });

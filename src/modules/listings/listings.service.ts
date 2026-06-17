@@ -8,12 +8,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ListingStatus } from '@prisma/client';
 import { CreateListingDto, UpdateListingDto, ListingsQueryDto } from './dto/listings.dto';
 import { SearchService, ListingDocument } from '../search/search.service';
+import { SocialService } from '../social/social.service';
+import { MailService } from '../mail/mail.service';
+import { WebPushService } from '../users/webpush.service';
 
 @Injectable()
 export class ListingsService {
   constructor(
     private prisma: PrismaService,
     private search: SearchService,
+    private social: SocialService,
+    private mail: MailService,
+    private webPush: WebPushService,
   ) {}
 
   private toSearchDoc(listing: any): ListingDocument {
@@ -49,9 +55,12 @@ export class ListingsService {
   async createListing(sellerId: string, dto: CreateListingDto) {
     const { imageUrls = [], ...rest } = dto;
 
-    return this.prisma.listing.create({
+    const listing = await this.prisma.listing.create({
       data: {
         ...rest,
+        brandId: rest.brandId || null,
+        city: rest.city || null,
+        sizeLabel: rest.sizeLabel || null,
         price: rest.price,
         originalPrice: rest.originalPrice ?? null,
         sellerId,
@@ -60,8 +69,26 @@ export class ListingsService {
           create: imageUrls.map((url, i) => ({ url, sortOrder: i })),
         },
       },
-      include: { images: true, category: true, brand: true },
+      include: { images: true, category: true, brand: true, seller: { select: { email: true, displayName: true } } },
     });
+
+    // Satıcıya bildirim + mail
+    await this.prisma.notification.create({
+      data: {
+        userId: sellerId,
+        type: 'listing.pending',
+        title: 'İlanın incelemeye alındı',
+        body: `"${listing.title}" ilanın ekibimiz tarafından inceleniyor. Onaylandığında sana haber vereceğiz.`,
+        payload: { listingId: listing.id },
+      },
+    });
+    this.mail.sendListingPendingEmail(
+      (listing.seller as any).email,
+      (listing.seller as any).displayName,
+      listing.title,
+    ).catch(() => null);
+
+    return listing;
   }
 
   async getListings(query: ListingsQueryDto, viewerId?: string) {
@@ -82,6 +109,11 @@ export class ListingsService {
       status: ListingStatus.ACTIVE,
       deletedAt: null,
     };
+
+    if (viewerId) {
+      const blockedIds = await this.social.getBlockedUserIds(viewerId).catch(() => []);
+      if (blockedIds.length > 0) where.sellerId = { notIn: blockedIds };
+    }
 
     if (search) {
       where.OR = [
@@ -183,6 +215,56 @@ export class ListingsService {
     return { ...listing, isFavorited };
   }
 
+  async getListingsByIds(ids: string[]) {
+    if (ids.length === 0) return [];
+    const listings = await this.prisma.listing.findMany({
+      where: { id: { in: ids }, status: 'ACTIVE', deletedAt: null },
+      include: {
+        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        seller: { select: { id: true, displayName: true } },
+        brand: true,
+      },
+    });
+    const byId = new Map(listings.map((l) => [l.id, l]));
+    return ids.map((id) => byId.get(id)).filter((l): l is NonNullable<typeof l> => !!l);
+  }
+
+  async getSimilarListings(id: string) {
+    const listing = await this.prisma.listing.findFirst({ where: { id, deletedAt: null } });
+    if (!listing) throw new NotFoundException('Listing not found');
+
+    const include = {
+      images: { orderBy: { sortOrder: 'asc' as const }, take: 1 },
+      seller: { select: { id: true, displayName: true } },
+      brand: true,
+    };
+    const limit = 8;
+    const results: any[] = [];
+    const seen = new Set<string>([id]);
+
+    const tiers = [
+      listing.brandId ? { categoryId: listing.categoryId, brandId: listing.brandId } : null,
+      listing.city ? { categoryId: listing.categoryId, city: listing.city } : null,
+      { categoryId: listing.categoryId },
+    ].filter((w): w is NonNullable<typeof w> => !!w);
+
+    for (const filter of tiers) {
+      if (results.length >= limit) break;
+      const batch = await this.prisma.listing.findMany({
+        where: { ...filter, status: 'ACTIVE', deletedAt: null, id: { notIn: [...seen] } },
+        orderBy: { createdAt: 'desc' },
+        take: limit - results.length,
+        include,
+      });
+      for (const item of batch) {
+        seen.add(item.id);
+        results.push(item);
+      }
+    }
+
+    return results;
+  }
+
   async updateListing(id: string, sellerId: string, dto: UpdateListingDto) {
     const listing = await this.prisma.listing.findFirst({ where: { id, deletedAt: null } });
     if (!listing) throw new NotFoundException('Listing not found');
@@ -206,7 +288,13 @@ export class ListingsService {
 
       const updated = await tx.listing.update({
         where: { id },
-        data: { ...rest, status: newStatus as any },
+        data: {
+          ...rest,
+          brandId: rest.brandId === '' ? null : rest.brandId,
+          city: rest.city === '' ? null : rest.city,
+          sizeLabel: rest.sizeLabel === '' ? null : rest.sizeLabel,
+          status: newStatus as any,
+        },
         include: { images: { orderBy: { sortOrder: 'asc' } }, category: true, brand: true, seller: true },
       });
 
@@ -394,6 +482,13 @@ export class ListingsService {
     }));
 
     await this.prisma.notification.createMany({ data: notifications });
+
+    // Web Push — aynı kullanıcılara push bildirimi
+    const userIds = favorites.map(f => f.userId);
+    const pushPayload = type === 'price_drop'
+      ? { title: 'Fiyat düştü!', body: `"${listingTitle}" ${meta.oldPrice.toFixed(0)} ₺ → ${meta.newPrice.toFixed(0)} ₺`, url: `/ilan/${listingId}` }
+      : { title: 'Favori ilan satıldı', body: `"${listingTitle}" artık mevcut değil.`, url: '/' };
+    this.webPush.sendToMany(userIds, pushPayload).catch(() => null);
   }
 
   async reindexAll() {
@@ -409,5 +504,26 @@ export class ListingsService {
 
     await this.search.reindexAll(listings.map((l) => this.toSearchDoc(l)));
     return { indexed: listings.length };
+  }
+
+  async reportListing(reporterId: string, listingId: string, reason: string, description?: string) {
+    const listing = await this.prisma.listing.findFirst({ where: { id: listingId, deletedAt: null } });
+    if (!listing) throw new NotFoundException('Listing not found');
+
+    const existing = await this.prisma.report.findFirst({
+      where: { reporterId, listingId, status: { in: ['OPEN', 'REVIEWED'] } },
+    });
+    if (existing) return { alreadyReported: true };
+
+    const report = await this.prisma.report.create({
+      data: {
+        reporterId,
+        targetType: 'LISTING',
+        listingId,
+        reason: description ? `${reason}: ${description}` : reason,
+        status: 'OPEN',
+      },
+    });
+    return { id: report.id, alreadyReported: false };
   }
 }

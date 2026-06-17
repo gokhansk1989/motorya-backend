@@ -44,7 +44,7 @@ export class SearchService implements OnModuleInit {
       this.index = this.client.index('listings');
       await this.index.updateSettings({
         searchableAttributes: ['title', 'description', 'categoryName', 'brandName', 'city'],
-        filterableAttributes: ['categoryId', 'brandId', 'condition', 'city', 'price', 'status'],
+        filterableAttributes: ['categoryId', 'brandId', 'condition', 'city', 'price', 'status', 'sellerId'],
         sortableAttributes: ['price', 'createdAt'],
         displayedAttributes: [
           'id', 'title', 'price', 'originalPrice', 'condition', 'city', 'sizeLabel',
@@ -85,6 +85,7 @@ export class SearchService implements OnModuleInit {
     sort?: string;
     page?: number;
     limit?: number;
+    excludeSellerIds?: string[];
   }) {
     const {
       q = '',
@@ -97,6 +98,7 @@ export class SearchService implements OnModuleInit {
       sort = 'newest',
       page = 1,
       limit = 20,
+      excludeSellerIds,
     } = params;
 
     const filters: string[] = ['status = "ACTIVE"'];
@@ -106,6 +108,9 @@ export class SearchService implements OnModuleInit {
     if (city) filters.push(`city = "${city}"`);
     if (minPrice !== undefined) filters.push(`price >= ${minPrice}`);
     if (maxPrice !== undefined) filters.push(`price <= ${maxPrice}`);
+    if (excludeSellerIds && excludeSellerIds.length > 0) {
+      filters.push(`sellerId NOT IN [${excludeSellerIds.map(id => `"${id}"`).join(', ')}]`);
+    }
 
     const sortMap: Record<string, string> = {
       newest: 'createdAt:desc',

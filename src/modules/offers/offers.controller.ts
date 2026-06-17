@@ -28,6 +28,11 @@ export class OffersController {
     return this.offersService.getMyOffers(req.user.id);
   }
 
+  @Get('received')
+  getReceived(@Request() req) {
+    return this.offersService.getReceivedOffers(req.user.id);
+  }
+
   @Get('listing/:listingId')
   getForListing(@Param('listingId') listingId: string, @Request() req) {
     return this.offersService.getOffersForListing(listingId, req.user.id);

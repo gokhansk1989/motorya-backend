@@ -5,9 +5,10 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { MailModule } from '../mail/mail.module';
 import { SearchModule } from '../search/search.module';
 import { MessagesModule } from '../messages/messages.module';
+import { SavedSearchModule } from '../saved-search/saved-search.module';
 
 @Module({
-  imports: [PrismaModule, MailModule, SearchModule, MessagesModule],
+  imports: [PrismaModule, MailModule, SearchModule, MessagesModule, SavedSearchModule],
   providers: [AdminService],
   controllers: [AdminController],
   exports: [AdminService],

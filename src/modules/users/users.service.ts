@@ -3,10 +3,12 @@ import {
   NotFoundException,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchService } from '../search/search.service';
+import { SocialService } from '../social/social.service';
 import { UpdateProfileDto, ChangePasswordDto } from './dto/users.dto';
 
 @Injectable()
@@ -14,6 +16,7 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private search: SearchService,
+    private social: SocialService,
   ) {}
 
   async getProfile(userId: string) {
@@ -50,7 +53,12 @@ export class UsersService {
     return user;
   }
 
-  async getPublicProfile(userId: string) {
+  async getPublicProfile(userId: string, viewerId?: string) {
+    if (viewerId && viewerId !== userId) {
+      const blocked = await this.social.isBlocked(viewerId, userId);
+      if (blocked) throw new NotFoundException('User not found');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId, deletedAt: null, status: 'ACTIVE' },
       select: {
@@ -97,7 +105,40 @@ export class UsersService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+
+    const fastResponder = await this.isFastResponder(userId);
+    return { ...user, fastResponder };
+  }
+
+  // Son 30 konuşmada satıcının alıcıya ortalama yanıt süresi 60 dk altındaysa "Hızlı yanıt verir" rozeti
+  private async isFastResponder(userId: string): Promise<boolean> {
+    const conversations = await this.prisma.conversation.findMany({
+      where: { participants: { some: { userId } } },
+      orderBy: { updatedAt: 'desc' },
+      take: 30,
+      select: {
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          select: { senderId: true, createdAt: true },
+        },
+      },
+    });
+
+    let totalMinutes = 0;
+    let sampleCount = 0;
+    for (const conv of conversations) {
+      const msgs = conv.messages;
+      const firstFromOther = msgs.findIndex((m) => m.senderId !== userId);
+      if (firstFromOther === -1) continue;
+      const reply = msgs.slice(firstFromOther + 1).find((m) => m.senderId === userId);
+      if (!reply) continue;
+      const minutes = (reply.createdAt.getTime() - msgs[firstFromOther].createdAt.getTime()) / 60_000;
+      totalMinutes += minutes;
+      sampleCount++;
+    }
+
+    if (sampleCount < 3) return false; // yeterli veri yoksa rozet gösterilmez
+    return totalMinutes / sampleCount <= 60;
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -142,7 +183,8 @@ export class UsersService {
       this.prisma.notification.count({ where: { userId } }),
       this.prisma.notification.count({ where: { userId, readAt: null } }),
     ]);
-    return { items, meta: { total, page, limit, unreadCount } };
+    const itemsWithReadFlag = items.map((n) => ({ ...n, isRead: n.readAt !== null }));
+    return { items: itemsWithReadFlag, meta: { total, page, limit, unreadCount } };
   }
 
   async markNotificationsRead(userId: string, ids?: string[]) {

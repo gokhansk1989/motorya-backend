@@ -20,7 +20,20 @@ export class SocialService {
       return { following: false };
     }
 
+    const follower = await this.prisma.user.findUnique({ where: { id: followerId }, select: { displayName: true } });
     await this.prisma.userFollow.create({ data: { followerId, followingId } });
+
+    // Takip edilene bildirim
+    this.prisma.notification.create({
+      data: {
+        userId: followingId,
+        type: 'follow.new',
+        title: 'Yeni takipçi',
+        body: `${follower?.displayName ?? 'Birisi'} seni takip etmeye başladı.`,
+        payload: { followerId },
+      },
+    }).catch(() => null);
+
     return { following: true };
   }
 
@@ -98,5 +111,17 @@ export class SocialService {
       include: { blocked: { select: { id: true, displayName: true, avatarUrl: true } } },
     });
     return rows.map(r => r.blocked);
+  }
+
+  async getBlockedUserIds(userId: string): Promise<string[]> {
+    const [blocked, blockedBy] = await Promise.all([
+      this.prisma.userBlock.findMany({ where: { blockerId: userId }, select: { blockedId: true } }),
+      this.prisma.userBlock.findMany({ where: { blockedId: userId }, select: { blockerId: true } }),
+    ]);
+    const ids = new Set<string>([
+      ...blocked.map(b => b.blockedId),
+      ...blockedBy.map(b => b.blockerId),
+    ]);
+    return [...ids];
   }
 }

@@ -79,18 +79,20 @@ export class ReviewsService {
   }
 
   private async updateUserRating(userId: string) {
-    const result = await this.prisma.review.aggregate({
-      where: { targetUserId: userId },
-      _avg: { rating: true },
-      _count: { rating: true },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.review.aggregate({
+        where: { targetUserId: userId },
+        _avg: { rating: true },
+        _count: { rating: true },
+      });
 
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        ratingAvg: result._avg.rating ?? 0,
-        ratingCount: result._count.rating,
-      },
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          ratingAvg: result._avg.rating ?? 0,
+          ratingCount: result._count.rating,
+        },
+      });
     });
   }
 }

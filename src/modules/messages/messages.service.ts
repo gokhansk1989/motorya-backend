@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from './encryption.service';
 import { SocialService } from '../social/social.service';
+import { MessageFilterService } from './message-filter.service';
 
 @Injectable()
 export class MessagesService {
@@ -9,6 +10,7 @@ export class MessagesService {
     private prisma: PrismaService,
     private encryption: EncryptionService,
     private social: SocialService,
+    private filter: MessageFilterService,
   ) {}
 
   // Konuşma başlat veya mevcut olanı getir
@@ -139,6 +141,8 @@ export class MessagesService {
 
   // Mesaj gönder
   async sendMessage(userId: string, conversationId: string, body: string) {
+    this.filter.assertClean(body);
+
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: { conversationId_userId: { conversationId, userId } },
       include: { conversation: true },
@@ -147,6 +151,10 @@ export class MessagesService {
 
     const key = this.encryption.unwrapKey(participant.conversation.encryptedKey);
     const encryptedBody = this.encryption.encryptMessage(body, key);
+
+    const otherParticipant = await this.prisma.conversationParticipant.findFirst({
+      where: { conversationId, userId: { not: userId } },
+    });
 
     const [message] = await this.prisma.$transaction([
       this.prisma.message.create({
@@ -158,6 +166,19 @@ export class MessagesService {
         data: { updatedAt: new Date() },
       }),
     ]);
+
+    // Karşı tarafa bildirim (fire-and-forget)
+    if (otherParticipant) {
+      this.prisma.notification.create({
+        data: {
+          userId: otherParticipant.userId,
+          type: 'message.new',
+          title: `${message.sender.displayName} mesaj gönderdi`,
+          body,
+          payload: { conversationId },
+        },
+      }).catch(() => null);
+    }
 
     return {
       id: message.id,

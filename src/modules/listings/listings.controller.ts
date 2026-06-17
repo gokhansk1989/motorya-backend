@@ -49,10 +49,21 @@ export class ListingsController {
     return this.listingsService.getMyListings(req.user.id, status as any);
   }
 
+  @Get('by-ids')
+  findByIds(@Query('ids') ids: string) {
+    const idList = (ids || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 50);
+    return this.listingsService.getListingsByIds(idList);
+  }
+
   @Get(':id')
   @UseGuards(OptionalJwtGuard)
   findOne(@Param('id') id: string, @Request() req) {
     return this.listingsService.getListingById(id, req.user?.id);
+  }
+
+  @Get(':id/similar')
+  findSimilar(@Param('id') id: string) {
+    return this.listingsService.getSimilarListings(id);
   }
 
   @Patch(':id')
@@ -86,5 +97,17 @@ export class ListingsController {
   @UseGuards(AuthGuard('jwt'))
   getFavorites(@Request() req) {
     return this.listingsService.getMyFavorites(req.user.id);
+  }
+
+  @Post(':id/report')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  reportListing(
+    @Param('id') id: string,
+    @Request() req,
+    @Body('reason') reason: string,
+    @Body('description') description?: string,
+  ) {
+    return this.listingsService.reportListing(req.user.id, id, reason, description);
   }
 }

@@ -10,12 +10,17 @@ import {
   Query,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { OptionalJwtGuard } from '../../common/guards/optional-jwt.guard';
 import { UsersService } from './users.service';
+import { WebPushService } from './webpush.service';
 import { UpdateProfileDto, ChangePasswordDto } from './dto/users.dto';
 
 @Controller('users')
 export class UsersController {
-  constructor(private usersService: UsersService) {}
+  constructor(
+    private usersService: UsersService,
+    private webPush: WebPushService,
+  ) {}
 
   @Get('me')
   @UseGuards(AuthGuard('jwt'))
@@ -57,8 +62,26 @@ export class UsersController {
     return this.usersService.setVacationMode(req.user.id, enabled);
   }
 
+  @Get('push/vapid-public-key')
+  getVapidKey() {
+    return { key: this.webPush.getPublicKey() };
+  }
+
+  @Post('me/push-subscription')
+  @UseGuards(AuthGuard('jwt'))
+  subscribePush(@Request() req, @Body() body: { endpoint: string; p256dh: string; auth: string }) {
+    return this.webPush.subscribe(req.user.id, body);
+  }
+
+  @Post('me/push-unsubscribe')
+  @UseGuards(AuthGuard('jwt'))
+  unsubscribePush(@Body('endpoint') endpoint: string) {
+    return this.webPush.unsubscribe(endpoint);
+  }
+
   @Get(':id')
-  getPublic(@Param('id') id: string) {
-    return this.usersService.getPublicProfile(id);
+  @UseGuards(OptionalJwtGuard)
+  getPublic(@Param('id') id: string, @Request() req) {
+    return this.usersService.getPublicProfile(id, req.user?.id);
   }
 }

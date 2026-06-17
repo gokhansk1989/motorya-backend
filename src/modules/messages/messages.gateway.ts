@@ -10,8 +10,9 @@ import {
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { MessagesService } from './messages.service';
+import { getAllowedOrigins } from '../../common/cors-origins';
 
-@WebSocketGateway({ cors: { origin: '*' }, namespace: '/chat' })
+@WebSocketGateway({ cors: { origin: getAllowedOrigins(), credentials: true }, namespace: '/chat' })
 export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
 

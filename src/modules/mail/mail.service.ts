@@ -23,6 +23,18 @@ export class MailService {
     `);
   }
 
+  async sendListingPendingEmail(email: string, name: string, listingTitle: string) {
+    await this.send(email, `İlanın incelemeye alındı: ${listingTitle}`, `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#f97316">İlanın İncelemeye Alındı ⏳</h2>
+        <p>Merhaba ${name},</p>
+        <p><strong>"${listingTitle}"</strong> ilanın alındı ve ekibimiz tarafından inceleniyor.</p>
+        <p>İnceleme genellikle birkaç saat içinde tamamlanır. Onaylandığında sana haber vereceğiz.</p>
+        <a href="${this.appUrl}/ilanlarim" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanlarıma Git</a>
+      </div>
+    `);
+  }
+
   async sendListingApprovedEmail(email: string, name: string, listingTitle: string, listingId: string) {
     const link = `${this.appUrl}/ilan/${listingId}`;
     await this.send(email, `İlanın onaylandı: ${listingTitle}`, `

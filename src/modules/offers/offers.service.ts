@@ -6,12 +6,16 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SocialService } from '../social/social.service';
 import { CreateOfferDto, RespondOfferDto } from './dto/offers.dto';
 import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class OffersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private social: SocialService,
+  ) {}
 
   async createOffer(buyerId: string, dto: CreateOfferDto) {
     const listing = await this.prisma.listing.findFirst({
@@ -19,6 +23,10 @@ export class OffersService {
     });
     if (!listing) throw new NotFoundException('Listing not found or not available');
     if (listing.sellerId === buyerId) throw new ForbiddenException('Cannot offer on your own listing');
+
+    if (await this.social.isBlocked(buyerId, listing.sellerId)) {
+      throw new ForbiddenException('Bu satıcıyla işlem yapamazsınız');
+    }
 
     const amount = new Decimal(dto.amount);
     if (amount.gte(listing.price)) {
@@ -145,6 +153,25 @@ export class OffersService {
             images: { take: 1, orderBy: { sortOrder: 'asc' } },
           },
         },
+      },
+    });
+  }
+
+  async getReceivedOffers(sellerId: string) {
+    return this.prisma.offer.findMany({
+      where: { listing: { sellerId } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        listing: {
+          select: {
+            id: true,
+            title: true,
+            price: true,
+            status: true,
+            images: { take: 1, orderBy: { sortOrder: 'asc' } },
+          },
+        },
+        buyer: { select: { id: true, displayName: true, avatarUrl: true, ratingAvg: true } },
       },
     });
   }
