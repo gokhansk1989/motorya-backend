@@ -785,6 +785,18 @@ model BlogPost {
   @@index([published, publishedAt])
 }
 
+/// Servis entegrasyonları (SendGrid, PayTR vb.) — config JSON şifreli değil, hassas alanlar maskelenir
+model Integration {
+  id        String   @id @default(cuid())
+  key       String   @unique  // 'sendgrid', 'paytr', 'netgsm' vb.
+  name      String
+  enabled   Boolean  @default(false)
+  config    Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+}
+
 /// Statik içerik sayfaları (Hakkımızda, Gizlilik, vb.)
 model StaticPage {
   id        String   @id @default(cuid())

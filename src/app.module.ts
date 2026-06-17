@@ -20,6 +20,7 @@ import { SocialModule } from './modules/social/social.module';
 import { SavedSearchModule } from './modules/saved-search/saved-search.module';
 import { BlogModule } from './modules/blog/blog.module';
 import { PagesModule } from './modules/pages/pages.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { PagesModule } from './modules/pages/pages.module';
     SavedSearchModule,
     BlogModule,
     PagesModule,
+    IntegrationsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
