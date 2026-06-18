@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SearchService } from '../search/search.service';
 import { OrderStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { buildListingSlug } from '../listings/listings.service';
 import { CreateOrderDto, ConfirmCashPaymentDto, ConfirmHandoffDto } from './dto/orders.dto';
 
 /**
@@ -235,7 +236,7 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        listing: { select: { id: true, title: true, images: { take: 1 } } },
+        listing: { include: { images: { take: 1 }, category: { include: { parent: { select: { slug: true } } } } } },
         buyer: { select: { id: true, displayName: true, avatarUrl: true } },
         seller: { select: { id: true, displayName: true, avatarUrl: true } },
         shipment: true,
@@ -249,7 +250,7 @@ export class OrdersService {
       throw new ForbiddenException();
     }
 
-    return order;
+    return { ...order, listing: order.listing ? { ...order.listing, slug: buildListingSlug(order.listing) } : null };
   }
 
   async getMyOrders(userId: string, role: 'buyer' | 'seller') {
@@ -258,11 +259,12 @@ export class OrdersService {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        listing: { select: { id: true, title: true, images: { take: 1 } } },
+        listing: { include: { images: { take: 1 }, category: { include: { parent: { select: { slug: true } } } } } },
         buyer: { select: { id: true, displayName: true, avatarUrl: true } },
         seller: { select: { id: true, displayName: true, avatarUrl: true } },
       },
     });
+    return orders.map(o => ({ ...o, listing: o.listing ? { ...o.listing, slug: buildListingSlug(o.listing) } : null }));
   }
 
   async cancelOrder(orderId: string, requesterId: string) {
