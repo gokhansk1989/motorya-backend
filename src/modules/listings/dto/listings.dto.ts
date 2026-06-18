@@ -11,7 +11,7 @@ import {
   IsInt,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ListingCondition, ListingStatus } from '@prisma/client';
+import { ListingCondition, ListingGender, ListingStatus } from '@prisma/client';
 
 export class CreateListingDto {
   @IsString()
@@ -33,6 +33,10 @@ export class CreateListingDto {
 
   @IsEnum(ListingCondition)
   condition: ListingCondition;
+
+  @IsOptional()
+  @IsEnum(ListingGender)
+  gender?: ListingGender;
 
   @IsOptional()
   @IsString()
@@ -82,6 +86,10 @@ export class UpdateListingDto {
   condition?: ListingCondition;
 
   @IsOptional()
+  @IsEnum(ListingGender)
+  gender?: ListingGender;
+
+  @IsOptional()
   @IsString()
   sizeLabel?: string;
 
@@ -124,6 +132,10 @@ export class ListingsQueryDto {
   @IsOptional()
   @IsEnum(ListingCondition)
   condition?: ListingCondition;
+
+  @IsOptional()
+  @IsEnum(ListingGender)
+  gender?: ListingGender;
 
   @IsOptional()
   @IsString()

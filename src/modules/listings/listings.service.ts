@@ -181,6 +181,7 @@ export class ListingsService {
     }
     if (brandId) where.brandId = brandId;
     if (condition) where.condition = condition;
+    if ((query as any).gender) where.gender = (query as any).gender;
     if (city) where.city = { contains: city, mode: 'insensitive' };
     if (minPrice !== undefined || maxPrice !== undefined) {
       where.price = {};

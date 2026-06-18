@@ -215,6 +215,13 @@ model Brand {
   listings Listing[]
 }
 
+enum ListingGender {
+  ERKEK
+  KADIN
+  UNISEX
+  COCUK
+}
+
 enum ListingCondition {
   NEW       // Sıfır / Etiketli
   LIKE_NEW  // Çok iyi
@@ -244,6 +251,7 @@ model Listing {
   title       String
   description String
   condition   ListingCondition
+  gender      ListingGender?   // Giyim kategorileri için
   sizeLabel   String?          // "M (57-58)", "52", "43" vb.
   price       Decimal          @db.Decimal(12, 2)
   originalPrice Decimal?       @db.Decimal(12, 2) // üstü çizili fiyat
