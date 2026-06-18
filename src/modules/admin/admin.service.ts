@@ -4,6 +4,7 @@ import { ModerateListingDto, ModerateUserDto } from './dto/admin.dto';
 import { MailService } from '../mail/mail.service';
 import { SearchService } from '../search/search.service';
 import { SavedSearchService } from '../saved-search/saved-search.service';
+import { buildListingSlug } from '../listings/listings.service';
 
 @Injectable()
 export class AdminService {
@@ -106,26 +107,26 @@ export class AdminService {
     ]);
 
     if (dto.action === 'ACTIVE') {
-      this.mail.sendListingApprovedEmail(listing.seller.email, listing.seller.displayName, listing.title, id).catch(() => null);
-      this.prisma.notification.create({
-        data: {
-          userId: listing.seller.id,
-          type: 'listing.approved',
-          title: 'İlanın yayında! 🎉',
-          body: `"${listing.title}" ilanın onaylandı ve yayına alındı.`,
-          payload: { listingId: id },
-        },
-      }).catch(() => null);
-      // Index in search after approval
       const full = await this.prisma.listing.findFirst({
         where: { id },
         include: {
           images: { orderBy: { sortOrder: 'asc' }, take: 1 },
           category: { include: { parent: { select: { slug: true } } } },
           brand: true,
-          seller: { select: { id: true, displayName: true } },
+          seller: { select: { id: true, displayName: true, email: true } },
         },
       });
+      const listingSlug = full ? buildListingSlug(full) : id;
+      this.mail.sendListingApprovedEmail((full?.seller as any)?.email ?? (listing.seller as any).email, (full?.seller as any)?.displayName ?? (listing.seller as any).displayName, listing.title, listingSlug).catch(() => null);
+      this.prisma.notification.create({
+        data: {
+          userId: listing.seller.id,
+          type: 'listing.approved',
+          title: 'İlanın yayında! 🎉',
+          body: `"${listing.title}" ilanın onaylandı ve yayına alındı.`,
+          payload: { listingId: id, listingSlug },
+        },
+      }).catch(() => null);
       if (full) {
         this.search.indexListing({
           id: full.id,
@@ -143,6 +144,7 @@ export class AdminService {
           sellerId: full.sellerId,
           sellerName: (full.seller as any)?.displayName ?? '',
           imageUrl: (full.images as any)?.[0]?.url ?? undefined,
+          slug: listingSlug,
           status: 'ACTIVE',
           createdAt: new Date(full.createdAt).getTime(),
         }).catch(() => null);

@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SocialService } from '../social/social.service';
 import { CreateOfferDto, RespondOfferDto } from './dto/offers.dto';
 import { Decimal } from '@prisma/client/runtime/library';
+import { buildListingSlug } from '../listings/listings.service';
 
 @Injectable()
 export class OffersService {
@@ -20,6 +21,7 @@ export class OffersService {
   async createOffer(buyerId: string, dto: CreateOfferDto) {
     const listing = await this.prisma.listing.findFirst({
       where: { id: dto.listingId, status: 'ACTIVE', deletedAt: null },
+      include: { category: { include: { parent: { select: { slug: true } } } } },
     });
     if (!listing) throw new NotFoundException('Listing not found or not available');
     if (listing.sellerId === buyerId) throw new ForbiddenException('Cannot offer on your own listing');
@@ -61,7 +63,7 @@ export class OffersService {
         type: 'offer.received',
         title: 'Yeni teklif aldınız',
         body: `"${listing.title}" ilanınıza ${amount.toFixed(2)} ₺ teklif geldi.`,
-        payload: { offerId: offer.id, listingId: listing.id },
+        payload: { offerId: offer.id, listingId: listing.id, listingSlug: buildListingSlug(listing) },
       },
     });
 
@@ -71,7 +73,7 @@ export class OffersService {
   async respondOffer(offerId: string, sellerId: string, dto: RespondOfferDto) {
     const offer = await this.prisma.offer.findUnique({
       where: { id: offerId },
-      include: { listing: true },
+      include: { listing: { include: { category: { include: { parent: { select: { slug: true } } } } } } },
     });
     if (!offer) throw new NotFoundException('Offer not found');
     if (offer.listing.sellerId !== sellerId) throw new ForbiddenException();
@@ -107,7 +109,7 @@ export class OffersService {
         body: newStatus === 'ACCEPTED'
           ? `"${offer.listing.title}" için ${offer.amount.toFixed(2)} ₺ teklifiniz kabul edildi. Siparişi tamamlayabilirsiniz.`
           : `"${offer.listing.title}" için teklifiniz reddedildi.`,
-        payload: { offerId, listingId: offer.listingId },
+        payload: { offerId, listingId: offer.listingId, listingSlug: buildListingSlug(offer.listing) },
       },
     });
 

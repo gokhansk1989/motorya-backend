@@ -169,7 +169,7 @@ export class ListingsService {
         type: 'listing.pending',
         title: 'İlanın incelemeye alındı',
         body: `"${listing.title}" ilanın ekibimiz tarafından inceleniyor. Onaylandığında sana haber vereceğiz.`,
-        payload: { listingId: listing.id },
+        payload: { listingId: listing.id, listingSlug: buildListingSlug(listing) },
       },
     });
     this.mail.sendListingPendingEmail(
@@ -581,11 +581,16 @@ export class ListingsService {
     listingTitle: string,
     type: 'price_drop' | 'listing_sold',
     meta: Record<string, any>,
+    listingSlug?: string,
   ) {
-    const favorites = await this.prisma.favorite.findMany({
-      where: { listingId },
-      select: { userId: true },
-    });
+    const [favorites, listingForSlug] = await Promise.all([
+      this.prisma.favorite.findMany({ where: { listingId }, select: { userId: true } }),
+      listingSlug ? Promise.resolve(null) : this.prisma.listing.findFirst({
+        where: { id: listingId },
+        include: { category: { include: { parent: { select: { slug: true } } } } },
+      }),
+    ]);
+    const slugUrl = listingSlug ?? (listingForSlug ? buildListingSlug(listingForSlug) : listingId);
     if (favorites.length === 0) return;
 
     const notifications = favorites.map(f => ({
@@ -597,7 +602,7 @@ export class ListingsService {
       body: type === 'price_drop'
         ? `"${listingTitle}" ilanında fiyat ${meta.oldPrice.toFixed(0)} ₺ → ${meta.newPrice.toFixed(0)} ₺ oldu.`
         : `"${listingTitle}" ilanı satılmış. Benzer ilanları keşfet!`,
-      payload: { listingId, ...meta },
+      payload: { listingId, listingSlug: listingSlug ?? listingId, ...meta },
     }));
 
     await this.prisma.notification.createMany({ data: notifications });
@@ -605,7 +610,7 @@ export class ListingsService {
     // Web Push — aynı kullanıcılara push bildirimi
     const userIds = favorites.map(f => f.userId);
     const pushPayload = type === 'price_drop'
-      ? { title: 'Fiyat düştü!', body: `"${listingTitle}" ${meta.oldPrice.toFixed(0)} ₺ → ${meta.newPrice.toFixed(0)} ₺`, url: `/ilan/${listingId}` }
+      ? { title: 'Fiyat düştü!', body: `"${listingTitle}" ${meta.oldPrice.toFixed(0)} ₺ → ${meta.newPrice.toFixed(0)} ₺`, url: `/ilan/${slugUrl}` }
       : { title: 'Favori ilan satıldı', body: `"${listingTitle}" artık mevcut değil.`, url: '/' };
     this.webPush.sendToMany(userIds, pushPayload).catch(() => null);
   }
