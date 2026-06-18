@@ -52,6 +52,30 @@ export class ListingsService {
     return this.prisma.brand.findMany({ orderBy: { name: 'asc' } });
   }
 
+  async adminCreateCategory(data: { name: string; slug: string; parentId?: string; sortOrder?: number }) {
+    return this.prisma.category.create({ data: { ...data, isActive: true } });
+  }
+
+  async adminUpdateCategory(id: string, data: { name?: string; slug?: string; parentId?: string; sortOrder?: number; isActive?: boolean }) {
+    return this.prisma.category.update({ where: { id }, data });
+  }
+
+  async adminDeleteCategory(id: string) {
+    await this.prisma.category.delete({ where: { id } });
+  }
+
+  async adminCreateBrand(data: { name: string; slug: string; logoUrl?: string }) {
+    return this.prisma.brand.create({ data });
+  }
+
+  async adminUpdateBrand(id: string, data: { name?: string; slug?: string; logoUrl?: string }) {
+    return this.prisma.brand.update({ where: { id }, data });
+  }
+
+  async adminDeleteBrand(id: string) {
+    await this.prisma.brand.delete({ where: { id } });
+  }
+
   async createListing(sellerId: string, dto: CreateListingDto) {
     const { imageUrls = [], ...rest } = dto;
 

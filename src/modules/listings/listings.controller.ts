@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Body,
@@ -14,6 +15,8 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { OptionalJwtGuard } from '../../common/guards/optional-jwt.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { ListingsService } from './listings.service';
 import { CreateListingDto, UpdateListingDto, ListingsQueryDto } from './dto/listings.dto';
 
@@ -35,6 +38,52 @@ export class ListingsController {
   @Get('meta/brands')
   getBrands() {
     return this.listingsService.getBrands();
+  }
+
+  // ── Admin: Category CRUD ─────────────────────────────────────────────────
+  @Post('admin/categories')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  adminCreateCategory(@Body() body: { name: string; slug: string; parentId?: string; sortOrder?: number }) {
+    return this.listingsService.adminCreateCategory(body);
+  }
+
+  @Put('admin/categories/:id')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  adminUpdateCategory(@Param('id') id: string, @Body() body: { name?: string; slug?: string; parentId?: string; sortOrder?: number; isActive?: boolean }) {
+    return this.listingsService.adminUpdateCategory(id, body);
+  }
+
+  @Delete('admin/categories/:id')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  adminDeleteCategory(@Param('id') id: string) {
+    return this.listingsService.adminDeleteCategory(id);
+  }
+
+  // ── Admin: Brand CRUD ────────────────────────────────────────────────────
+  @Post('admin/brands')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  adminCreateBrand(@Body() body: { name: string; slug: string; logoUrl?: string }) {
+    return this.listingsService.adminCreateBrand(body);
+  }
+
+  @Put('admin/brands/:id')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  adminUpdateBrand(@Param('id') id: string, @Body() body: { name?: string; slug?: string; logoUrl?: string }) {
+    return this.listingsService.adminUpdateBrand(id, body);
+  }
+
+  @Delete('admin/brands/:id')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  adminDeleteBrand(@Param('id') id: string) {
+    return this.listingsService.adminDeleteBrand(id);
   }
 
   @Get()
