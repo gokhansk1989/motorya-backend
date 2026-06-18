@@ -40,6 +40,11 @@ export class ListingsController {
     return this.listingsService.getBrands();
   }
 
+  @Get('meta/category/:slug')
+  getCategoryBySlug(@Param('slug') slug: string) {
+    return this.listingsService.getCategoryBySlug(slug);
+  }
+
   // ── Admin: Category CRUD ─────────────────────────────────────────────────
   @Post('admin/categories')
   @UseGuards(AuthGuard('jwt'), RolesGuard)

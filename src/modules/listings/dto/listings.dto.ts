@@ -115,6 +115,10 @@ export class ListingsQueryDto {
 
   @IsOptional()
   @IsString()
+  categorySlug?: string;
+
+  @IsOptional()
+  @IsString()
   brandId?: string;
 
   @IsOptional()

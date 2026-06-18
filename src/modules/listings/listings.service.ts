@@ -48,6 +48,35 @@ export class ListingsService {
     return this.prisma.category.findMany({ orderBy: { name: 'asc' } });
   }
 
+  async getCategoryBySlug(slug: string) {
+    const category = await this.prisma.category.findUnique({ where: { slug } });
+    if (!category) return null;
+    const children = await this.prisma.category.findMany({ where: { parentId: category.id }, orderBy: { sortOrder: 'asc' } });
+    const grandchildren = children.length > 0
+      ? await this.prisma.category.findMany({ where: { parentId: { in: children.map(c => c.id) } }, orderBy: { sortOrder: 'asc' } })
+      : [];
+    return { category, children, grandchildren };
+  }
+
+  private async resolveCategoryIds(categoryId?: string, categorySlug?: string): Promise<string[] | null> {
+    if (!categoryId && !categorySlug) return null;
+    let rootId = categoryId;
+    if (!rootId && categorySlug) {
+      const cat = await this.prisma.category.findUnique({ where: { slug: categorySlug } });
+      if (!cat) return [];
+      rootId = cat.id;
+    }
+    // collect rootId + all descendant IDs
+    const ids = [rootId!];
+    const children = await this.prisma.category.findMany({ where: { parentId: rootId } });
+    for (const child of children) {
+      ids.push(child.id);
+      const grandchildren = await this.prisma.category.findMany({ where: { parentId: child.id } });
+      grandchildren.forEach(gc => ids.push(gc.id));
+    }
+    return ids;
+  }
+
   async getBrands() {
     return this.prisma.brand.findMany({ orderBy: { name: 'asc' } });
   }
@@ -119,6 +148,7 @@ export class ListingsService {
     const {
       search,
       categoryId,
+      categorySlug,
       brandId,
       condition,
       city,
@@ -145,7 +175,10 @@ export class ListingsService {
         { description: { contains: search, mode: 'insensitive' } },
       ];
     }
-    if (categoryId) where.categoryId = categoryId;
+    const categoryIds = await this.resolveCategoryIds(categoryId, categorySlug);
+    if (categoryIds !== null) {
+      where.categoryId = categoryIds.length === 1 ? categoryIds[0] : { in: categoryIds };
+    }
     if (brandId) where.brandId = brandId;
     if (condition) where.condition = condition;
     if (city) where.city = { contains: city, mode: 'insensitive' };
