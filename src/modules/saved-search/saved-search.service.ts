@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service';
 import { WebPushService } from '../users/webpush.service';
 import { MailService } from '../mail/mail.service';
+import { buildListingSlug } from '../listings/listings.service';
 import { CreateSavedSearchDto } from './dto/saved-search.dto';
 
 const MAX_SAVED_SEARCHES_PER_USER = 20;
@@ -49,6 +50,7 @@ export class SavedSearchService {
     brandId?: string | null;
     city?: string | null;
     condition: string;
+    category?: { slug: string; parentId?: string | null; parent?: { slug: string } | null } | null;
   }) {
     const candidates = await this.prisma.savedSearch.findMany({
       where: { OR: [{ categoryId: listing.categoryId }, { categoryId: null }] },
@@ -83,9 +85,10 @@ export class SavedSearchService {
       data: { lastNotifiedAt: new Date() },
     });
 
+    const listingSlug = buildListingSlug(listing);
     this.webPush.sendToMany(
       matches.map((s) => s.userId),
-      { title: 'Aradığın ilan yayınlandı', body: listing.title, url: `/ilan/${listing.id}` },
+      { title: 'Aradığın ilan yayınlandı', body: listing.title, url: `/ilan/${listingSlug}` },
     ).catch(() => null);
 
     const userIds = [...new Set(matches.map((s) => s.userId))];
@@ -97,7 +100,7 @@ export class SavedSearchService {
     for (const user of users) {
       const userMatches = matches.filter((s) => s.userId === user.id);
       const label = userMatches.map((s) => s.label).join(', ');
-      this.mail.sendSavedSearchMatchEmail(user.email, user.displayName, label, listing.title, listing.id).catch(() => null);
+      this.mail.sendSavedSearchMatchEmail(user.email, user.displayName, label, listing.title, listingSlug).catch(() => null);
     }
   }
 }

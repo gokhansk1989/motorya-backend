@@ -12,6 +12,42 @@ import { SocialService } from '../social/social.service';
 import { MailService } from '../mail/mail.service';
 import { WebPushService } from '../users/webpush.service';
 
+// Türkçe karakterleri latinize edip URL-safe slug üretir
+function toSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+    .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 60);
+}
+
+// /ilan/{l1}-{l2}-{title}-{city}-{id} formatında slug üretir.
+// category.parentId varsa l2, parent ise l1; yoksa sadece l1 kullanılır.
+export function buildListingSlug(listing: {
+  id: string;
+  title: string;
+  city?: string | null;
+  category?: { slug: string; parentId?: string | null; parent?: { slug: string } | null } | null;
+}): string {
+  const parts: string[] = [];
+  if (listing.category) {
+    if (listing.category.parentId && listing.category.parent) {
+      parts.push(listing.category.parent.slug);
+      parts.push(listing.category.slug);
+    } else {
+      parts.push(listing.category.slug);
+    }
+  }
+  parts.push(toSlug(listing.title));
+  if (listing.city) parts.push(toSlug(listing.city));
+  parts.push(listing.id);
+  return parts.join('-');
+}
+
 @Injectable()
 export class ListingsService {
   constructor(
@@ -207,7 +243,7 @@ export class ListingsService {
         include: {
           images: { orderBy: { sortOrder: 'asc' }, take: 1 },
           seller: { select: { id: true, displayName: true, avatarUrl: true, ratingAvg: true } },
-          category: { select: { id: true, name: true, slug: true } },
+          category: { select: { id: true, name: true, slug: true, parentId: true, parent: { select: { slug: true } } } },
           brand: { select: { id: true, name: true } },
         },
       }),
@@ -224,7 +260,7 @@ export class ListingsService {
     }
 
     return {
-      items: items.map(item => ({ ...item, isFavorited: favoritedIds.has(item.id) })),
+      items: items.map(item => ({ ...item, slug: buildListingSlug(item), isFavorited: favoritedIds.has(item.id) })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -246,7 +282,7 @@ export class ListingsService {
             createdAt: true,
           },
         },
-        category: true,
+        category: { include: { parent: { select: { slug: true } } } },
         brand: true,
       },
     });
@@ -270,7 +306,7 @@ export class ListingsService {
       isFavorited = !!fav;
     }
 
-    return { ...listing, isFavorited };
+    return { ...listing, slug: buildListingSlug(listing), isFavorited };
   }
 
   async getListingsByIds(ids: string[]) {

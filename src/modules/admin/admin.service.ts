@@ -121,7 +121,7 @@ export class AdminService {
         where: { id },
         include: {
           images: { orderBy: { sortOrder: 'asc' }, take: 1 },
-          category: true,
+          category: { include: { parent: { select: { slug: true } } } },
           brand: true,
           seller: { select: { id: true, displayName: true } },
         },
@@ -155,6 +155,7 @@ export class AdminService {
           brandId: full.brandId,
           city: full.city,
           condition: full.condition,
+          category: full.category as any,
         }).catch(() => null);
       }
     } else if (dto.action === 'REJECTED') {
