@@ -255,7 +255,7 @@ export class OrdersService {
 
   async getMyOrders(userId: string, role: 'buyer' | 'seller') {
     const where = role === 'buyer' ? { buyerId: userId } : { sellerId: userId };
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: {
