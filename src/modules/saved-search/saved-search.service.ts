@@ -1,6 +1,7 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebPushService } from '../users/webpush.service';
+import { MailService } from '../mail/mail.service';
 import { CreateSavedSearchDto } from './dto/saved-search.dto';
 
 const MAX_SAVED_SEARCHES_PER_USER = 20;
@@ -10,6 +11,7 @@ export class SavedSearchService {
   constructor(
     private prisma: PrismaService,
     private webPush: WebPushService,
+    private mail: MailService,
   ) {}
 
   async create(userId: string, dto: CreateSavedSearchDto) {
@@ -85,5 +87,17 @@ export class SavedSearchService {
       matches.map((s) => s.userId),
       { title: 'Aradığın ilan yayınlandı', body: listing.title, url: `/ilan/${listing.id}` },
     ).catch(() => null);
+
+    const userIds = [...new Set(matches.map((s) => s.userId))];
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, email: true, displayName: true },
+    });
+
+    for (const user of users) {
+      const userMatches = matches.filter((s) => s.userId === user.id);
+      const label = userMatches.map((s) => s.label).join(', ');
+      this.mail.sendSavedSearchMatchEmail(user.email, user.displayName, label, listing.title, listing.id).catch(() => null);
+    }
   }
 }

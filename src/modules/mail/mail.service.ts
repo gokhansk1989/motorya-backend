@@ -108,6 +108,20 @@ export class MailService {
     `);
   }
 
+  async sendSavedSearchMatchEmail(email: string, name: string, label: string, listingTitle: string, listingId: string) {
+    const link = `${this.appUrl}/ilan/${listingId}`;
+    await this.send(email, `🔍 Aradığın ilan yayınlandı`, `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#f97316">Aradığın İlan Yayınlandı! 🔍</h2>
+        <p>Merhaba ${name},</p>
+        <p><strong>"${label}"</strong> aramanla eşleşen yeni bir ilan yayınlandı:</p>
+        <p style="font-size:18px;font-weight:600">${listingTitle}</p>
+        <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
+        <p style="color:#888;font-size:13px">Bu bildirimi almak istemiyorsan kayıtlı aramalarını <a href="${this.appUrl}/fiyat-alarm" style="color:#f97316">buradan</a> yönetebilirsin.</p>
+      </div>
+    `);
+  }
+
   private async send(to: string, subject: string, html: string) {
     const cfg = await this.getSgConfig();
     if (!cfg) { this.logger.warn('SendGrid yapılandırılmamış, mail atlanıyor'); return; }
