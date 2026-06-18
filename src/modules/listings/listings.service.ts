@@ -482,14 +482,15 @@ export class ListingsService {
   }
 
   async getMyListings(sellerId: string, status?: ListingStatus) {
-    return this.prisma.listing.findMany({
+    const listings = await this.prisma.listing.findMany({
       where: { sellerId, deletedAt: null, ...(status ? { status } : {}) },
       orderBy: { createdAt: 'desc' },
       include: {
         images: { orderBy: { sortOrder: 'asc' }, take: 1 },
-        category: { select: { id: true, name: true } },
+        category: { include: { parent: { select: { slug: true } } } },
       },
     });
+    return listings.map(l => ({ ...l, slug: buildListingSlug(l) }));
   }
 
   async toggleFavorite(userId: string, listingId: string) {
@@ -526,13 +527,13 @@ export class ListingsService {
           include: {
             images: { orderBy: { sortOrder: 'asc' }, take: 1 },
             seller: { select: { id: true, displayName: true, avatarUrl: true } },
-            category: { select: { id: true, name: true } },
+            category: { include: { parent: { select: { slug: true } } } },
           },
         },
       },
     });
 
-    return favorites.map((f) => f.listing);
+    return favorites.map((f) => ({ ...f.listing, slug: buildListingSlug(f.listing) }));
   }
 
   // Admin/moderatör tarafından çağrılır
