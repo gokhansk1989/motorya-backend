@@ -109,6 +109,12 @@ export class ListingsController {
     return this.listingsService.getListingsByIds(idList);
   }
 
+  @Get('by-slug/:slug(*)')
+  @UseGuards(OptionalJwtGuard)
+  findBySlug(@Param('slug') slug: string, @Request() req) {
+    return this.listingsService.getListingBySlug(slug, req.user?.id);
+  }
+
   @Get(':id')
   @UseGuards(OptionalJwtGuard)
   findOne(@Param('id') id: string, @Request() req) {

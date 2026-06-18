@@ -265,6 +265,29 @@ export class ListingsService {
     };
   }
 
+  // Slug'dan ID'yi çıkarır: son CUID veya tüm olası son segmentleri dener.
+  async getListingBySlug(slug: string, viewerId?: string) {
+    // CUID: c + 24 alfanumerik karakter (tire yok)
+    const cuidMatch = slug.match(/c[a-z0-9]{24}$/);
+    if (cuidMatch) {
+      return this.getListingById(cuidMatch[0], viewerId);
+    }
+
+    // Non-CUID ID: slug'un sonundaki kısımlar olabilir (örn. "listing-e2").
+    // Giderek uzayan suffix deneriz — ilk bulunan ACTIVE ilan kazanır.
+    const parts = slug.split('-');
+    for (let take = 1; take <= Math.min(parts.length, 4); take++) {
+      const candidateId = parts.slice(-take).join('-');
+      const found = await this.prisma.listing.findFirst({
+        where: { id: candidateId, deletedAt: null },
+        select: { id: true },
+      });
+      if (found) return this.getListingById(found.id, viewerId);
+    }
+
+    throw new NotFoundException('Listing not found');
+  }
+
   async getListingById(id: string, viewerId?: string) {
     const listing = await this.prisma.listing.findFirst({
       where: { id, deletedAt: null },
