@@ -75,6 +75,7 @@ export class ListingsService {
       sellerId: listing.sellerId,
       sellerName: listing.seller?.displayName ?? '',
       imageUrl: listing.images?.[0]?.url ?? undefined,
+      slug: buildListingSlug(listing),
       status: listing.status,
       createdAt: new Date(listing.createdAt).getTime(),
     };

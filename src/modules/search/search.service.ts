@@ -21,6 +21,7 @@ export interface ListingDocument {
   sellerId: string;
   sellerName: string;
   imageUrl?: string;
+  slug?: string;
   status: string;
   createdAt: number; // unix timestamp for sorting
 }
@@ -49,7 +50,7 @@ export class SearchService implements OnModuleInit {
         displayedAttributes: [
           'id', 'title', 'price', 'originalPrice', 'condition', 'city', 'sizeLabel',
           'categoryId', 'categoryName', 'brandId', 'brandName', 'sellerId', 'sellerName',
-          'imageUrl', 'status', 'createdAt',
+          'imageUrl', 'slug', 'status', 'createdAt',
         ],
       });
       this.logger.log('Meilisearch index configured');
