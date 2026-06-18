@@ -158,7 +158,7 @@ export class ListingsService {
           create: imageUrls.map((url, i) => ({ url, sortOrder: i })),
         },
       },
-      include: { images: true, category: true, brand: true, seller: { select: { email: true, displayName: true } } },
+      include: { images: true, category: { include: { parent: { select: { slug: true } } } }, brand: true, seller: { select: { email: true, displayName: true } } },
     });
 
     // Satıcıya bildirim + mail
@@ -177,7 +177,7 @@ export class ListingsService {
       listing.title,
     ).catch(() => null);
 
-    return listing;
+    return { ...listing, slug: buildListingSlug(listing) };
   }
 
   async getListings(query: ListingsQueryDto, viewerId?: string) {
