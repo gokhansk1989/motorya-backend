@@ -18,3 +18,14 @@ export class RespondOfferDto {
   @IsString()
   action: 'ACCEPTED' | 'REJECTED';
 }
+
+export class CounterOfferDto {
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  counterAmount: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  counterMessage?: string;
+}

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SocialService } from '../social/social.service';
-import { CreateOfferDto, RespondOfferDto } from './dto/offers.dto';
+import { CreateOfferDto, RespondOfferDto, CounterOfferDto } from './dto/offers.dto';
 import { Decimal } from '@prisma/client/runtime/library';
 import { buildListingSlug } from '../listings/listings.service';
 
@@ -107,8 +107,89 @@ export class OffersService {
         type: newStatus === 'ACCEPTED' ? 'offer.accepted' : 'offer.rejected',
         title: newStatus === 'ACCEPTED' ? 'Teklifiniz kabul edildi!' : 'Teklifiniz reddedildi',
         body: newStatus === 'ACCEPTED'
-          ? `"${offer.listing.title}" için ${offer.amount.toFixed(2)} ₺ teklifiniz kabul edildi. Siparişi tamamlayabilirsiniz.`
+          ? `"${offer.listing.title}" için ${offer.amount.toFixed(2)} ₺ teklifiniz kabul edildi.`
           : `"${offer.listing.title}" için teklifiniz reddedildi.`,
+        payload: { offerId, listingId: offer.listingId, listingSlug: buildListingSlug(offer.listing) },
+      },
+    });
+
+    return updated;
+  }
+
+  async counterOffer(offerId: string, sellerId: string, dto: CounterOfferDto) {
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+      include: { listing: { include: { category: { include: { parent: { select: { slug: true } } } } } } },
+    });
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (offer.listing.sellerId !== sellerId) throw new ForbiddenException();
+    if (offer.status !== 'PENDING') {
+      throw new BadRequestException(`Offer is already ${offer.status.toLowerCase()}`);
+    }
+
+    const counter = new Decimal(dto.counterAmount);
+    if (counter.lte(offer.amount)) {
+      throw new BadRequestException('Karşı teklif orijinal tekliften yüksek olmalıdır');
+    }
+    if (counter.gte(offer.listing.price)) {
+      throw new BadRequestException('Karşı teklif ilan fiyatından düşük olmalıdır');
+    }
+
+    const updated = await this.prisma.offer.update({
+      where: { id: offerId },
+      data: {
+        status: 'COUNTER_OFFERED',
+        counterAmount: counter,
+        counterMessage: dto.counterMessage,
+        expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+      },
+    });
+
+    await this.prisma.notification.create({
+      data: {
+        userId: offer.buyerId,
+        type: 'offer.countered',
+        title: 'Satıcı karşı teklif yaptı',
+        body: `"${offer.listing.title}" için ${counter.toFixed(2)} ₺ karşı teklif geldi.`,
+        payload: { offerId, listingId: offer.listingId, listingSlug: buildListingSlug(offer.listing) },
+      },
+    });
+
+    return updated;
+  }
+
+  async respondCounterOffer(offerId: string, buyerId: string, action: 'ACCEPTED' | 'REJECTED') {
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+      include: { listing: { include: { category: { include: { parent: { select: { slug: true } } } } } } },
+    });
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (offer.buyerId !== buyerId) throw new ForbiddenException();
+    if (offer.status !== 'COUNTER_OFFERED') {
+      throw new BadRequestException('No counter offer to respond to');
+    }
+
+    const newStatus = action === 'ACCEPTED' ? 'ACCEPTED' : 'REJECTED';
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const o = await tx.offer.update({ where: { id: offerId }, data: { status: newStatus } });
+      if (newStatus === 'ACCEPTED') {
+        await tx.offer.updateMany({
+          where: { listingId: offer.listingId, status: { in: ['PENDING', 'COUNTER_OFFERED'] }, id: { not: offerId } },
+          data: { status: 'REJECTED' },
+        });
+      }
+      return o;
+    });
+
+    await this.prisma.notification.create({
+      data: {
+        userId: offer.listing.sellerId,
+        type: newStatus === 'ACCEPTED' ? 'offer.counter_accepted' : 'offer.counter_rejected',
+        title: newStatus === 'ACCEPTED' ? 'Karşı teklifiniz kabul edildi!' : 'Karşı teklifiniz reddedildi',
+        body: newStatus === 'ACCEPTED'
+          ? `"${offer.listing.title}" için ${offer.counterAmount?.toFixed(2)} ₺ karşı teklifiniz kabul edildi.`
+          : `"${offer.listing.title}" için karşı teklifiniz reddedildi.`,
         payload: { offerId, listingId: offer.listingId, listingSlug: buildListingSlug(offer.listing) },
       },
     });

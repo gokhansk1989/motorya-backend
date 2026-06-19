@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { OffersService } from './offers.service';
-import { CreateOfferDto, RespondOfferDto } from './dto/offers.dto';
+import { CreateOfferDto, RespondOfferDto, CounterOfferDto } from './dto/offers.dto';
 
 @Controller('offers')
 @UseGuards(AuthGuard('jwt'))
@@ -41,6 +41,16 @@ export class OffersController {
   @Patch(':id/respond')
   respond(@Param('id') id: string, @Request() req, @Body() dto: RespondOfferDto) {
     return this.offersService.respondOffer(id, req.user.id, dto);
+  }
+
+  @Patch(':id/counter')
+  counter(@Param('id') id: string, @Request() req, @Body() dto: CounterOfferDto) {
+    return this.offersService.counterOffer(id, req.user.id, dto);
+  }
+
+  @Patch(':id/respond-counter')
+  respondCounter(@Param('id') id: string, @Request() req, @Body('action') action: 'ACCEPTED' | 'REJECTED') {
+    return this.offersService.respondCounterOffer(id, req.user.id, action);
   }
 
   @Delete(':id')
