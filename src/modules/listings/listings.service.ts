@@ -632,7 +632,7 @@ export class ListingsService {
 
   async markSold(userId: string, listingId: string) {
     const listing = await this.prisma.listing.findFirst({
-      where: { id: listingId, userId, deletedAt: null },
+      where: { id: listingId, sellerId: userId, deletedAt: null },
     });
     if (!listing) throw new NotFoundException('Listing not found');
     if (!['ACTIVE', 'RESERVED'].includes(listing.status)) {
@@ -644,15 +644,15 @@ export class ListingsService {
       data: { status: ListingStatus.SOLD, reservedUntil: null },
     });
 
-    await this.search.deleteFromIndex(listingId).catch(() => null);
-    await this.notifyFavorites(listingId, listing.title, 'sold');
+    await this.search.removeListing(listingId).catch(() => null);
+    await this.notifyFavorites(listingId, listing.title, 'listing_sold', {});
 
     return updated;
   }
 
   async reserveListing(userId: string, listingId: string) {
     const listing = await this.prisma.listing.findFirst({
-      where: { id: listingId, userId, deletedAt: null },
+      where: { id: listingId, sellerId: userId, deletedAt: null },
     });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.status !== 'ACTIVE') {
@@ -662,13 +662,13 @@ export class ListingsService {
     const reservedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000);
     return this.prisma.listing.update({
       where: { id: listingId },
-      data: { status: 'RESERVED', reservedUntil },
+      data: { status: 'RESERVED' as any, reservedUntil },
     });
   }
 
   async unreserveListing(userId: string, listingId: string) {
     const listing = await this.prisma.listing.findFirst({
-      where: { id: listingId, userId, deletedAt: null },
+      where: { id: listingId, sellerId: userId, deletedAt: null },
     });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.status !== 'RESERVED') {

@@ -89,15 +89,11 @@ export class UsersService {
           take: 20,
           include: {
             author: { select: { id: true, displayName: true, avatarUrl: true } },
-            order: {
+            listing: {
               select: {
-                listing: {
-                  select: {
-                    id: true,
-                    title: true,
-                    images: { take: 1, orderBy: { sortOrder: 'asc' } },
-                  },
-                },
+                id: true,
+                title: true,
+                images: { take: 1, orderBy: { sortOrder: 'asc' } },
               },
             },
           },

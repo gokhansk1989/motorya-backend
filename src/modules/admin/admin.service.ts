@@ -20,43 +20,32 @@ export class AdminService {
       totalUsers,
       activeListings,
       pendingListings,
-      totalOrders,
-      openDisputes,
-      revenueResult,
+      soldListings,
     ] = await Promise.all([
       this.prisma.user.count({ where: { deletedAt: null } }),
       this.prisma.listing.count({ where: { status: 'ACTIVE', deletedAt: null } }),
       this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null } }),
-      this.prisma.order.count(),
-      this.prisma.dispute.count({ where: { status: 'OPEN' } }),
-      this.prisma.order.aggregate({
-        where: { status: 'COMPLETED' },
-        _sum: { commissionAmount: true },
-      }),
+      this.prisma.listing.count({ where: { status: 'SOLD', deletedAt: null } }),
     ]);
 
     return {
       totalUsers,
       activeListings,
       pendingListings,
-      totalOrders,
-      openDisputes,
-      totalRevenue: revenueResult._sum.commissionAmount ?? 0,
+      soldListings,
     };
   }
 
   async getNotificationSummary() {
-    const [pendingListings, openReports, openDisputes] = await Promise.all([
+    const [pendingListings, openReports] = await Promise.all([
       this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null } }),
       this.prisma.report.count({ where: { status: 'OPEN' } }),
-      this.prisma.dispute.count({ where: { status: 'OPEN' } }),
     ]);
 
     return {
       pendingListings,
       openReports,
-      openDisputes,
-      total: pendingListings + openReports + openDisputes,
+      total: pendingListings + openReports,
     };
   }
 

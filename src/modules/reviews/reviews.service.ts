@@ -16,7 +16,7 @@ export class ReviewsService {
   async createReview(authorId: string, dto: CreateReviewDto) {
     const listing = await this.prisma.listing.findUnique({
       where: { id: dto.listingId },
-      select: { id: true, status: true, userId: true },
+      select: { id: true, status: true, sellerId: true },
     });
 
     if (!listing) throw new NotFoundException('Listing not found');
@@ -24,12 +24,12 @@ export class ReviewsService {
       throw new BadRequestException('Reviews can only be left on sold listings');
     }
 
-    if (listing.userId === authorId) {
+    if (listing.sellerId === authorId) {
       throw new ForbiddenException('Seller cannot review their own listing');
     }
 
     const direction: ReviewDirection = 'BUYER_TO_SELLER';
-    const targetUserId = listing.userId;
+    const targetUserId = listing.sellerId;
 
     const existing = await this.prisma.review.findUnique({
       where: { listingId_direction: { listingId: dto.listingId, direction } },
