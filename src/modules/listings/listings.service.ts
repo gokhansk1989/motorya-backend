@@ -639,13 +639,30 @@ export class ListingsService {
       throw new BadRequestException('Only active or reserved listings can be marked as sold');
     }
 
-    const updated = await this.prisma.listing.update({
-      where: { id: listingId },
-      data: { status: ListingStatus.SOLD, reservedUntil: null },
-    });
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.listing.update({
+        where: { id: listingId },
+        data: { status: ListingStatus.SOLD, reservedUntil: null },
+      }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { salesCount: { increment: 1 } },
+      }),
+    ]);
 
     await this.search.removeListing(listingId).catch(() => null);
     await this.notifyFavorites(listingId, listing.title, 'listing_sold', {});
+
+    // Satıcıya tebrik bildirimi
+    await this.prisma.notification.create({
+      data: {
+        userId,
+        type: 'listing.sold',
+        title: 'Tebrikler, ilanınız satıldı! 🎉',
+        body: `"${listing.title}" ilanınızı başarıyla sattınız.`,
+        payload: { listingId, listingSlug: buildListingSlug({ ...listing, category: null as any }) },
+      },
+    }).catch(() => null);
 
     return updated;
   }
