@@ -103,6 +103,11 @@ export class ListingsController {
     return this.listingsService.getMyListings(req.user.id, status as any);
   }
 
+  @Get('price-guide')
+  getPriceGuide(@Query('categoryId') categoryId: string, @Query('brandId') brandId?: string) {
+    return this.listingsService.getPriceGuide(categoryId, brandId);
+  }
+
   @Get('by-ids')
   findByIds(@Query('ids') ids: string) {
     const idList = (ids || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 50);

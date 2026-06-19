@@ -718,4 +718,54 @@ export class ListingsService {
     });
     return { id: report.id, alreadyReported: false };
   }
+
+  async getPriceGuide(categoryId: string, brandId?: string) {
+    const where: any = {
+      categoryId,
+      deletedAt: null,
+      status: { in: ['ACTIVE', 'SOLD'] },
+    };
+    if (brandId) where.brandId = brandId;
+
+    const listings = await this.prisma.listing.findMany({
+      where,
+      select: { price: true, status: true },
+    });
+
+    if (listings.length === 0) return null;
+
+    const prices = listings.map(l => Number(l.price)).sort((a, b) => a - b);
+    const soldPrices = listings.filter(l => l.status === 'SOLD').map(l => Number(l.price)).sort((a, b) => a - b);
+    const activePrices = listings.filter(l => l.status === 'ACTIVE').map(l => Number(l.price));
+
+    const avg = (arr: number[]) => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+    const median = (arr: number[]) => {
+      if (!arr.length) return null;
+      const mid = Math.floor(arr.length / 2);
+      return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+    };
+
+    return {
+      totalCount: listings.length,
+      activeCount: activePrices.length,
+      soldCount: soldPrices.length,
+      all: {
+        min: prices[0],
+        max: prices[prices.length - 1],
+        avg: avg(prices),
+        median: median(prices),
+      },
+      active: activePrices.length ? {
+        min: Math.min(...activePrices),
+        max: Math.max(...activePrices),
+        avg: avg(activePrices),
+      } : null,
+      sold: soldPrices.length ? {
+        min: soldPrices[0],
+        max: soldPrices[soldPrices.length - 1],
+        avg: avg(soldPrices),
+        median: median(soldPrices),
+      } : null,
+    };
+  }
 }
