@@ -50,7 +50,11 @@ export class UsersService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    const fastResponder = await this.isFastResponder(userId);
+    const userWithResponder = { ...user, fastResponder };
+    const badges = this.getBadges(userWithResponder);
+    const trustScore = this.getTrustScore(userWithResponder);
+    return { ...userWithResponder, badges, trustScore };
   }
 
   async getPublicProfile(userId: string, viewerId?: string) {
@@ -103,7 +107,10 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
 
     const fastResponder = await this.isFastResponder(userId);
-    return { ...user, fastResponder };
+    const userWithResponder = { ...user, fastResponder };
+    const badges = this.getBadges(userWithResponder);
+    const trustScore = this.getTrustScore(userWithResponder);
+    return { ...userWithResponder, badges, trustScore };
   }
 
   // Son 30 konuşmada satıcının alıcıya ortalama yanıt süresi 60 dk altındaysa "Hızlı yanıt verir" rozeti
@@ -135,6 +142,62 @@ export class UsersService {
 
     if (sampleCount < 3) return false; // yeterli veri yoksa rozet gösterilmez
     return totalMinutes / sampleCount <= 60;
+  }
+
+  getBadges(user: {
+    ratingAvg: number;
+    ratingCount: number;
+    salesCount: number;
+    isFounder: boolean;
+    emailVerifiedAt: Date | null;
+    phoneVerifiedAt: Date | null;
+    identityVerifiedAt: Date | null;
+    fastResponder: boolean;
+  }) {
+    const badges: { key: string; label: string; icon: string; tier: 'gold' | 'silver' | 'blue' }[] = [];
+
+    if (user.identityVerifiedAt) badges.push({ key: 'identity_verified', label: 'Kimlik Doğrulandı', icon: '🪪', tier: 'gold' });
+    if (user.ratingAvg >= 4.5 && user.ratingCount >= 5) badges.push({ key: 'trusted_seller', label: 'Güvenilir Satıcı', icon: '⭐', tier: 'gold' });
+    if (user.salesCount >= 10) badges.push({ key: 'top_seller', label: 'Çok Satan', icon: '🏆', tier: 'gold' });
+    if (user.isFounder) badges.push({ key: 'founder', label: 'Kurucu Üye', icon: '🚀', tier: 'gold' });
+    if (user.fastResponder) badges.push({ key: 'fast_responder', label: 'Hızlı Yanıt', icon: '⚡', tier: 'silver' });
+    if (user.phoneVerifiedAt) badges.push({ key: 'phone_verified', label: 'Telefon Doğrulandı', icon: '📱', tier: 'silver' });
+    if (user.emailVerifiedAt) badges.push({ key: 'email_verified', label: 'E-posta Doğrulandı', icon: '✉️', tier: 'blue' });
+
+    return badges;
+  }
+
+  getTrustScore(user: {
+    ratingAvg: number;
+    ratingCount: number;
+    salesCount: number;
+    isFounder: boolean;
+    emailVerifiedAt: Date | null;
+    phoneVerifiedAt: Date | null;
+    identityVerifiedAt: Date | null;
+    fastResponder: boolean;
+  }): number {
+    let score = 0;
+
+    // Doğrulama (max 40 puan)
+    if (user.emailVerifiedAt) score += 10;
+    if (user.phoneVerifiedAt) score += 15;
+    if (user.identityVerifiedAt) score += 15;
+
+    // Satış başarısı (max 30 puan)
+    score += Math.min(user.salesCount * 2, 20);
+    if (user.salesCount >= 10) score += 10;
+
+    // Puanlama (max 20 puan)
+    if (user.ratingCount >= 1) score += Math.round(user.ratingAvg * 2); // max 10
+    if (user.ratingCount >= 5) score += 5;
+    if (user.ratingCount >= 10) score += 5;
+
+    // Davranış (max 10 puan)
+    if (user.fastResponder) score += 5;
+    if (user.isFounder) score += 5;
+
+    return Math.min(score, 100);
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
