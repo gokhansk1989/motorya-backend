@@ -1,13 +1,14 @@
 // ============================================================
-//  VİTES — Motosiklet Ekipman Pazarı · Veri Modeli
+//  MOTORYA — Motosiklet Ekipman Pazarı · Veri Modeli
 //  Prisma + PostgreSQL · mobil-hazır (web + Android + iOS)
 // ------------------------------------------------------------
 //  Tasarım ilkeleri:
 //   - Kimlikler CUID (tahmin edilemez, mobil senkron dostu)
 //   - Her kritik tabloda updatedAt + soft delete (deletedAt)
 //   - Para alanları Decimal(12,2), kuruş hatası yok
-//   - Emanet (escrow) bir durum makinesi (OrderStatus)
-//   - Çift yönlü yorum (alıcı<->satıcı), siparişe bağlı
+//   - Platform araya girmez: ilan ver, mesajlaş, anlaş (Letgo modeli)
+//   - Çift yönlü yorum (alıcı<->satıcı), ilan bazlı
+//   - RESERVED durumu 48 saat otomatik açılır
 //   - Ücretsiz->ücretli geçiş PlatformSetting + Plan ile feature-flag'li
 //   - Cihaz/oturum ve push token mobil için baştan modelde
 // ============================================================
@@ -33,7 +34,7 @@ enum UserRole {
 }
 
 enum UserStatus {
-  PENDING   // e-posta/telefon doğrulaması bekliyor
+  PENDING // e-posta/telefon doğrulaması bekliyor
   ACTIVE
   SUSPENDED // geçici askı
   BANNED
@@ -61,22 +62,22 @@ model User {
   ibanVerifiedAt     DateTime?
 
   // Banka/IBAN (satıcıya aktarım için; gerçek IBAN şifreli saklanır)
-  payoutIban   String?
-  payoutName   String?
+  payoutIban String?
+  payoutName String?
 
   // Denormalize itibar alanları (sipariş/yorum sonrası job ile güncellenir)
-  ratingAvg    Float    @default(0)
-  ratingCount  Int      @default(0)
-  salesCount   Int      @default(0)
-  isFounder    Boolean  @default(false) // "Kurucu Üye" rozeti
+  ratingAvg   Float   @default(0)
+  ratingCount Int     @default(0)
+  salesCount  Int     @default(0)
+  isFounder   Boolean @default(false) // "Kurucu Üye" rozeti
 
   emailVerificationToken  String?   @unique
   emailVerificationExpiry DateTime?
   passwordResetToken      String?   @unique
   passwordResetExpiry     DateTime?
 
-  adminMfaOtp        String?
-  adminMfaOtpExpiry  DateTime?
+  adminMfaOtp       String?
+  adminMfaOtpExpiry DateTime?
 
   vacationMode  Boolean   @default(false)
   vacationSince DateTime?
@@ -86,30 +87,26 @@ model User {
   deletedAt DateTime?
 
   // İlişkiler
-  listings        Listing[]
-  favorites       Favorite[]
-  offers          Offer[]
-  ordersAsBuyer   Order[]               @relation("BuyerOrders")
-  ordersAsSeller  Order[]               @relation("SellerOrders")
-  reviewsWritten  Review[]              @relation("ReviewAuthor")
-  reviewsReceived Review[]              @relation("ReviewTarget")
-  devices         Device[]
-  pushTokens      PushToken[]
-  verifications   VerificationRequest[]
-  subscription    Subscription?
-  notifications        Notification[]
-  webPushSubscriptions WebPushSubscription[]
-  savedSearches        SavedSearch[]
-  disputesOpened          Dispute[]                 @relation("DisputeOpener")
-  reportsMade             Report[]                  @relation("Reporter")
-  auditLogs               AuditLog[]                @relation("AuditActor")
-  payouts                 Payout[]
+  listings                 Listing[]
+  favorites                Favorite[]
+  offers                   Offer[]
+  reviewsWritten           Review[]                  @relation("ReviewAuthor")
+  reviewsReceived          Review[]                  @relation("ReviewTarget")
+  devices                  Device[]
+  pushTokens               PushToken[]
+  verifications            VerificationRequest[]
+  subscription             Subscription?
+  notifications            Notification[]
+  webPushSubscriptions     WebPushSubscription[]
+  savedSearches            SavedSearch[]
+  reportsMade              Report[]                  @relation("Reporter")
+  auditLogs                AuditLog[]                @relation("AuditActor")
   conversationParticipants ConversationParticipant[]
-  sentMessages            Message[]                 @relation("SentMessages")
-  following               UserFollow[]              @relation("Follower")
-  followers               UserFollow[]              @relation("Following")
-  blockedUsers            UserBlock[]               @relation("Blocker")
-  blockedBy               UserBlock[]               @relation("Blocked")
+  sentMessages             Message[]                 @relation("SentMessages")
+  following                UserFollow[]              @relation("Follower")
+  followers                UserFollow[]              @relation("Following")
+  blockedUsers             UserBlock[]               @relation("Blocker")
+  blockedBy                UserBlock[]               @relation("Blocked")
 
   @@index([status, createdAt])
   @@index([city])
@@ -127,9 +124,9 @@ model Device {
   userId           String
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   platform         Platform
-  model            String?   // "iPhone 15", "Pixel 8" vb.
-  refreshTokenHash String    // refresh token'ın hash'i; iptal/rotasyon için
-  appVersion       String?   // zorunlu güncelleme kontrolü için
+  model            String? // "iPhone 15", "Pixel 8" vb.
+  refreshTokenHash String // refresh token'ın hash'i; iptal/rotasyon için
+  appVersion       String? // zorunlu güncelleme kontrolü için
   lastSeenAt       DateTime  @default(now())
   createdAt        DateTime  @default(now())
   revokedAt        DateTime?
@@ -141,14 +138,14 @@ model Device {
 
 /// FCM (Android) / APNs (iOS) push bildirim anahtarları.
 model PushToken {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deviceId  String?
-  device    Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-  platform  Platform
-  token     String   @unique
-  createdAt DateTime @default(now())
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId   String?
+  device     Device?   @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  platform   Platform
+  token      String    @unique
+  createdAt  DateTime  @default(now())
   disabledAt DateTime?
 
   @@index([userId])
@@ -170,11 +167,11 @@ enum VerificationState {
 /// KYC inceleme kuyruğu (admin moderasyonu). Onaylanınca User üstündeki
 /// *VerifiedAt alanı set edilir.
 model VerificationRequest {
-  id         String            @id @default(cuid())
-  userId     String
-  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type       VerificationType
-  state      VerificationState @default(PENDING)
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        VerificationType
+  state       VerificationState @default(PENDING)
   // Sağlayıcı referansı / belge bağlantısı (şifreli depolanır)
   providerRef String?
   documentUrl String?
@@ -199,7 +196,7 @@ model Category {
   parentId  String?
   parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children  Category[] @relation("CategoryTree")
-  iconKey   String?    // arayüzdeki ikon eşlemesi
+  iconKey   String? // arayüzdeki ikon eşlemesi
   sortOrder Int        @default(0)
   isActive  Boolean    @default(true)
   listings  Listing[]
@@ -223,45 +220,48 @@ enum ListingGender {
 }
 
 enum ListingCondition {
-  NEW       // Sıfır / Etiketli
-  LIKE_NEW  // Çok iyi
-  GOOD      // İyi
-  FAIR      // İdare eder
+  NEW // Sıfır / Etiketli
+  LIKE_NEW // Çok iyi
+  GOOD // İyi
+  FAIR // İdare eder
 }
 
 enum ListingStatus {
   DRAFT
   PENDING_REVIEW // moderasyon kuyruğunda
   ACTIVE
-  RESERVED       // teklif/sipariş ile rezerve
+  RESERVED // teklif/sipariş ile rezerve
   SOLD
   REJECTED
   ARCHIVED
 }
 
 model Listing {
-  id          String           @id @default(cuid())
-  sellerId    String
-  seller      User             @relation(fields: [sellerId], references: [id])
-  categoryId  String
-  category    Category         @relation(fields: [categoryId], references: [id])
-  brandId     String?
-  brand       Brand?           @relation(fields: [brandId], references: [id])
+  id         String   @id @default(cuid())
+  sellerId   String
+  seller     User     @relation(fields: [sellerId], references: [id])
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  brandId    String?
+  brand      Brand?   @relation(fields: [brandId], references: [id])
 
-  title       String
-  description String
-  condition   ListingCondition
-  gender      ListingGender?   // Giyim kategorileri için
-  sizeLabel   String?          // "M (57-58)", "52", "43" vb.
-  price       Decimal          @db.Decimal(12, 2)
-  originalPrice Decimal?       @db.Decimal(12, 2) // üstü çizili fiyat
-  currency    String           @default("TRY")
-  city        String?
-  status      ListingStatus    @default(PENDING_REVIEW)
+  title         String
+  description   String
+  condition     ListingCondition
+  gender        ListingGender? // Giyim kategorileri için
+  sizeLabel     String? // "M (57-58)", "52", "43" vb.
+  price         Decimal          @db.Decimal(12, 2)
+  originalPrice Decimal?         @db.Decimal(12, 2) // üstü çizili fiyat
+  currency      String           @default("TRY")
+  city          String?
+  status        ListingStatus    @default(PENDING_REVIEW)
 
   // Para kazandıran alanlar (vitrin / öne çıkarma)
   isFeatured    Boolean   @default(false)
   featuredUntil DateTime?
+
+  // Rezervasyon — teklif/mesaj üzerine satıcı rezerve edebilir, 48 saat sonra otomatik açılır
+  reservedUntil DateTime?
 
   // Denormalize sayaçlar
   viewCount     Int @default(0)
@@ -275,7 +275,7 @@ model Listing {
   images        ListingImage[]
   favorites     Favorite[]
   offers        Offer[]
-  orders        Order[]
+  reviews       Review[]
   reports       Report[]
   conversations Conversation[]
 
@@ -363,157 +363,7 @@ model Offer {
 }
 
 // ============================================================
-//  3) SİPARİŞ & EMANET (ESCROW) DURUM MAKİNESİ
-// ------------------------------------------------------------
-//  Online akış:
-//  CREATED -> AWAITING_PAYMENT -> PAID_ESCROW -> SHIPPED
-//          -> DELIVERED -> COMPLETED (para satıcıya aktarılır)
-//  Elden akış:
-//  CREATED -> PAID_ESCROW (alıcı onaylar) -> DELIVERED (satıcı teslim eder)
-//          -> COMPLETED (alıcı teslim alındı der)
-//  Sapmalar: DISPUTED -> REFUNDED | (çözüm) COMPLETED, ya da CANCELLED
-// ============================================================
-
-enum PaymentMethod {
-  ONLINE
-  CASH // elden ödeme — sanal pos kullanılmaz
-}
-
-enum OrderStatus {
-  CREATED
-  AWAITING_PAYMENT
-  PAID_ESCROW // ödeme alındı, para emanette bekliyor
-  SHIPPED
-  DELIVERED
-  COMPLETED   // alıcı onayladı, satıcıya aktarıldı
-  DISPUTED
-  REFUNDED
-  CANCELLED
-}
-
-model Order {
-  id        String      @id @default(cuid())
-  listingId String
-  listing   Listing     @relation(fields: [listingId], references: [id])
-  buyerId   String
-  buyer     User        @relation("BuyerOrders", fields: [buyerId], references: [id])
-  sellerId  String
-  seller    User        @relation("SellerOrders", fields: [sellerId], references: [id])
-
-  status        OrderStatus   @default(CREATED)
-  paymentMethod PaymentMethod @default(ONLINE)
-
-  // Tutar/komisyon — komisyon oranı sipariş anında dondurulur (sonradan
-  // plan değişse bile bu sipariş etkilenmez).
-  amount           Decimal @db.Decimal(12, 2)
-  commissionRate   Decimal @db.Decimal(5, 4) @default(0) // 0.0800 = %8 (lansmanda 0)
-  commissionAmount Decimal @db.Decimal(12, 2) @default(0)
-  sellerPayout     Decimal @db.Decimal(12, 2) @default(0) // amount - commission
-  currency         String  @default("TRY")
-
-  // Durum geçiş zaman damgaları (izlenebilirlik)
-  paidAt          DateTime?
-  shippedAt       DateTime?
-  deliveredAt     DateTime?
-  completedAt     DateTime?
-  escrowReleasedAt DateTime?
-  cancelledAt     DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  payments Payment[]
-  shipment Shipment?
-  dispute  Dispute?
-  reviews  Review[]
-  payout   Payout?
-
-  @@index([buyerId, status])
-  @@index([sellerId, status])
-  @@index([status, createdAt])
-}
-
-model Shipment {
-  id          String   @id @default(cuid())
-  orderId     String   @unique
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  carrier     String?  // "Yurtiçi", "Aras" vb. — kargolu teslimat
-  trackingNo  String?
-  meetingNote String?  // elden teslimatta buluşma yeri/notu
-  shippedAt   DateTime?
-  deliveredAt DateTime?
-  createdAt   DateTime @default(now())
-}
-
-// ============================================================
-//  4) ÖDEME / SANAL POS
-// ============================================================
-
-enum PaymentProvider {
-  IYZICO
-  PAYTR
-  PARAM
-  SIPAY
-  CASH // elden ödeme kaydı
-}
-
-enum PaymentType {
-  CHARGE // alıcıdan tahsilat (emanete)
-  REFUND // alıcıya iade
-}
-
-enum PaymentStatus {
-  PENDING
-  SUCCEEDED
-  FAILED
-  REFUNDED
-}
-
-/// Sanal POS işlem kaydı. Sağlayıcı tarafındaki gerçek işlemin aynası.
-model Payment {
-  id          String          @id @default(cuid())
-  orderId     String
-  order       Order           @relation(fields: [orderId], references: [id])
-  provider    PaymentProvider
-  type        PaymentType     @default(CHARGE)
-  status      PaymentStatus   @default(PENDING)
-  amount      Decimal         @db.Decimal(12, 2)
-  currency    String          @default("TRY")
-  providerRef String?         // sağlayıcının işlem/iade referansı
-  rawPayload  Json?           // sağlayıcı yanıtı (denetim/uzlaşma için)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-
-  @@index([orderId])
-  @@index([provider, status])
-  @@index([status, createdAt])
-}
-
-enum PayoutStatus {
-  PENDING
-  PROCESSING
-  PAID
-  FAILED
-}
-
-/// Emanetten satıcıya aktarım (teslim onayı sonrası).
-model Payout {
-  id          String       @id @default(cuid())
-  orderId     String       @unique
-  order       Order        @relation(fields: [orderId], references: [id])
-  sellerId    String
-  seller      User         @relation(fields: [sellerId], references: [id])
-  amount      Decimal      @db.Decimal(12, 2)
-  status      PayoutStatus @default(PENDING)
-  providerRef String?
-  createdAt   DateTime     @default(now())
-  paidAt      DateTime?
-
-  @@index([sellerId, status])
-}
-
-// ============================================================
-//  5) ÇİFT YÖNLÜ YORUM & İTİBAR
+//  3) ÇİFT YÖNLÜ YORUM & İTİBAR
 // ============================================================
 
 enum ReviewDirection {
@@ -523,68 +373,27 @@ enum ReviewDirection {
 
 /// Yorum daima tamamlanmış bir siparişe bağlıdır (sahte yorum engeli).
 /// Her sipariş için her yönde en fazla 1 yorum.
+/// Yorum — ilan bazlı, her ilan için her yönde en fazla 1 yorum.
 model Review {
   id           String          @id @default(cuid())
-  orderId      String
-  order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  listingId    String
+  listing      Listing         @relation(fields: [listingId], references: [id], onDelete: Cascade)
   authorId     String
   author       User            @relation("ReviewAuthor", fields: [authorId], references: [id])
   targetUserId String
   targetUser   User            @relation("ReviewTarget", fields: [targetUserId], references: [id])
   direction    ReviewDirection
-  rating       Int             // 1..5
+  rating       Int // 1..5
   comment      String?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
-  @@unique([orderId, direction])
+  @@unique([listingId, direction])
   @@index([targetUserId, createdAt])
 }
 
 // ============================================================
-//  6) ANLAŞMAZLIK ÇÖZÜMÜ
-// ============================================================
-
-enum DisputeStatus {
-  OPEN
-  UNDER_REVIEW
-  RESOLVED_REFUND  // alıcıya iade
-  RESOLVED_RELEASE // satıcıya aktarım
-  CLOSED
-}
-
-model Dispute {
-  id            String           @id @default(cuid())
-  orderId       String           @unique
-  order         Order            @relation(fields: [orderId], references: [id])
-  openedById    String
-  openedBy      User             @relation("DisputeOpener", fields: [openedById], references: [id])
-  reason        String
-  status        DisputeStatus    @default(OPEN)
-  resolutionNote String?
-  resolvedBy    String?          // admin id
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  resolvedAt    DateTime?
-
-  messages DisputeMessage[]
-
-  @@index([status, createdAt])
-}
-
-model DisputeMessage {
-  id        String   @id @default(cuid())
-  disputeId String
-  dispute   Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
-  senderId  String
-  body      String
-  createdAt DateTime @default(now())
-
-  @@index([disputeId])
-}
-
-// ============================================================
-//  7) ÜYELİK PLANLARI & GELİR (ücretsiz -> ücretli)
+//  4) ÜYELİK PLANLARI & GELİR (ücretsiz -> ücretli)
 // ============================================================
 
 enum SubscriptionStatus {
@@ -597,16 +406,16 @@ enum SubscriptionStatus {
 /// Plan tanımı (Sürücü / Sürücü+ / Mağaza). commissionRate ve limitler
 /// burada tutulur; lansmanda komisyon 0, sonra güncellenir.
 model Plan {
-  id                String   @id @default(cuid())
-  name              String   @unique
-  slug              String   @unique
-  priceMonthly      Decimal  @db.Decimal(10, 2) @default(0)
-  commissionRate    Decimal  @db.Decimal(5, 4)  @default(0) // 0.0800 = %8
-  maxActiveListings Int?     // null = sınırsız
-  featuredCredits   Int      @default(0)        // aylık öne çıkarma hakkı
-  features          Json?    // serbest özellik bayrakları
-  isActive          Boolean  @default(true)
-  sortOrder         Int      @default(0)
+  id                String  @id @default(cuid())
+  name              String  @unique
+  slug              String  @unique
+  priceMonthly      Decimal @default(0) @db.Decimal(10, 2)
+  commissionRate    Decimal @default(0) @db.Decimal(5, 4) // 0.0800 = %8
+  maxActiveListings Int? // null = sınırsız
+  featuredCredits   Int     @default(0) // aylık öne çıkarma hakkı
+  features          Json? // serbest özellik bayrakları
+  isActive          Boolean @default(true)
+  sortOrder         Int     @default(0)
 
   subscriptions Subscription[]
 }
@@ -628,7 +437,7 @@ model Subscription {
 }
 
 // ============================================================
-//  8) MESAJLAŞMA
+//  5) MESAJLAŞMA
 // ------------------------------------------------------------
 //  Her konuşma (Conversation) iki kullanıcı arasında, isteğe
 //  bağlı bir ilan bağlamında açılır. Mesajlar AES-256-GCM ile
@@ -639,13 +448,13 @@ model Subscription {
 // ============================================================
 
 model Conversation {
-  id          String    @id @default(cuid())
-  listingId   String?
-  listing     Listing?  @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  id           String   @id @default(cuid())
+  listingId    String?
+  listing      Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
   // Şifreli konuşma anahtarı (AES-256 key, master key ile wrap edilmiş)
   encryptedKey String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   participants ConversationParticipant[]
   messages     Message[]
@@ -684,7 +493,7 @@ model Message {
 }
 
 // ============================================================
-//  9) MODERASYON, BİLDİRİM, AYAR & DENETİM
+//  6) MODERASYON, BİLDİRİM, AYAR & DENETİM
 // ============================================================
 
 enum ReportTargetType {
@@ -701,36 +510,36 @@ enum ReportStatus {
 
 /// İlan/üye şikayeti (sahte ürün, kural ihlali vb.).
 model Report {
-  id         String           @id @default(cuid())
-  reporterId String
-  reporter   User             @relation("Reporter", fields: [reporterId], references: [id])
-  targetType ReportTargetType
-  listingId  String?
-  listing    Listing?         @relation(fields: [listingId], references: [id])
+  id           String           @id @default(cuid())
+  reporterId   String
+  reporter     User             @relation("Reporter", fields: [reporterId], references: [id])
+  targetType   ReportTargetType
+  listingId    String?
+  listing      Listing?         @relation(fields: [listingId], references: [id])
   targetUserId String?
-  reason     String
-  status     ReportStatus     @default(OPEN)
-  createdAt  DateTime         @default(now())
-  reviewedAt DateTime?
+  reason       String
+  status       ReportStatus     @default(OPEN)
+  createdAt    DateTime         @default(now())
+  reviewedAt   DateTime?
 
   @@index([status, createdAt])
 }
 
 /// Kullanıcının kaydettiği arama kriterleri — yeni ilan eşleştiğinde bildirim tetikler.
 model SavedSearch {
-  id          String            @id @default(cuid())
-  userId      String
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  label       String
-  search      String?
-  categoryId  String?
-  brandId     String?
-  city        String?
-  condition   ListingCondition?
-  minPrice    Decimal?          @db.Decimal(12, 2)
-  maxPrice    Decimal?          @db.Decimal(12, 2)
+  id             String            @id @default(cuid())
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label          String
+  search         String?
+  categoryId     String?
+  brandId        String?
+  city           String?
+  condition      ListingCondition?
+  minPrice       Decimal?          @db.Decimal(12, 2)
+  maxPrice       Decimal?          @db.Decimal(12, 2)
   lastNotifiedAt DateTime?
-  createdAt   DateTime          @default(now())
+  createdAt      DateTime          @default(now())
 
   @@index([userId])
 }
@@ -740,7 +549,7 @@ model Notification {
   id        String    @id @default(cuid())
   userId    String
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type      String    // "order.shipped", "offer.received" vb.
+  type      String // "order.shipped", "offer.received" vb.
   title     String
   body      String?
   payload   Json?
@@ -773,21 +582,21 @@ model PlatformSetting {
 
 /// Blog yazıları — admin panelden yönetilir, frontend'de statik veri yerine buradan çekilir.
 model BlogPost {
-  id          String   @id @default(cuid())
-  slug        String   @unique
+  id          String    @id @default(cuid())
+  slug        String    @unique
   title       String
   excerpt     String
-  content     String   @db.Text
+  content     String    @db.Text
   category    String
-  tags        String[] @default([])
-  coverEmoji  String   @default("📝")
+  tags        String[]  @default([])
+  coverEmoji  String    @default("📝")
   coverImage  String?
-  author      String   @default("Motorya Editörü")
-  readTime    Int      @default(5)
-  published   Boolean  @default(false)
+  author      String    @default("Motorya Editörü")
+  readTime    Int       @default(5)
+  published   Boolean   @default(false)
   publishedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([slug])
   @@index([published, publishedAt])
@@ -796,7 +605,7 @@ model BlogPost {
 /// Servis entegrasyonları (SendGrid, PayTR vb.) — config JSON şifreli değil, hassas alanlar maskelenir
 model Integration {
   id        String   @id @default(cuid())
-  key       String   @unique  // 'sendgrid', 'paytr', 'netgsm' vb.
+  key       String   @unique // 'sendgrid', 'paytr', 'netgsm' vb.
   name      String
   enabled   Boolean  @default(false)
   config    Json     @default("{}")
@@ -823,7 +632,7 @@ model AuditLog {
   id        String   @id @default(cuid())
   actorId   String
   actor     User     @relation("AuditActor", fields: [actorId], references: [id])
-  action    String   // "listing.approve", "user.suspend" vb.
+  action    String // "listing.approve", "user.suspend" vb.
   entity    String
   entityId  String
   meta      Json?

@@ -170,4 +170,25 @@ export class ListingsController {
   ) {
     return this.listingsService.reportListing(req.user.id, id, reason, description);
   }
+
+  @Patch(':id/sold')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  markSold(@Param('id') id: string, @Request() req) {
+    return this.listingsService.markSold(req.user.id, id);
+  }
+
+  @Patch(':id/reserve')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  reserve(@Param('id') id: string, @Request() req) {
+    return this.listingsService.reserveListing(req.user.id, id);
+  }
+
+  @Patch(':id/unreserve')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  unreserve(@Param('id') id: string, @Request() req) {
+    return this.listingsService.unreserveListing(req.user.id, id);
+  }
 }

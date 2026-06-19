@@ -2,7 +2,7 @@ import { IsString, IsInt, IsOptional, Min, Max } from 'class-validator';
 
 export class CreateReviewDto {
   @IsString()
-  orderId: string;
+  listingId: string;
 
   @IsInt()
   @Min(1)

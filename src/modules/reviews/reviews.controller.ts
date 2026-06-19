@@ -31,9 +31,8 @@ export class ReviewsController {
     return this.reviewsService.getReviewsForUser(userId, direction);
   }
 
-  @Get('order/:orderId')
-  @UseGuards(AuthGuard('jwt'))
-  getForOrder(@Param('orderId') orderId: string, @Request() req) {
-    return this.reviewsService.getReviewsForOrder(orderId, req.user.id);
+  @Get('listing/:listingId')
+  getForListing(@Param('listingId') listingId: string) {
+    return this.reviewsService.getReviewsForListing(listingId);
   }
 }

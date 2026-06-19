@@ -630,6 +630,57 @@ export class ListingsService {
     return { indexed: listings.length };
   }
 
+  async markSold(userId: string, listingId: string) {
+    const listing = await this.prisma.listing.findFirst({
+      where: { id: listingId, userId, deletedAt: null },
+    });
+    if (!listing) throw new NotFoundException('Listing not found');
+    if (!['ACTIVE', 'RESERVED'].includes(listing.status)) {
+      throw new BadRequestException('Only active or reserved listings can be marked as sold');
+    }
+
+    const updated = await this.prisma.listing.update({
+      where: { id: listingId },
+      data: { status: ListingStatus.SOLD, reservedUntil: null },
+    });
+
+    await this.search.deleteFromIndex(listingId).catch(() => null);
+    await this.notifyFavorites(listingId, listing.title, 'sold');
+
+    return updated;
+  }
+
+  async reserveListing(userId: string, listingId: string) {
+    const listing = await this.prisma.listing.findFirst({
+      where: { id: listingId, userId, deletedAt: null },
+    });
+    if (!listing) throw new NotFoundException('Listing not found');
+    if (listing.status !== 'ACTIVE') {
+      throw new BadRequestException('Only active listings can be reserved');
+    }
+
+    const reservedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    return this.prisma.listing.update({
+      where: { id: listingId },
+      data: { status: 'RESERVED', reservedUntil },
+    });
+  }
+
+  async unreserveListing(userId: string, listingId: string) {
+    const listing = await this.prisma.listing.findFirst({
+      where: { id: listingId, userId, deletedAt: null },
+    });
+    if (!listing) throw new NotFoundException('Listing not found');
+    if (listing.status !== 'RESERVED') {
+      throw new BadRequestException('Listing is not reserved');
+    }
+
+    return this.prisma.listing.update({
+      where: { id: listingId },
+      data: { status: ListingStatus.ACTIVE, reservedUntil: null },
+    });
+  }
+
   async reportListing(reporterId: string, listingId: string, reason: string, description?: string) {
     const listing = await this.prisma.listing.findFirst({ where: { id: listingId, deletedAt: null } });
     if (!listing) throw new NotFoundException('Listing not found');

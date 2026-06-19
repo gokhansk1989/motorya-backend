@@ -14,30 +14,31 @@ export class ReviewsService {
   constructor(private prisma: PrismaService) {}
 
   async createReview(authorId: string, dto: CreateReviewDto) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: dto.orderId },
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: dto.listingId },
+      select: { id: true, status: true, userId: true },
     });
 
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== 'COMPLETED') {
-      throw new BadRequestException('Reviews can only be left on completed orders');
+    if (!listing) throw new NotFoundException('Listing not found');
+    if (listing.status !== 'SOLD') {
+      throw new BadRequestException('Reviews can only be left on sold listings');
     }
 
-    const isBuyer = order.buyerId === authorId;
-    const isSeller = order.sellerId === authorId;
-    if (!isBuyer && !isSeller) throw new ForbiddenException();
+    if (listing.userId === authorId) {
+      throw new ForbiddenException('Seller cannot review their own listing');
+    }
 
-    const direction: ReviewDirection = isBuyer ? 'BUYER_TO_SELLER' : 'SELLER_TO_BUYER';
-    const targetUserId = isBuyer ? order.sellerId : order.buyerId;
+    const direction: ReviewDirection = 'BUYER_TO_SELLER';
+    const targetUserId = listing.userId;
 
     const existing = await this.prisma.review.findUnique({
-      where: { orderId_direction: { orderId: dto.orderId, direction } },
+      where: { listingId_direction: { listingId: dto.listingId, direction } },
     });
-    if (existing) throw new ConflictException('You already reviewed this order');
+    if (existing) throw new ConflictException('You already reviewed this listing');
 
     const review = await this.prisma.review.create({
       data: {
-        orderId: dto.orderId,
+        listingId: dto.listingId,
         authorId,
         targetUserId,
         direction,
@@ -46,7 +47,6 @@ export class ReviewsService {
       },
     });
 
-    // Hedef kullanıcının denormalize itibar alanlarını güncelle
     await this.updateUserRating(targetUserId);
 
     return review;
@@ -58,20 +58,14 @@ export class ReviewsService {
       orderBy: { createdAt: 'desc' },
       include: {
         author: { select: { id: true, displayName: true, avatarUrl: true } },
-        order: { select: { id: true, listing: { select: { id: true, title: true } } } },
+        listing: { select: { id: true, title: true } },
       },
     });
   }
 
-  async getReviewsForOrder(orderId: string, requesterId: string) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.buyerId !== requesterId && order.sellerId !== requesterId) {
-      throw new ForbiddenException();
-    }
-
+  async getReviewsForListing(listingId: string) {
     return this.prisma.review.findMany({
-      where: { orderId },
+      where: { listingId },
       include: {
         author: { select: { id: true, displayName: true, avatarUrl: true } },
       },
