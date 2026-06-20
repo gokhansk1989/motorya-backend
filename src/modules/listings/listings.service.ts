@@ -27,6 +27,43 @@ function toSlug(text: string): string {
 
 // /ilan/{l1}-{l2}-{title}-{city}-{id} formatında slug üretir.
 // category.parentId varsa l2, parent ise l1; yoksa sadece l1 kullanılır.
+// İlanın mevcut alanlarından otomatik etiket üretir.
+// Kullanıcı müdahalesi olmadan arka planda çalışır.
+function buildAutoTags(fields: {
+  brandName?: string | null;
+  categoryName?: string | null;
+  city?: string | null;
+  sizeLabel?: string | null;
+  condition?: string | null;
+  title?: string | null;
+}): string[] {
+  const conditionMap: Record<string, string> = {
+    NEW: 'sifir',
+    LIKE_NEW: 'sifir-gibi',
+    GOOD: 'iyi',
+    FAIR: 'makul',
+    POOR: 'kullanilmis',
+  };
+
+  const tags = new Set<string>();
+
+  if (fields.brandName) tags.add(toSlug(fields.brandName));
+  if (fields.categoryName) tags.add(toSlug(fields.categoryName));
+  if (fields.city) tags.add(toSlug(fields.city));
+  if (fields.sizeLabel) tags.add(toSlug(fields.sizeLabel));
+  if (fields.condition && conditionMap[fields.condition]) tags.add(conditionMap[fields.condition]);
+
+  // Başlıktan anlamlı kelimeler: 4+ karakter, alfasayısal
+  if (fields.title) {
+    fields.title.split(/\s+/).forEach(w => {
+      const slug = toSlug(w);
+      if (slug.length >= 4) tags.add(slug);
+    });
+  }
+
+  return Array.from(tags).slice(0, 20);
+}
+
 export function buildListingSlug(listing: {
   id: string;
   title: string;
@@ -145,6 +182,20 @@ export class ListingsService {
   async createListing(sellerId: string, dto: CreateListingDto) {
     const { imageUrls = [], ...rest } = dto;
 
+    const [category, brand] = await Promise.all([
+      rest.categoryId ? this.prisma.category.findUnique({ where: { id: rest.categoryId } }) : null,
+      rest.brandId ? this.prisma.brand.findUnique({ where: { id: rest.brandId } }) : null,
+    ]);
+
+    const tags = buildAutoTags({
+      brandName: brand?.name,
+      categoryName: category?.name,
+      city: rest.city,
+      sizeLabel: rest.sizeLabel,
+      condition: rest.condition,
+      title: rest.title,
+    });
+
     const listing = await this.prisma.listing.create({
       data: {
         ...rest,
@@ -155,6 +206,7 @@ export class ListingsService {
         originalPrice: rest.originalPrice ?? null,
         sellerId,
         status: 'PENDING_REVIEW',
+        tags,
         images: {
           create: imageUrls.map((url, i) => ({ url, sortOrder: i })),
         },
@@ -393,6 +445,23 @@ export class ListingsService {
 
     const { imageUrls, ...rest } = dto;
 
+    const categoryId = rest.categoryId ?? listing.categoryId;
+    const brandId = rest.brandId !== undefined ? (rest.brandId || null) : listing.brandId;
+
+    const [category, brand] = await Promise.all([
+      categoryId ? this.prisma.category.findUnique({ where: { id: categoryId } }) : null,
+      brandId ? this.prisma.brand.findUnique({ where: { id: brandId } }) : null,
+    ]);
+
+    const tags = buildAutoTags({
+      brandName: brand?.name,
+      categoryName: category?.name,
+      city: rest.city ?? listing.city,
+      sizeLabel: rest.sizeLabel ?? listing.sizeLabel,
+      condition: rest.condition ?? listing.condition,
+      title: rest.title ?? listing.title,
+    });
+
     return this.prisma.$transaction(async (tx) => {
       if (imageUrls !== undefined) {
         await tx.listingImage.deleteMany({ where: { listingId: id } });
@@ -412,6 +481,7 @@ export class ListingsService {
           city: rest.city === '' ? null : rest.city,
           sizeLabel: rest.sizeLabel === '' ? null : rest.sizeLabel,
           status: newStatus as any,
+          tags,
         },
         include: { images: { orderBy: { sortOrder: 'asc' } }, category: true, brand: true, seller: true },
       });
