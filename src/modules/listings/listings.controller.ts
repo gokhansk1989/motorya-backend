@@ -46,6 +46,13 @@ export class ListingsController {
   }
 
   // ── Admin: Category CRUD ─────────────────────────────────────────────────
+  @Get('admin/categories')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  adminGetCategories() {
+    return this.listingsService.adminGetCategories();
+  }
+
   @Post('admin/categories')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('SUPER_ADMIN', 'ADMIN')

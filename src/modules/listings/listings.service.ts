@@ -119,7 +119,11 @@ export class ListingsService {
   }
 
   async getCategories() {
-    return this.prisma.category.findMany({ orderBy: { name: 'asc' } });
+    return this.prisma.category.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } });
+  }
+
+  async adminGetCategories() {
+    return this.prisma.category.findMany({ orderBy: { sortOrder: 'asc' } });
   }
 
   async getCategoryBySlug(slug: string) {
