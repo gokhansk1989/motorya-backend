@@ -40,7 +40,7 @@ coverage/
 test-results/
 
 # Prisma
-prisma/migrations/
+# prisma/migrations/ — migration scriptleri takip edilmeli
 
 # OS
 .DS_Store
