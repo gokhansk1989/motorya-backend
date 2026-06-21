@@ -159,6 +159,36 @@ export class ListingsService {
     return this.prisma.brand.findMany({ orderBy: { name: 'asc' } });
   }
 
+  async getBrandsByCategory(categorySlug: string) {
+    const categoryIds = await this.resolveCategoryIds(undefined, categorySlug);
+    if (!categoryIds || categoryIds.length === 0) {
+      throw new NotFoundException('Category not found');
+    }
+
+    const grouped = await this.prisma.listing.groupBy({
+      by: ['brandId'],
+      where: {
+        categoryId: { in: categoryIds },
+        status: 'ACTIVE',
+        deletedAt: null,
+        brandId: { not: null },
+      },
+      _count: { id: true },
+    });
+
+    if (grouped.length === 0) return [];
+
+    const brandIds = grouped.map(g => g.brandId as string);
+    const brands = await this.prisma.brand.findMany({
+      where: { id: { in: brandIds } },
+      select: { id: true, name: true, slug: true, logoUrl: true },
+      orderBy: { name: 'asc' },
+    });
+
+    const countMap = new Map(grouped.map(g => [g.brandId as string, g._count.id]));
+    return brands.map(b => ({ ...b, listingCount: countMap.get(b.id) ?? 0 }));
+  }
+
   async adminCreateCategory(data: { name: string; slug: string; parentId?: string; sortOrder?: number }) {
     return this.prisma.category.create({ data: { ...data, isActive: true } });
   }

@@ -20,21 +20,46 @@ export class ReviewsService {
     });
 
     if (!listing) throw new NotFoundException('Listing not found');
-    if (listing.status !== 'SOLD') {
-      throw new BadRequestException('Reviews can only be left on sold listings');
+
+    const blockedStatuses = ['DRAFT', 'PENDING_REVIEW', 'REJECTED'];
+    if (blockedStatuses.includes(listing.status)) {
+      throw new BadRequestException('Reviews cannot be left on listings with status: ' + listing.status);
     }
 
-    if (listing.sellerId === authorId) {
-      throw new ForbiddenException('Seller cannot review their own listing');
-    }
+    let direction: ReviewDirection;
+    let targetUserId: string;
 
-    const direction: ReviewDirection = 'BUYER_TO_SELLER';
-    const targetUserId = listing.sellerId;
+    if (authorId === listing.sellerId) {
+      // Seller reviewing the buyer
+      direction = 'SELLER_TO_BUYER';
+      if (!dto.buyerId) {
+        throw new BadRequestException('buyerId is required for seller-to-buyer reviews');
+      }
+      // Verify buyer has an ACCEPTED offer on this listing
+      const offer = await this.prisma.offer.findFirst({
+        where: { listingId: dto.listingId, buyerId: dto.buyerId, status: 'ACCEPTED' },
+      });
+      if (!offer) {
+        throw new BadRequestException('Buyer does not have an accepted offer on this listing');
+      }
+      targetUserId = dto.buyerId;
+    } else {
+      // Buyer reviewing the seller
+      direction = 'BUYER_TO_SELLER';
+      // Verify author has an ACCEPTED offer on this listing
+      const offer = await this.prisma.offer.findFirst({
+        where: { listingId: dto.listingId, buyerId: authorId, status: 'ACCEPTED' },
+      });
+      if (!offer) {
+        throw new BadRequestException('You do not have an accepted offer on this listing');
+      }
+      targetUserId = listing.sellerId;
+    }
 
     const existing = await this.prisma.review.findUnique({
       where: { listingId_direction: { listingId: dto.listingId, direction } },
     });
-    if (existing) throw new ConflictException('You already reviewed this listing');
+    if (existing) throw new ConflictException('A review already exists for this listing in this direction');
 
     const review = await this.prisma.review.create({
       data: {
