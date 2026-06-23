@@ -17,6 +17,11 @@ export class CreateCategoryDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  iconKey?: string;
 }
 
 export class UpdateCategoryDto {
@@ -42,6 +47,11 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  iconKey?: string;
 }
 
 export class CreateBrandDto {

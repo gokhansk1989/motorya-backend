@@ -189,11 +189,11 @@ export class ListingsService {
     return brands.map(b => ({ ...b, listingCount: countMap.get(b.id) ?? 0 }));
   }
 
-  async adminCreateCategory(data: { name: string; slug: string; parentId?: string; sortOrder?: number }) {
+  async adminCreateCategory(data: { name: string; slug: string; parentId?: string; sortOrder?: number; iconKey?: string }) {
     return this.prisma.category.create({ data: { ...data, isActive: true } });
   }
 
-  async adminUpdateCategory(id: string, data: { name?: string; slug?: string; parentId?: string; sortOrder?: number; isActive?: boolean }) {
+  async adminUpdateCategory(id: string, data: { name?: string; slug?: string; parentId?: string; sortOrder?: number; isActive?: boolean; iconKey?: string }) {
     return this.prisma.category.update({ where: { id }, data });
   }
 
