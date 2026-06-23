@@ -103,6 +103,13 @@ export class ListingsController {
     return this.listingsService.adminDeleteBrand(id);
   }
 
+  @Patch('admin/listings/:id')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  adminUpdateListing(@Param('id') id: string, @Body() dto: UpdateListingDto) {
+    return this.listingsService.adminUpdateListing(id, dto);
+  }
+
   @Get()
   @UseGuards(OptionalJwtGuard)
   findAll(@Query() query: ListingsQueryDto, @Request() req) {

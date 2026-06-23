@@ -469,6 +469,15 @@ export class ListingsService {
     return results;
   }
 
+  async adminUpdateListing(id: string, dto: UpdateListingDto) {
+    const listing = await this.prisma.listing.findFirst({ where: { id, deletedAt: null } });
+    if (!listing) throw new NotFoundException('Listing not found');
+    return this.prisma.listing.update({
+      where: { id },
+      data: { ...(dto.categoryId && { categoryId: dto.categoryId }) },
+    });
+  }
+
   async updateListing(id: string, sellerId: string, dto: UpdateListingDto) {
     const listing = await this.prisma.listing.findFirst({ where: { id, deletedAt: null } });
     if (!listing) throw new NotFoundException('Listing not found');
