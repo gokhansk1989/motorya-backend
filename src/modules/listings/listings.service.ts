@@ -245,7 +245,7 @@ export class ListingsService {
           create: imageUrls.map((url, i) => ({ url, sortOrder: i })),
         },
       },
-      include: { images: true, category: { include: { parent: { select: { slug: true } } } }, brand: true, seller: { select: { email: true, displayName: true } } },
+      include: { images: true, category: { include: { parent: { select: { slug: true, name: true } } } }, brand: true, seller: { select: { email: true, displayName: true } } },
     });
 
     // Satıcıya bildirim + mail
@@ -330,7 +330,7 @@ export class ListingsService {
         include: {
           images: { orderBy: { sortOrder: 'asc' }, take: 1 },
           seller: { select: { id: true, displayName: true, avatarUrl: true, ratingAvg: true } },
-          category: { select: { id: true, name: true, slug: true, parentId: true, parent: { select: { slug: true } } } },
+          category: { select: { id: true, name: true, slug: true, parentId: true, parent: { select: { slug: true, name: true } } } },
           brand: { select: { id: true, name: true } },
         },
       }),
@@ -392,7 +392,7 @@ export class ListingsService {
             createdAt: true,
           },
         },
-        category: { include: { parent: { select: { slug: true } } } },
+        category: { include: { parent: { select: { slug: true, name: true } } } },
         brand: true,
       },
     });
@@ -591,7 +591,7 @@ export class ListingsService {
       orderBy: { createdAt: 'desc' },
       include: {
         images: { orderBy: { sortOrder: 'asc' }, take: 1 },
-        category: { include: { parent: { select: { slug: true } } } },
+        category: { include: { parent: { select: { slug: true, name: true } } } },
       },
     });
     return listings.map(l => ({ ...l, slug: buildListingSlug(l) }));
@@ -631,7 +631,7 @@ export class ListingsService {
           include: {
             images: { orderBy: { sortOrder: 'asc' }, take: 1 },
             seller: { select: { id: true, displayName: true, avatarUrl: true } },
-            category: { include: { parent: { select: { slug: true } } } },
+            category: { include: { parent: { select: { slug: true, name: true } } } },
           },
         },
       },
@@ -691,7 +691,7 @@ export class ListingsService {
       this.prisma.favorite.findMany({ where: { listingId }, select: { userId: true } }),
       listingSlug ? Promise.resolve(null) : this.prisma.listing.findFirst({
         where: { id: listingId },
-        include: { category: { include: { parent: { select: { slug: true } } } } },
+        include: { category: { include: { parent: { select: { slug: true, name: true } } } } },
       }),
     ]);
     const slugUrl = listingSlug ?? (listingForSlug ? buildListingSlug(listingForSlug) : listingId);
