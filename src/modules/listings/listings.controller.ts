@@ -19,6 +19,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ListingsService } from './listings.service';
 import { CreateListingDto, UpdateListingDto, ListingsQueryDto } from './dto/listings.dto';
+import { CreateCategoryDto, UpdateCategoryDto, CreateBrandDto, UpdateBrandDto } from './dto/admin-category.dto';
 
 @Controller('listings')
 export class ListingsController {
@@ -61,14 +62,14 @@ export class ListingsController {
   @Post('admin/categories')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('SUPER_ADMIN', 'ADMIN')
-  adminCreateCategory(@Body() body: { name: string; slug: string; parentId?: string; sortOrder?: number }) {
+  adminCreateCategory(@Body() body: CreateCategoryDto) {
     return this.listingsService.adminCreateCategory(body);
   }
 
   @Put('admin/categories/:id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('SUPER_ADMIN', 'ADMIN')
-  adminUpdateCategory(@Param('id') id: string, @Body() body: { name?: string; slug?: string; parentId?: string; sortOrder?: number; isActive?: boolean }) {
+  adminUpdateCategory(@Param('id') id: string, @Body() body: UpdateCategoryDto) {
     return this.listingsService.adminUpdateCategory(id, body);
   }
 
@@ -84,14 +85,14 @@ export class ListingsController {
   @Post('admin/brands')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('SUPER_ADMIN', 'ADMIN')
-  adminCreateBrand(@Body() body: { name: string; slug: string; logoUrl?: string }) {
+  adminCreateBrand(@Body() body: CreateBrandDto) {
     return this.listingsService.adminCreateBrand(body);
   }
 
   @Put('admin/brands/:id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('SUPER_ADMIN', 'ADMIN')
-  adminUpdateBrand(@Param('id') id: string, @Body() body: { name?: string; slug?: string; logoUrl?: string }) {
+  adminUpdateBrand(@Param('id') id: string, @Body() body: UpdateBrandDto) {
     return this.listingsService.adminUpdateBrand(id, body);
   }
 

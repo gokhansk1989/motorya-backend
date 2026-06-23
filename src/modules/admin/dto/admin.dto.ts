@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { UserStatus } from '@prisma/client';
 
 export class ModerateListingDto {
@@ -7,6 +7,7 @@ export class ModerateListingDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   note?: string;
 }
 
@@ -16,5 +17,6 @@ export class ModerateUserDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   note?: string;
 }

@@ -7,6 +7,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { join } from 'path';
@@ -30,6 +31,7 @@ const WEBP_QUALITY = 82;
 export class UploadController {
   @Post('images')
   @UseGuards(AuthGuard('jwt'))
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @UseInterceptors(
     FilesInterceptor('files', 8, {
       storage: memoryStorage(),
