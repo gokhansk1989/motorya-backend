@@ -194,10 +194,43 @@ export class ListingsService {
   }
 
   async adminUpdateCategory(id: string, data: { name?: string; slug?: string; parentId?: string; sortOrder?: number; isActive?: boolean; iconKey?: string }) {
+    if (data.parentId) {
+      if (data.parentId === id) {
+        throw new BadRequestException('Bir kategori kendi üst kategorisi olamaz');
+      }
+      const descendants = await this.getDescendantCategoryIds(id);
+      if (descendants.has(data.parentId)) {
+        throw new BadRequestException('Bir kategori kendi alt kategorisinin altına taşınamaz');
+      }
+    }
     return this.prisma.category.update({ where: { id }, data });
   }
 
+  private async getDescendantCategoryIds(rootId: string): Promise<Set<string>> {
+    const result = new Set<string>();
+    let queue = [rootId];
+    while (queue.length > 0) {
+      const children = await this.prisma.category.findMany({
+        where: { parentId: { in: queue } },
+        select: { id: true },
+      });
+      queue = children.map((c) => c.id).filter((cid) => !result.has(cid));
+      queue.forEach((cid) => result.add(cid));
+    }
+    return result;
+  }
+
   async adminDeleteCategory(id: string) {
+    const [childCount, listingCount] = await Promise.all([
+      this.prisma.category.count({ where: { parentId: id } }),
+      this.prisma.listing.count({ where: { categoryId: id, deletedAt: null } }),
+    ]);
+    if (childCount > 0) {
+      throw new BadRequestException('Bu kategorinin alt kategorileri var — önce onları silin');
+    }
+    if (listingCount > 0) {
+      throw new BadRequestException(`Bu kategoride ${listingCount} ilan var — kategori silinemiyor`);
+    }
     await this.prisma.category.delete({ where: { id } });
   }
 
