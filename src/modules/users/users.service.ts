@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SearchService } from '../search/search.service';
 import { SocialService } from '../social/social.service';
 import { UpdateProfileDto, ChangePasswordDto } from './dto/users.dto';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class UsersService {
@@ -17,6 +18,7 @@ export class UsersService {
     private prisma: PrismaService,
     private search: SearchService,
     private social: SocialService,
+    private audit: AuditService,
   ) {}
 
   async getProfile(userId: string) {
@@ -214,7 +216,7 @@ export class UsersService {
     });
   }
 
-  async changePassword(userId: string, dto: ChangePasswordDto) {
+  async changePassword(userId: string, dto: ChangePasswordDto, ip?: string, userAgent?: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -227,6 +229,7 @@ export class UsersService {
 
     const hash = await bcrypt.hash(dto.newPassword, 10);
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } });
+    this.audit.log({ actorId: userId, action: 'user.password_change', entity: 'User', entityId: userId, ip, userAgent });
     return { success: true };
   }
 

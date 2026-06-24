@@ -12,6 +12,7 @@ import { SearchService, ListingDocument } from '../search/search.service';
 import { SocialService } from '../social/social.service';
 import { MailService } from '../mail/mail.service';
 import { WebPushService } from '../users/webpush.service';
+import { AuditService } from '../audit/audit.service';
 
 // Türkçe karakterleri latinize edip URL-safe slug üretir
 function toSlug(text: string): string {
@@ -94,6 +95,7 @@ export class ListingsService {
     private social: SocialService,
     private mail: MailService,
     private webPush: WebPushService,
+    private audit: AuditService,
   ) {}
 
   private toSearchDoc(listing: any): ListingDocument {
@@ -301,6 +303,8 @@ export class ListingsService {
       (listing.seller as any).displayName,
       listing.title,
     ).catch(() => null);
+
+    this.audit.log({ actorId: sellerId, action: 'listing.create', entity: 'Listing', entityId: listing.id, meta: { title: listing.title } });
 
     return { ...listing, slug: buildListingSlug(listing) };
   }
@@ -624,6 +628,8 @@ export class ListingsService {
         }).catch(() => null);
       }
 
+      this.audit.log({ actorId: sellerId, action: 'listing.update', entity: 'Listing', entityId: id });
+
       return updated;
     });
   }
@@ -656,6 +662,8 @@ export class ListingsService {
       this.search.removeListing(id).catch(() => null);
     }
 
+    this.audit.log({ actorId: sellerId, action: 'listing.status_change', entity: 'Listing', entityId: id, meta: { from: listing.status, to: newStatus } });
+
     return updated;
   }
 
@@ -673,6 +681,7 @@ export class ListingsService {
     });
 
     this.search.removeListing(id).catch(() => null);
+    this.audit.log({ actorId: sellerId, action: 'listing.delete', entity: 'Listing', entityId: id, meta: { title: listing.title } });
 
     return { success: true };
   }
@@ -860,6 +869,8 @@ export class ListingsService {
       },
     }).catch(() => null);
 
+    this.audit.log({ actorId: userId, action: 'listing.status_change', entity: 'Listing', entityId: listingId, meta: { from: listing.status, to: 'SOLD' } });
+
     return updated;
   }
 
@@ -873,10 +884,12 @@ export class ListingsService {
     }
 
     const reservedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000);
-    return this.prisma.listing.update({
+    const updated = await this.prisma.listing.update({
       where: { id: listingId },
       data: { status: 'RESERVED' as any, reservedUntil },
     });
+    this.audit.log({ actorId: userId, action: 'listing.status_change', entity: 'Listing', entityId: listingId, meta: { from: listing.status, to: 'RESERVED' } });
+    return updated;
   }
 
   async unreserveListing(userId: string, listingId: string) {
@@ -888,10 +901,12 @@ export class ListingsService {
       throw new BadRequestException('Listing is not reserved');
     }
 
-    return this.prisma.listing.update({
+    const updated = await this.prisma.listing.update({
       where: { id: listingId },
       data: { status: ListingStatus.ACTIVE, reservedUntil: null },
     });
+    this.audit.log({ actorId: userId, action: 'listing.status_change', entity: 'Listing', entityId: listingId, meta: { from: 'RESERVED', to: 'ACTIVE' } });
+    return updated;
   }
 
   async reportListing(reporterId: string, listingId: string, reason: string, description?: string) {
@@ -912,6 +927,8 @@ export class ListingsService {
         status: 'OPEN',
       },
     });
+    this.audit.log({ actorId: reporterId, action: 'report.submit', entity: 'Report', entityId: report.id, meta: { listingId, reason } });
+
     return { id: report.id, alreadyReported: false };
   }
 

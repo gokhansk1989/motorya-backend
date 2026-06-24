@@ -283,18 +283,37 @@ export class AdminService {
     return updated;
   }
 
-  async getAuditLog(page = 1, limit = 50) {
+  async getAuditLog(
+    page = 1,
+    limit = 50,
+    filters: { scope?: 'admin' | 'all'; entity?: string; action?: string; from?: string; to?: string } = {},
+  ) {
     const skip = (page - 1) * limit;
+    const where: any = {};
+
+    if (filters.scope === 'admin') {
+      where.actor = { role: { in: ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'] } };
+    }
+    if (filters.entity) where.entity = filters.entity;
+    if (filters.action) where.action = filters.action;
+    if (filters.from || filters.to) {
+      where.createdAt = {
+        ...(filters.from ? { gte: new Date(filters.from) } : {}),
+        ...(filters.to ? { lte: new Date(filters.to) } : {}),
+      };
+    }
+
     const [items, total] = await Promise.all([
       this.prisma.auditLog.findMany({
+        where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
         include: {
-          actor: { select: { id: true, displayName: true, email: true } },
+          actor: { select: { id: true, displayName: true, email: true, role: true } },
         },
       }),
-      this.prisma.auditLog.count(),
+      this.prisma.auditLog.count({ where }),
     ]);
 
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };

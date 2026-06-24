@@ -26,8 +26,8 @@ export class AuthController {
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
-  login(@Body() dto: LoginDto, @Headers('x-client') client?: string) {
-    return this.authService.login(dto, client === 'admin-panel');
+  login(@Body() dto: LoginDto, @Request() req, @Headers('x-client') client?: string) {
+    return this.authService.login(dto, client === 'admin-panel', req.ip, req.headers['user-agent']);
   }
 
   @Get('verify-email')

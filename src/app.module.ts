@@ -20,6 +20,7 @@ import { SavedSearchModule } from './modules/saved-search/saved-search.module';
 import { BlogModule } from './modules/blog/blog.module';
 import { PagesModule } from './modules/pages/pages.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { AuditModule } from './modules/audit/audit.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { IntegrationsModule } from './modules/integrations/integrations.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     ScheduleModule.forRoot(),
     PrismaModule,
+    AuditModule,
     TasksModule,
     AuthModule,
     UsersModule,

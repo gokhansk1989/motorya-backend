@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto, LoginDto, AuthResponseDto } from './dto/auth.dto';
 import { MailService } from '../mail/mail.service';
+import { AuditService } from '../audit/audit.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
@@ -27,6 +28,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private mail: MailService,
+    private audit: AuditService,
   ) {}
 
   async register(dto: RegisterDto): Promise<{ message: string }> {
@@ -106,13 +108,16 @@ export class AuthService {
     return { message: 'Doğrulama linki tekrar gönderildi.' };
   }
 
-  async login(dto: LoginDto, isAdminPanel = false): Promise<AuthResponseDto> {
+  async login(dto: LoginDto, isAdminPanel = false, ip?: string, userAgent?: string): Promise<AuthResponseDto> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user) throw new UnauthorizedException('E-posta veya şifre hatalı');
 
     if (!user.passwordHash) throw new UnauthorizedException('Bu hesap Google ile oluşturulmuştur. Google ile giriş yapın.');
     const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!passwordValid) throw new UnauthorizedException('E-posta veya şifre hatalı');
+    if (!passwordValid) {
+      this.audit.log({ actorId: user.id, action: 'auth.login_failed', entity: 'User', entityId: user.id, ip, userAgent });
+      throw new UnauthorizedException('E-posta veya şifre hatalı');
+    }
 
     if (!user.emailVerifiedAt) {
       throw new UnauthorizedException('E-posta adresinizi doğrulamanız gerekiyor. Lütfen gelen kutunuzu kontrol edin.');
@@ -134,6 +139,8 @@ export class AuthService {
       this.mail.sendAdminMfaEmail(user.email, user.displayName, otp).catch(() => null);
       return { mfaRequired: true, email: user.email } as any;
     }
+
+    this.audit.log({ actorId: user.id, action: 'auth.login_success', entity: 'User', entityId: user.id, ip, userAgent });
 
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
     return {

@@ -37,7 +37,7 @@ export class UsersController {
   @Patch('me/password')
   @UseGuards(AuthGuard('jwt'))
   changePassword(@Request() req, @Body() dto: ChangePasswordDto) {
-    return this.usersService.changePassword(req.user.id, dto);
+    return this.usersService.changePassword(req.user.id, dto, req.ip, req.headers['user-agent']);
   }
 
   @Get('me/notifications')

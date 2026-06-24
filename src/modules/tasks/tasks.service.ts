@@ -58,4 +58,17 @@ export class TasksService {
       this.logger.log(`Expired ${result.count} offer(s)`);
     }
   }
+
+  // Günlük: 30 günden eski audit log kayıtlarını sil (saklama süresi)
+  @Cron(CronExpression.EVERY_DAY_AT_1AM)
+  async pruneAuditLogs() {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const result = await this.prisma.auditLog.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    });
+
+    if (result.count > 0) {
+      this.logger.log(`Pruned ${result.count} audit log entr(y/ies) older than 30 days`);
+    }
+  }
 }

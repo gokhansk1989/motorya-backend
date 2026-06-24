@@ -107,8 +107,15 @@ export class AdminController {
   getAuditLog(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('scope') scope?: 'admin' | 'all',
+    @Query('entity') entity?: string,
+    @Query('action') action?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
-    return this.adminService.getAuditLog(Number(page) || 1, Number(limit) || 50);
+    return this.adminService.getAuditLog(Number(page) || 1, Number(limit) || 50, {
+      scope, entity, action, from, to,
+    });
   }
 
   @Get('reports')
