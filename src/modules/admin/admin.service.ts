@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ModerateListingDto, ModerateUserDto } from './dto/admin.dto';
+import { UserRole, ReportStatus } from '@prisma/client';
 import { MailService } from '../mail/mail.service';
 import { SearchService } from '../search/search.service';
 import { SavedSearchService } from '../saved-search/saved-search.service';
@@ -236,12 +237,12 @@ export class AdminService {
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
-  async changeUserRole(id: string, adminId: string, role: string) {
+  async changeUserRole(id: string, adminId: string, role: UserRole) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
     const [updated] = await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id }, data: { role: role as any } }),
+      this.prisma.user.update({ where: { id }, data: { role } }),
       this.prisma.auditLog.create({
         data: {
           actorId: adminId,
@@ -397,13 +398,13 @@ export class AdminService {
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
-  async updateReportStatus(id: string, adminId: string, status: string, note?: string) {
+  async updateReportStatus(id: string, adminId: string, status: ReportStatus, note?: string) {
     const report = await this.prisma.report.findUnique({ where: { id } });
     if (!report) throw new NotFoundException('Report not found');
 
     const updated = await this.prisma.report.update({
       where: { id },
-      data: { status: status as any, reviewedAt: new Date() },
+      data: { status, reviewedAt: new Date() },
     });
 
     await this.prisma.auditLog.create({

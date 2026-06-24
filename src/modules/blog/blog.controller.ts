@@ -6,6 +6,7 @@ import { BlogService } from './blog.service';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CreateBlogPostDto, UpdateBlogPostDto } from './dto/blog.dto';
 
 @Controller('blog')
 export class BlogController {
@@ -32,14 +33,14 @@ export class BlogController {
   @Post('admin')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('SUPER_ADMIN', 'ADMIN', 'MODERATOR')
-  create(@Body() body: any) {
+  create(@Body() body: CreateBlogPostDto) {
     return this.blog.create(body);
   }
 
   @Put('admin/:id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('SUPER_ADMIN', 'ADMIN', 'MODERATOR')
-  update(@Param('id') id: string, @Body() body: any) {
+  update(@Param('id') id: string, @Body() body: UpdateBlogPostDto) {
     return this.blog.update(id, body);
   }
 

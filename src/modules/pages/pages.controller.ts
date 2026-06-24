@@ -3,6 +3,7 @@ import { PagesService } from './pages.service';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CreateStaticPageDto, UpdateStaticPageDto } from './dto/pages.dto';
 
 @Controller('pages')
 export class PagesController {
@@ -26,14 +27,14 @@ export class PagesController {
   @Post('admin')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('SUPER_ADMIN', 'ADMIN')
-  create(@Body() body: any) {
+  create(@Body() body: CreateStaticPageDto) {
     return this.pages.create(body);
   }
 
   @Put('admin/:id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('SUPER_ADMIN', 'ADMIN')
-  update(@Param('id') id: string, @Body() body: any) {
+  update(@Param('id') id: string, @Body() body: UpdateStaticPageDto) {
     return this.pages.update(id, body);
   }
 

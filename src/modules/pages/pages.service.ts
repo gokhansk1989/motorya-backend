@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateStaticPageDto, UpdateStaticPageDto } from './dto/pages.dto';
 
 function slugify(text: string): string {
   return text
@@ -31,14 +32,14 @@ export class PagesService {
     return page;
   }
 
-  async create(dto: any) {
+  async create(dto: CreateStaticPageDto) {
     const slug = dto.slug || slugify(dto.title);
     const existing = await this.prisma.staticPage.findUnique({ where: { slug } });
     if (existing) throw new ConflictException('Bu slug zaten kullanımda');
     return this.prisma.staticPage.create({ data: { ...dto, slug } });
   }
 
-  async update(id: string, dto: any) {
+  async update(id: string, dto: UpdateStaticPageDto) {
     await this.adminGet(id);
     if (dto.slug) {
       const existing = await this.prisma.staticPage.findUnique({ where: { slug: dto.slug } });

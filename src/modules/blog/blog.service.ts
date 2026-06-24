@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateBlogPostDto, UpdateBlogPostDto } from './dto/blog.dto';
 
 function slugify(text: string): string {
   return text
@@ -65,7 +66,7 @@ export class BlogService {
     return post;
   }
 
-  async create(dto: any) {
+  async create(dto: CreateBlogPostDto) {
     const slug = dto.slug || slugify(dto.title);
     const existing = await this.prisma.blogPost.findUnique({ where: { slug } });
     if (existing) throw new ConflictException('Bu slug zaten kullanımda');
@@ -78,7 +79,7 @@ export class BlogService {
     });
   }
 
-  async update(id: string, dto: any) {
+  async update(id: string, dto: UpdateBlogPostDto) {
     const post = await this.prisma.blogPost.findUnique({ where: { id } });
     if (!post) throw new NotFoundException('Blog yazısı bulunamadı');
 

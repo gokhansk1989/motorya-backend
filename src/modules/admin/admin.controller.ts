@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminService } from './admin.service';
-import { ModerateListingDto, ModerateUserDto } from './dto/admin.dto';
+import { ModerateListingDto, ModerateUserDto, ChangeRoleDto, UpdateReportStatusDto } from './dto/admin.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MessagesService } from '../messages/messages.service';
@@ -89,9 +89,9 @@ export class AdminController {
   changeUserRole(
     @Param('id') id: string,
     @Request() req,
-    @Body('role') role: string,
+    @Body() dto: ChangeRoleDto,
   ) {
-    return this.adminService.changeUserRole(id, req.user.id, role);
+    return this.adminService.changeUserRole(id, req.user.id, dto.role);
   }
 
   @Patch('users/:id/moderate')
@@ -131,10 +131,9 @@ export class AdminController {
   updateReportStatus(
     @Param('id') id: string,
     @Request() req,
-    @Body('status') status: string,
-    @Body('note') note?: string,
+    @Body() dto: UpdateReportStatusDto,
   ) {
-    return this.adminService.updateReportStatus(id, req.user.id, status, note);
+    return this.adminService.updateReportStatus(id, req.user.id, dto.status, dto.note);
   }
 
   // Dispute için konuşma mesajlarını şifresiz oku (SUPER_ADMIN only, audit log düşer)
