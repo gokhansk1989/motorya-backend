@@ -9,6 +9,7 @@ import {
   Min,
   Max,
   IsInt,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ListingCondition, ListingGender, ListingStatus } from '@prisma/client';
@@ -169,4 +170,9 @@ export class ListingsQueryDto {
   @IsOptional()
   @IsEnum(['price_asc', 'price_desc', 'newest', 'oldest'])
   sort?: 'price_asc' | 'price_desc' | 'newest' | 'oldest' = 'newest';
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isFeatured?: boolean;
 }

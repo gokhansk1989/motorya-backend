@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ListingStatus } from '@prisma/client';
 import { CreateListingDto, UpdateListingDto, ListingsQueryDto } from './dto/listings.dto';
+import { SetFeaturedDto } from './dto/admin-category.dto';
 import { SearchService, ListingDocument } from '../search/search.service';
 import { SocialService } from '../social/social.service';
 import { MailService } from '../mail/mail.service';
@@ -313,12 +314,18 @@ export class ListingsService {
       page = 1,
       limit = 20,
       sort = 'newest',
+      isFeatured,
     } = query;
 
     const where: any = {
       status: ListingStatus.ACTIVE,
       deletedAt: null,
     };
+
+    if (isFeatured) {
+      where.isFeatured = true;
+      where.featuredUntil = { gt: new Date() };
+    }
 
     if (viewerId) {
       const blockedIds = await this.social.getBlockedUserIds(viewerId).catch(() => []);
@@ -508,6 +515,25 @@ export class ListingsService {
     return this.prisma.listing.update({
       where: { id },
       data: { ...(dto.categoryId && { categoryId: dto.categoryId }) },
+    });
+  }
+
+  async adminSetFeatured(id: string, dto: SetFeaturedDto) {
+    const listing = await this.prisma.listing.findFirst({ where: { id, deletedAt: null } });
+    if (!listing) throw new NotFoundException('Listing not found');
+
+    if (dto.isFeatured) {
+      const until = new Date();
+      until.setDate(until.getDate() + (dto.days ?? 7));
+      return this.prisma.listing.update({
+        where: { id },
+        data: { isFeatured: true, featuredUntil: until },
+      });
+    }
+
+    return this.prisma.listing.update({
+      where: { id },
+      data: { isFeatured: false, featuredUntil: null },
     });
   }
 

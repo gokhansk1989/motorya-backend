@@ -93,3 +93,14 @@ export class UpdateBrandDto {
   @Matches(URL_OR_PATH, { message: 'logoUrl geçerli bir URL veya yol olmalı (http(s):// veya / ile başlamalı)' })
   logoUrl?: string;
 }
+
+export class SetFeaturedDto {
+  @IsBoolean()
+  isFeatured: boolean;
+
+  // isFeatured: true gönderildiğinde kaç gün öne çıkacağı — varsayılan 7
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  days?: number;
+}

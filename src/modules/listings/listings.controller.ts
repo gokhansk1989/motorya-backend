@@ -19,7 +19,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ListingsService } from './listings.service';
 import { CreateListingDto, UpdateListingDto, ListingsQueryDto } from './dto/listings.dto';
-import { CreateCategoryDto, UpdateCategoryDto, CreateBrandDto, UpdateBrandDto } from './dto/admin-category.dto';
+import { CreateCategoryDto, UpdateCategoryDto, CreateBrandDto, UpdateBrandDto, SetFeaturedDto } from './dto/admin-category.dto';
 
 @Controller('listings')
 export class ListingsController {
@@ -109,6 +109,13 @@ export class ListingsController {
   @Roles('SUPER_ADMIN', 'ADMIN')
   adminUpdateListing(@Param('id') id: string, @Body() dto: UpdateListingDto) {
     return this.listingsService.adminUpdateListing(id, dto);
+  }
+
+  @Patch('admin/:id/feature')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  adminSetFeatured(@Param('id') id: string, @Body() dto: SetFeaturedDto) {
+    return this.listingsService.adminSetFeatured(id, dto);
   }
 
   @Get()
