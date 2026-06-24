@@ -2,6 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 
+export type NotificationCategory = 'offers' | 'messages' | 'priceDrops' | 'listingStatus';
+
+const DEFAULT_PREFS: Record<NotificationCategory, boolean> = {
+  offers: true,
+  messages: true,
+  priceDrops: true,
+  listingStatus: true,
+};
+
 @Injectable()
 export class WebPushService {
   private readonly logger = new Logger(WebPushService.name);
@@ -46,8 +55,18 @@ export class WebPushService {
     await this.prisma.webPushSubscription.deleteMany({ where: { endpoint } });
   }
 
-  async sendToUser(userId: string, payload: { title: string; body?: string; url?: string; icon?: string }) {
+  async sendToUser(
+    userId: string,
+    payload: { title: string; body?: string; url?: string; icon?: string },
+    category?: NotificationCategory,
+  ) {
     if (!this.enabled) return;
+
+    if (category) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { notificationPrefs: true } });
+      const prefs = { ...DEFAULT_PREFS, ...((user?.notificationPrefs as any) ?? {}) };
+      if (prefs[category] === false) return;
+    }
 
     const subs = await this.prisma.webPushSubscription.findMany({ where: { userId } });
     const data = JSON.stringify({ ...payload, icon: payload.icon ?? '/icon-192.png' });
@@ -65,9 +84,13 @@ export class WebPushService {
     );
   }
 
-  async sendToMany(userIds: string[], payload: { title: string; body?: string; url?: string }) {
+  async sendToMany(
+    userIds: string[],
+    payload: { title: string; body?: string; url?: string },
+    category?: NotificationCategory,
+  ) {
     if (!this.enabled || userIds.length === 0) return;
-    await Promise.allSettled(userIds.map((id) => this.sendToUser(id, payload)));
+    await Promise.allSettled(userIds.map((id) => this.sendToUser(id, payload, category)));
   }
 
   getPublicKey() {

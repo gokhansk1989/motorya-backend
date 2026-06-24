@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from './encryption.service';
 import { SocialService } from '../social/social.service';
 import { MessageFilterService } from './message-filter.service';
+import { WebPushService } from '../users/webpush.service';
 
 @Injectable()
 export class MessagesService {
@@ -11,6 +12,7 @@ export class MessagesService {
     private encryption: EncryptionService,
     private social: SocialService,
     private filter: MessageFilterService,
+    private webPush: WebPushService,
   ) {}
 
   // Konuşma başlat veya mevcut olanı getir
@@ -178,6 +180,14 @@ export class MessagesService {
           payload: { conversationId },
         },
       }).catch(() => null);
+
+      // Push bildiriminde mesaj içeriğini taşımıyoruz — şifreli mesajlaşmanın gizliliğini
+      // 3. parti push servisine (FCM/Mozilla push relay) sızdırmamak için generic metin kullanıyoruz.
+      this.webPush.sendToUser(otherParticipant.userId, {
+        title: `${message.sender.displayName} mesaj gönderdi`,
+        body: 'Yeni bir mesajınız var.',
+        url: `/mesajlarim?c=${conversationId}`,
+      }, 'messages').catch(() => null);
     }
 
     return {

@@ -82,6 +82,9 @@ model User {
   vacationMode  Boolean   @default(false)
   vacationSince DateTime?
 
+  // Push bildirim tercihleri — { offers, messages, priceDrops, listingStatus } (tümü boolean, null ise hepsi açık sayılır)
+  notificationPrefs Json?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -645,4 +648,12 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([actorId, createdAt])
+}
+
+/// Platform genelinde gerçek etkisi olan ayarlar (admin panel → Ayarlar). Key-value;
+/// her key'in backend'de gerçekten okunan bir karşılığı olmalı — dekoratif ayar eklenmemeli.
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }

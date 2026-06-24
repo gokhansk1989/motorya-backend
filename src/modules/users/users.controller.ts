@@ -13,7 +13,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { OptionalJwtGuard } from '../../common/guards/optional-jwt.guard';
 import { UsersService } from './users.service';
 import { WebPushService } from './webpush.service';
-import { UpdateProfileDto, ChangePasswordDto } from './dto/users.dto';
+import { UpdateProfileDto, ChangePasswordDto, UpdateNotificationPrefsDto } from './dto/users.dto';
 
 @Controller('users')
 export class UsersController {
@@ -38,6 +38,12 @@ export class UsersController {
   @UseGuards(AuthGuard('jwt'))
   changePassword(@Request() req, @Body() dto: ChangePasswordDto) {
     return this.usersService.changePassword(req.user.id, dto, req.ip, req.headers['user-agent']);
+  }
+
+  @Patch('me/notification-prefs')
+  @UseGuards(AuthGuard('jwt'))
+  updateNotificationPrefs(@Request() req, @Body() dto: UpdateNotificationPrefsDto) {
+    return this.usersService.updateNotificationPrefs(req.user.id, dto);
   }
 
   @Get('me/notifications')

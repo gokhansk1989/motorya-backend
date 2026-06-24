@@ -21,6 +21,7 @@ import { BlogModule } from './modules/blog/blog.module';
 import { PagesModule } from './modules/pages/pages.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AuditModule } from './modules/audit/audit.module';
     ScheduleModule.forRoot(),
     PrismaModule,
     AuditModule,
+    SettingsModule,
     TasksModule,
     AuthModule,
     UsersModule,

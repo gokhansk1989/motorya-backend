@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListingStatus } from '@prisma/client';
@@ -13,6 +14,7 @@ import { SocialService } from '../social/social.service';
 import { MailService } from '../mail/mail.service';
 import { WebPushService } from '../users/webpush.service';
 import { AuditService } from '../audit/audit.service';
+import { SettingsService } from '../settings/settings.service';
 
 // Türkçe karakterleri latinize edip URL-safe slug üretir
 function toSlug(text: string): string {
@@ -96,6 +98,7 @@ export class ListingsService {
     private mail: MailService,
     private webPush: WebPushService,
     private audit: AuditService,
+    private settings: SettingsService,
   ) {}
 
   private toSearchDoc(listing: any): ListingDocument {
@@ -254,6 +257,10 @@ export class ListingsService {
   }
 
   async createListing(sellerId: string, dto: CreateListingDto) {
+    if (!(await this.settings.get('new_listings'))) {
+      throw new ServiceUnavailableException('Yeni ilan girişi şu anda kapalı.');
+    }
+
     const { imageUrls = [], ...rest } = dto;
 
     const [category, brand] = await Promise.all([
@@ -554,7 +561,7 @@ export class ListingsService {
         title: 'İlanın öne çıkarıldı! ⭐',
         body,
         url: `/ilan/${listingSlug}`,
-      }).catch(() => null);
+      }, 'listingStatus').catch(() => null);
 
       return updated;
     }
@@ -817,7 +824,7 @@ export class ListingsService {
     const pushPayload = type === 'price_drop'
       ? { title: 'Fiyat düştü!', body: `"${listingTitle}" ${meta.oldPrice.toFixed(0)} ₺ → ${meta.newPrice.toFixed(0)} ₺`, url: `/ilan/${slugUrl}` }
       : { title: 'Favori ilan satıldı', body: `"${listingTitle}" artık mevcut değil.`, url: '/' };
-    this.webPush.sendToMany(userIds, pushPayload).catch(() => null);
+    this.webPush.sendToMany(userIds, pushPayload, type === 'price_drop' ? 'priceDrops' : 'listingStatus').catch(() => null);
   }
 
   async reindexAll() {

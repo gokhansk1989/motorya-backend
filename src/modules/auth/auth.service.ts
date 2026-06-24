@@ -1,9 +1,10 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto, LoginDto, AuthResponseDto } from './dto/auth.dto';
 import { MailService } from '../mail/mail.service';
 import { AuditService } from '../audit/audit.service';
+import { SettingsService } from '../settings/settings.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
@@ -29,9 +30,16 @@ export class AuthService {
     private jwtService: JwtService,
     private mail: MailService,
     private audit: AuditService,
+    private settings: SettingsService,
   ) {}
 
   async register(dto: RegisterDto): Promise<{ message: string }> {
+    if (await this.settings.get('maintenance_mode')) {
+      throw new ServiceUnavailableException('Sistem bakımda, lütfen daha sonra tekrar deneyin.');
+    }
+    if (!(await this.settings.get('new_registrations'))) {
+      throw new ServiceUnavailableException('Yeni kayıtlar şu anda kapalı.');
+    }
     if (!validateTcKimlik(dto.tcKimlik)) {
       throw new BadRequestException('Geçersiz TC Kimlik numarası');
     }
@@ -109,6 +117,10 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, isAdminPanel = false, ip?: string, userAgent?: string): Promise<AuthResponseDto> {
+    if (!isAdminPanel && (await this.settings.get('maintenance_mode'))) {
+      throw new ServiceUnavailableException('Sistem bakımda, lütfen daha sonra tekrar deneyin.');
+    }
+
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user) throw new UnauthorizedException('E-posta veya şifre hatalı');
 

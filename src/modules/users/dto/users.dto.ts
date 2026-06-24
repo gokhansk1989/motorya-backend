@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUrl, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsUrl, IsBoolean, MinLength, MaxLength } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -28,4 +28,18 @@ export class ChangePasswordDto {
   @IsString()
   @MinLength(8)
   newPassword: string;
+}
+
+export class UpdateNotificationPrefsDto {
+  @IsOptional() @IsBoolean()
+  offers?: boolean;
+
+  @IsOptional() @IsBoolean()
+  messages?: boolean;
+
+  @IsOptional() @IsBoolean()
+  priceDrops?: boolean;
+
+  @IsOptional() @IsBoolean()
+  listingStatus?: boolean;
 }

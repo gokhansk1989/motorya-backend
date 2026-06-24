@@ -4,21 +4,30 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SocialService } from '../social/social.service';
 import { CreateOfferDto, RespondOfferDto, CounterOfferDto } from './dto/offers.dto';
 import { Decimal } from '@prisma/client/runtime/library';
 import { buildListingSlug } from '../listings/listings.service';
+import { SettingsService } from '../settings/settings.service';
+import { WebPushService } from '../users/webpush.service';
 
 @Injectable()
 export class OffersService {
   constructor(
     private prisma: PrismaService,
     private social: SocialService,
+    private settings: SettingsService,
+    private webPush: WebPushService,
   ) {}
 
   async createOffer(buyerId: string, dto: CreateOfferDto) {
+    if (!(await this.settings.get('offer_system'))) {
+      throw new ServiceUnavailableException('Teklif sistemi şu anda kapalı.');
+    }
+
     const listing = await this.prisma.listing.findFirst({
       where: { id: dto.listingId, status: 'ACTIVE', deletedAt: null },
       include: { category: { include: { parent: { select: { slug: true } } } } },
@@ -57,15 +66,21 @@ export class OffersService {
     });
 
     // Satıcıya bildirim
+    const offerBody = `"${listing.title}" ilanınıza ${amount.toFixed(2)} ₺ teklif geldi.`;
     await this.prisma.notification.create({
       data: {
         userId: listing.sellerId,
         type: 'offer.received',
         title: 'Yeni teklif aldınız',
-        body: `"${listing.title}" ilanınıza ${amount.toFixed(2)} ₺ teklif geldi.`,
+        body: offerBody,
         payload: { offerId: offer.id, listingId: listing.id, listingSlug: buildListingSlug(listing) },
       },
     });
+    this.webPush.sendToUser(listing.sellerId, {
+      title: 'Yeni teklif aldınız',
+      body: offerBody,
+      url: `/ilan/${buildListingSlug(listing)}`,
+    }, 'offers').catch(() => null);
 
     return offer;
   }
@@ -101,17 +116,24 @@ export class OffersService {
     });
 
     // Alıcıya bildirim
+    const respondTitle = newStatus === 'ACCEPTED' ? 'Teklifiniz kabul edildi!' : 'Teklifiniz reddedildi';
+    const respondBody = newStatus === 'ACCEPTED'
+      ? `"${offer.listing.title}" için ${offer.amount.toFixed(2)} ₺ teklifiniz kabul edildi.`
+      : `"${offer.listing.title}" için teklifiniz reddedildi.`;
     await this.prisma.notification.create({
       data: {
         userId: offer.buyerId,
         type: newStatus === 'ACCEPTED' ? 'offer.accepted' : 'offer.rejected',
-        title: newStatus === 'ACCEPTED' ? 'Teklifiniz kabul edildi!' : 'Teklifiniz reddedildi',
-        body: newStatus === 'ACCEPTED'
-          ? `"${offer.listing.title}" için ${offer.amount.toFixed(2)} ₺ teklifiniz kabul edildi.`
-          : `"${offer.listing.title}" için teklifiniz reddedildi.`,
+        title: respondTitle,
+        body: respondBody,
         payload: { offerId, listingId: offer.listingId, listingSlug: buildListingSlug(offer.listing) },
       },
     });
+    this.webPush.sendToUser(offer.buyerId, {
+      title: respondTitle,
+      body: respondBody,
+      url: `/ilan/${buildListingSlug(offer.listing)}`,
+    }, 'offers').catch(() => null);
 
     return updated;
   }
@@ -145,15 +167,21 @@ export class OffersService {
       },
     });
 
+    const counterBody = `"${offer.listing.title}" için ${counter.toFixed(2)} ₺ karşı teklif geldi.`;
     await this.prisma.notification.create({
       data: {
         userId: offer.buyerId,
         type: 'offer.countered',
         title: 'Satıcı karşı teklif yaptı',
-        body: `"${offer.listing.title}" için ${counter.toFixed(2)} ₺ karşı teklif geldi.`,
+        body: counterBody,
         payload: { offerId, listingId: offer.listingId, listingSlug: buildListingSlug(offer.listing) },
       },
     });
+    this.webPush.sendToUser(offer.buyerId, {
+      title: 'Satıcı karşı teklif yaptı',
+      body: counterBody,
+      url: `/ilan/${buildListingSlug(offer.listing)}`,
+    }, 'offers').catch(() => null);
 
     return updated;
   }
@@ -182,17 +210,24 @@ export class OffersService {
       return o;
     });
 
+    const counterRespondTitle = newStatus === 'ACCEPTED' ? 'Karşı teklifiniz kabul edildi!' : 'Karşı teklifiniz reddedildi';
+    const counterRespondBody = newStatus === 'ACCEPTED'
+      ? `"${offer.listing.title}" için ${offer.counterAmount?.toFixed(2)} ₺ karşı teklifiniz kabul edildi.`
+      : `"${offer.listing.title}" için karşı teklifiniz reddedildi.`;
     await this.prisma.notification.create({
       data: {
         userId: offer.listing.sellerId,
         type: newStatus === 'ACCEPTED' ? 'offer.counter_accepted' : 'offer.counter_rejected',
-        title: newStatus === 'ACCEPTED' ? 'Karşı teklifiniz kabul edildi!' : 'Karşı teklifiniz reddedildi',
-        body: newStatus === 'ACCEPTED'
-          ? `"${offer.listing.title}" için ${offer.counterAmount?.toFixed(2)} ₺ karşı teklifiniz kabul edildi.`
-          : `"${offer.listing.title}" için karşı teklifiniz reddedildi.`,
+        title: counterRespondTitle,
+        body: counterRespondBody,
         payload: { offerId, listingId: offer.listingId, listingSlug: buildListingSlug(offer.listing) },
       },
     });
+    this.webPush.sendToUser(offer.listing.sellerId, {
+      title: counterRespondTitle,
+      body: counterRespondBody,
+      url: `/ilan/${buildListingSlug(offer.listing)}`,
+    }, 'offers').catch(() => null);
 
     return updated;
   }

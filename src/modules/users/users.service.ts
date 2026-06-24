@@ -12,6 +12,13 @@ import { SocialService } from '../social/social.service';
 import { UpdateProfileDto, ChangePasswordDto } from './dto/users.dto';
 import { AuditService } from '../audit/audit.service';
 
+const DEFAULT_NOTIFICATION_PREFS = {
+  offers: true,
+  messages: true,
+  priceDrops: true,
+  listingStatus: true,
+};
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -42,6 +49,7 @@ export class UsersService {
         identityVerifiedAt: true,
         vacationMode: true,
         vacationSince: true,
+        notificationPrefs: true,
         createdAt: true,
         subscription: {
           select: {
@@ -53,10 +61,22 @@ export class UsersService {
     });
     if (!user) throw new NotFoundException('User not found');
     const fastResponder = await this.isFastResponder(userId);
-    const userWithResponder = { ...user, fastResponder };
+    const userWithResponder = {
+      ...user,
+      fastResponder,
+      notificationPrefs: { ...DEFAULT_NOTIFICATION_PREFS, ...((user.notificationPrefs as any) ?? {}) },
+    };
     const badges = this.getBadges(userWithResponder);
     const trustScore = this.getTrustScore(userWithResponder);
     return { ...userWithResponder, badges, trustScore };
+  }
+
+  async updateNotificationPrefs(userId: string, dto: Partial<Record<keyof typeof DEFAULT_NOTIFICATION_PREFS, boolean>>) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { notificationPrefs: true } });
+    if (!user) throw new NotFoundException('User not found');
+    const merged = { ...DEFAULT_NOTIFICATION_PREFS, ...((user.notificationPrefs as any) ?? {}), ...dto };
+    await this.prisma.user.update({ where: { id: userId }, data: { notificationPrefs: merged } });
+    return merged;
   }
 
   async getPublicProfile(userId: string, viewerId?: string) {
