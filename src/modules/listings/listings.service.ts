@@ -244,6 +244,10 @@ export class ListingsService {
   }
 
   async adminDeleteBrand(id: string) {
+    const listingCount = await this.prisma.listing.count({ where: { brandId: id, deletedAt: null } });
+    if (listingCount > 0) {
+      throw new BadRequestException(`Bu markayı kullanan ${listingCount} ilan var — marka silinemiyor`);
+    }
     await this.prisma.brand.delete({ where: { id } });
   }
 
