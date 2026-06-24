@@ -523,12 +523,32 @@ export class ListingsService {
     if (!listing) throw new NotFoundException('Listing not found');
 
     if (dto.isFeatured) {
+      const days = dto.days ?? 7;
       const until = new Date();
-      until.setDate(until.getDate() + (dto.days ?? 7));
-      return this.prisma.listing.update({
+      until.setDate(until.getDate() + days);
+      const updated = await this.prisma.listing.update({
         where: { id },
         data: { isFeatured: true, featuredUntil: until },
       });
+
+      const listingSlug = buildListingSlug(listing);
+      const body = `"${listing.title}" ilanın ${days} gün boyunca vitrinde öne çıkacak.`;
+      this.prisma.notification.create({
+        data: {
+          userId: listing.sellerId,
+          type: 'listing.featured',
+          title: 'İlanın öne çıkarıldı! ⭐',
+          body,
+          payload: { listingId: id, listingSlug },
+        },
+      }).catch(() => null);
+      this.webPush.sendToUser(listing.sellerId, {
+        title: 'İlanın öne çıkarıldı! ⭐',
+        body,
+        url: `/ilan/${listingSlug}`,
+      }).catch(() => null);
+
+      return updated;
     }
 
     return this.prisma.listing.update({
