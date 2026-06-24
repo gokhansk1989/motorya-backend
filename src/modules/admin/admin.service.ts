@@ -36,6 +36,32 @@ export class AdminService {
     };
   }
 
+  async getListingsTrend(days = 7) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const ranges = Array.from({ length: days }, (_, i) => {
+      const start = new Date(today);
+      start.setDate(start.getDate() - (days - 1 - i));
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      return { start, end };
+    });
+
+    const counts = await Promise.all(
+      ranges.map(({ start, end }) =>
+        this.prisma.listing.count({
+          where: { createdAt: { gte: start, lt: end }, deletedAt: null },
+        }),
+      ),
+    );
+
+    return ranges.map(({ start }, i) => ({
+      day: start.toLocaleDateString('tr-TR', { weekday: 'short' }),
+      date: start.toISOString().slice(0, 10),
+      ilanlar: counts[i],
+    }));
+  }
+
   async getNotificationSummary() {
     const [pendingListings, openReports] = await Promise.all([
       this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null } }),

@@ -37,6 +37,11 @@ export class AdminController {
     return this.adminService.getNotificationSummary();
   }
 
+  @Get('metrics/listings-trend')
+  getListingsTrend(@Query('days') days?: string) {
+    return this.adminService.getListingsTrend(Number(days) || 7);
+  }
+
   @Get('listings/pending')
   getPendingListings(
     @Query('page') page?: string,
