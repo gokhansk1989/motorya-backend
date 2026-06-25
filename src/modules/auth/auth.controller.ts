@@ -3,13 +3,22 @@ import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, MinLength, Equals } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 
 class ForgotPasswordDto { @IsEmail() email: string; }
 class ResetPasswordDto { @IsString() token: string; @IsString() @MinLength(8) password: string; }
 class ResendVerificationDto { @IsEmail() email: string; }
 class AdminMfaVerifyDto { @IsEmail() email: string; @IsString() otp: string; }
+class ConsentsDto {
+  @IsBoolean() @Equals(true, { message: "Üyelik Sözleşmesi'ni kabul etmeniz gerekiyor" })
+  acceptedTerms: boolean;
+
+  @IsBoolean() @Equals(true, { message: "KVKK Aydınlatma Metni'ni kabul etmeniz gerekiyor" })
+  acceptedKvkk: boolean;
+
+  @IsOptional() @IsBoolean() acceptedMarketing?: boolean;
+}
 
 @Controller('auth')
 export class AuthController {
@@ -65,9 +74,15 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleCallback(@Request() req, @Res() res) {
-    const { accessToken, user } = req.user as any;
+    const { accessToken, user, needsConsent } = req.user as any;
     const frontendUrl = this.config.get('FRONTEND_URL', 'https://motorya.com.tr');
     const userEncoded = encodeURIComponent(JSON.stringify(user));
-    return res.redirect(`${frontendUrl}/callback?token=${accessToken}&user=${userEncoded}`);
+    return res.redirect(`${frontendUrl}/callback?token=${accessToken}&user=${userEncoded}&needsConsent=${!!needsConsent}`);
+  }
+
+  @Post('consents')
+  @UseGuards(AuthGuard('jwt'))
+  recordConsents(@Request() req, @Body() dto: ConsentsDto) {
+    return this.authService.recordConsents(req.user.id, dto, req.ip);
   }
 }

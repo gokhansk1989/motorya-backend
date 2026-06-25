@@ -57,6 +57,10 @@ export class CreateListingDto {
   city?: string;
 
   @IsOptional()
+  @IsString()
+  district?: string;
+
+  @IsOptional()
   @IsString({ each: true })
   imageUrls?: string[];
 }
@@ -109,6 +113,10 @@ export class UpdateListingDto {
   city?: string;
 
   @IsOptional()
+  @IsString()
+  district?: string;
+
+  @IsOptional()
   @IsString({ each: true })
   imageUrls?: string[];
 }
@@ -141,6 +149,10 @@ export class ListingsQueryDto {
   @IsOptional()
   @IsString()
   city?: string;
+
+  @IsOptional()
+  @IsString()
+  district?: string;
 
   @IsOptional()
   @Type(() => Number)

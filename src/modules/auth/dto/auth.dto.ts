@@ -69,4 +69,5 @@ export class AuthResponseDto {
     displayName: string;
     role: string;
   };
+  needsConsent?: boolean;
 }

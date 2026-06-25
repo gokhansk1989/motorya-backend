@@ -217,11 +217,29 @@ export class AuthService {
       throw new UnauthorizedException('Hesabınız askıya alınmıştır.');
     }
 
+    const termsConsent = await this.prisma.userConsent.findFirst({ where: { userId: user.id, type: 'TERMS' } });
+
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
     return {
       accessToken,
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+      needsConsent: !termsConsent,
     };
+  }
+
+  // Google ile kayıt sözleşme/KVKK onaylarını atlıyor — ilk girişte ayrı bir ekranla tamamlanır.
+  async recordConsents(userId: string, dto: { acceptedTerms: boolean; acceptedKvkk: boolean; acceptedMarketing?: boolean }, ip?: string) {
+    if (!dto.acceptedTerms || !dto.acceptedKvkk) {
+      throw new BadRequestException("Üyelik Sözleşmesi ve KVKK Aydınlatma Metni'ni kabul etmeniz gerekiyor");
+    }
+    await this.prisma.userConsent.createMany({
+      data: [
+        { userId, type: 'TERMS', accepted: true, version: TERMS_VERSION, ip },
+        { userId, type: 'KVKK', accepted: true, version: KVKK_VERSION, ip },
+        { userId, type: 'MARKETING', accepted: !!dto.acceptedMarketing, version: KVKK_VERSION, ip },
+      ],
+    });
+    return { ok: true };
   }
 
   async verifyAdminMfa(email: string, otp: string): Promise<AuthResponseDto> {
