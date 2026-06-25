@@ -493,6 +493,25 @@ export class ListingsService {
     return ids.map((id) => byId.get(id)).filter((l): l is NonNullable<typeof l> => !!l);
   }
 
+  // originalPrice/price karşılaştırması Prisma'da sütun-sütun filtrelenemediği için
+  // (raw SQL gerektirir), indirimli olabilecek adayları çekip JS'te filtreliyoruz.
+  async getPriceDrops(limit = 12) {
+    const candidates = await this.prisma.listing.findMany({
+      where: { status: 'ACTIVE', deletedAt: null, originalPrice: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+      take: Math.max(limit * 4, 60),
+      include: {
+        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        seller: { select: { id: true, displayName: true } },
+        brand: true,
+      },
+    });
+    return candidates
+      .filter((l) => l.originalPrice && Number(l.originalPrice) > Number(l.price))
+      .slice(0, limit)
+      .map((l) => ({ ...l, slug: buildListingSlug(l) }));
+  }
+
   async getSimilarListings(id: string) {
     const listing = await this.prisma.listing.findFirst({ where: { id, deletedAt: null } });
     if (!listing) throw new NotFoundException('Listing not found');

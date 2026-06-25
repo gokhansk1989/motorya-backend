@@ -135,6 +135,11 @@ export class ListingsController {
     return this.listingsService.getPriceGuide(categoryId, brandId);
   }
 
+  @Get('price-drops')
+  getPriceDrops(@Query('limit') limit?: string) {
+    return this.listingsService.getPriceDrops(limit ? Number(limit) : 12);
+  }
+
   @Get('by-ids')
   findByIds(@Query('ids') ids: string) {
     const idList = (ids || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 50);
