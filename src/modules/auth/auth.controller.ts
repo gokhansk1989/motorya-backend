@@ -20,8 +20,8 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
-  register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  register(@Body() dto: RegisterDto, @Request() req) {
+    return this.authService.register(dto, req.ip);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })

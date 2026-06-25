@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
@@ -38,6 +39,10 @@ export class UsersService {
         bio: true,
         avatarUrl: true,
         city: true,
+        district: true,
+        tcKimlik: true,
+        birthDate: true,
+        gender: true,
         role: true,
         status: true,
         ratingAvg: true,
@@ -223,15 +228,25 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
+    if (dto.tcKimlik) {
+      const existing = await this.prisma.user.findFirst({ where: { tcKimlik: dto.tcKimlik, id: { not: userId } } });
+      if (existing) throw new ConflictException('Bu TC Kimlik numarası başka bir hesapla ilişkili');
+    }
+
+    const { birthDate, ...rest } = dto;
     return this.prisma.user.update({
       where: { id: userId },
-      data: dto,
+      data: { ...rest, ...(birthDate !== undefined ? { birthDate: birthDate ? new Date(birthDate) : null } : {}) },
       select: {
         id: true,
         displayName: true,
         bio: true,
         avatarUrl: true,
         city: true,
+        district: true,
+        tcKimlik: true,
+        birthDate: true,
+        gender: true,
       },
     });
   }

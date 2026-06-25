@@ -51,6 +51,9 @@ model User {
   avatarUrl    String?
   bio          String?
   city         String?
+  district     String?
+  birthDate    DateTime?
+  gender       Gender?
   role         UserRole   @default(USER)
   status       UserStatus @default(PENDING)
 
@@ -110,9 +113,38 @@ model User {
   followers                UserFollow[]              @relation("Following")
   blockedUsers             UserBlock[]               @relation("Blocker")
   blockedBy                UserBlock[]               @relation("Blocked")
+  consents                 UserConsent[]
 
   @@index([status, createdAt])
   @@index([city])
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+/// Üyelik sözleşmesi / KVKK / pazarlama izni onaylarının değişmez kaydı (kim, ne zaman,
+/// hangi metin versiyonunu, hangi IP'den onayladı) — sadece User üzerinde boolean tutmak
+/// hukuki ispat için yetersiz, bu yüzden ayrı bir log tablosu kullanıyoruz.
+model UserConsent {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      ConsentType
+  accepted  Boolean
+  version   String
+  ip        String?
+  createdAt DateTime    @default(now())
+
+  @@index([userId, type])
+}
+
+enum ConsentType {
+  TERMS
+  KVKK
+  MARKETING
 }
 
 enum Platform {

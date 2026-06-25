@@ -23,6 +23,11 @@ function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// Onay metinleri güncellendiğinde sürüm artırılmalı — geçmiş onaylar hangi metne
+// verildiğini kaybetmesin diye eski UserConsent satırları değiştirilmez, yenisi eklenir.
+const TERMS_VERSION = 'v1';
+const KVKK_VERSION = 'v1';
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -33,20 +38,20 @@ export class AuthService {
     private settings: SettingsService,
   ) {}
 
-  async register(dto: RegisterDto): Promise<{ message: string }> {
+  async register(dto: RegisterDto, ip?: string): Promise<{ message: string }> {
     if (await this.settings.get('maintenance_mode')) {
       throw new ServiceUnavailableException('Sistem bakımda, lütfen daha sonra tekrar deneyin.');
     }
     if (!(await this.settings.get('new_registrations'))) {
       throw new ServiceUnavailableException('Yeni kayıtlar şu anda kapalı.');
     }
-    if (!validateTcKimlik(dto.tcKimlik)) {
+    if (dto.tcKimlik && !validateTcKimlik(dto.tcKimlik)) {
       throw new BadRequestException('Geçersiz TC Kimlik numarası');
     }
 
     const [byEmail, byTc, byPhone] = await Promise.all([
       this.prisma.user.findUnique({ where: { email: dto.email } }),
-      this.prisma.user.findFirst({ where: { tcKimlik: dto.tcKimlik } }),
+      dto.tcKimlik ? this.prisma.user.findFirst({ where: { tcKimlik: dto.tcKimlik } }) : null,
       this.prisma.user.findUnique({ where: { phone: dto.phone } }),
     ]);
 
@@ -65,10 +70,23 @@ export class AuthService {
         displayName: dto.displayName,
         tcKimlik: dto.tcKimlik,
         phone: dto.phone,
+        birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
+        gender: dto.gender,
+        city: dto.city,
+        district: dto.district,
         status: 'PENDING',
         emailVerificationToken: token,
         emailVerificationExpiry: expiry,
       },
+    });
+
+    // Onay kayıtları — değişmez log, ileride hukuki ispat için kullanılır.
+    await this.prisma.userConsent.createMany({
+      data: [
+        { userId: user.id, type: 'TERMS', accepted: true, version: TERMS_VERSION, ip },
+        { userId: user.id, type: 'KVKK', accepted: true, version: KVKK_VERSION, ip },
+        { userId: user.id, type: 'MARKETING', accepted: !!dto.acceptedMarketing, version: KVKK_VERSION, ip },
+      ],
     });
 
     await this.mail.sendVerificationEmail(user.email, user.displayName, token);

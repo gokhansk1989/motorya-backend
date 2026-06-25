@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUrl, IsBoolean, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsUrl, IsBoolean, IsDateString, IsIn, Length, Matches, MinLength, MaxLength } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -17,8 +17,27 @@ export class UpdateProfileDto {
   city?: string;
 
   @IsOptional()
+  @IsString()
+  district?: string;
+
+  @IsOptional()
   @IsUrl()
   avatarUrl?: string;
+
+  // Kayıt sırasında doldurmayan kullanıcı ilan vermeden önce buradan tamamlayabilir.
+  @IsOptional()
+  @IsString()
+  @Length(11, 11, { message: 'TC Kimlik numarası 11 haneli olmalıdır' })
+  @Matches(/^[1-9][0-9]{10}$/, { message: 'Geçerli bir TC Kimlik numarası giriniz' })
+  tcKimlik?: string;
+
+  @IsOptional()
+  @IsDateString()
+  birthDate?: string;
+
+  @IsOptional()
+  @IsIn(['MALE', 'FEMALE', 'OTHER'])
+  gender?: 'MALE' | 'FEMALE' | 'OTHER';
 }
 
 export class ChangePasswordDto {

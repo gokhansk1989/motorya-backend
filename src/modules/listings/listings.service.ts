@@ -261,6 +261,11 @@ export class ListingsService {
       throw new ServiceUnavailableException('Yeni ilan girişi şu anda kapalı.');
     }
 
+    const seller = await this.prisma.user.findUnique({ where: { id: sellerId }, select: { tcKimlik: true } });
+    if (!seller?.tcKimlik) {
+      throw new BadRequestException('İlan vermek için önce profilinden T.C. Kimlik numaranı tamamlaman gerekiyor.');
+    }
+
     const { imageUrls = [], ...rest } = dto;
 
     const [category, brand] = await Promise.all([
