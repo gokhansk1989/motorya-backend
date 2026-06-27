@@ -101,6 +101,7 @@ export class MessagesService {
           createdAt: lastMsg.createdAt,
         } : null,
         lastReadAt: myParticipant?.lastReadAt ?? null,
+        otherReadAt: otherParticipant?.lastReadAt ?? null,
         updatedAt: conv.updatedAt,
       };
     });
