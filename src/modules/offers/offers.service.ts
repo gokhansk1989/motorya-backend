@@ -13,6 +13,8 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { buildListingSlug } from '../listings/listings.service';
 import { SettingsService } from '../settings/settings.service';
 import { WebPushService } from '../users/webpush.service';
+import { MessagesGateway } from '../messages/messages.gateway';
+import { MessagesService } from '../messages/messages.service';
 
 @Injectable()
 export class OffersService {
@@ -21,6 +23,8 @@ export class OffersService {
     private social: SocialService,
     private settings: SettingsService,
     private webPush: WebPushService,
+    private chatGateway: MessagesGateway,
+    private messages: MessagesService,
   ) {}
 
   async createOffer(buyerId: string, dto: CreateOfferDto) {
@@ -81,8 +85,20 @@ export class OffersService {
       body: offerBody,
       url: `/ilan/${buildListingSlug(listing)}`,
     }, 'offers').catch(() => null);
+    this.chatGateway.notifyUser(listing.sellerId, 'offer:updated', { offerId: offer.id, listingId: listing.id, status: 'PENDING' });
+
+    // Mesajlaşmada otomatik bilgi mesajı — teklif anından itibaren alıcı/satıcı arasında
+    // her zaman bir konuşma akışı olsun (kabul sonrası manuel "mesaj yaz" zorunluluğu kalkar)
+    this.notifyConversation(buyerId, listing.sellerId, listing.id,
+      `💰 "${listing.title}" için ${amount.toFixed(2)} ₺ teklif verdi.`).catch(() => null);
 
     return offer;
+  }
+
+  private async notifyConversation(buyerId: string, sellerId: string, listingId: string, text: string) {
+    const conv = await this.messages.getOrCreateConversation(buyerId, sellerId, listingId);
+    const message = await this.messages.sendMessage(buyerId, conv.id, text);
+    this.chatGateway.server.to(`conv:${conv.id}`).emit('message:new', message);
   }
 
   async respondOffer(offerId: string, sellerId: string, dto: RespondOfferDto) {
@@ -134,6 +150,7 @@ export class OffersService {
       body: respondBody,
       url: `/ilan/${buildListingSlug(offer.listing)}`,
     }, 'offers').catch(() => null);
+    this.chatGateway.notifyUser(offer.buyerId, 'offer:updated', { offerId, listingId: offer.listingId, status: newStatus });
 
     return updated;
   }
@@ -182,6 +199,7 @@ export class OffersService {
       body: counterBody,
       url: `/ilan/${buildListingSlug(offer.listing)}`,
     }, 'offers').catch(() => null);
+    this.chatGateway.notifyUser(offer.buyerId, 'offer:updated', { offerId, listingId: offer.listingId, status: 'COUNTER_OFFERED' });
 
     return updated;
   }
@@ -228,6 +246,7 @@ export class OffersService {
       body: counterRespondBody,
       url: `/ilan/${buildListingSlug(offer.listing)}`,
     }, 'offers').catch(() => null);
+    this.chatGateway.notifyUser(offer.listing.sellerId, 'offer:updated', { offerId, listingId: offer.listingId, status: newStatus });
 
     return updated;
   }
@@ -240,7 +259,10 @@ export class OffersService {
       throw new BadRequestException(`Cannot withdraw offer with status: ${offer.status}`);
     }
 
-    return this.prisma.offer.update({ where: { id: offerId }, data: { status: 'WITHDRAWN' } });
+    const updated = await this.prisma.offer.update({ where: { id: offerId }, data: { status: 'WITHDRAWN' } });
+    const listing = await this.prisma.listing.findUnique({ where: { id: offer.listingId }, select: { sellerId: true } });
+    if (listing) this.chatGateway.notifyUser(listing.sellerId, 'offer:updated', { offerId, listingId: offer.listingId, status: 'WITHDRAWN' });
+    return updated;
   }
 
   async getOffersForListing(listingId: string, sellerId: string) {
