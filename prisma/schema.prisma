@@ -690,3 +690,21 @@ model SystemSetting {
   value     Json
   updatedAt DateTime @updatedAt
 }
+
+/// Kullanıcı/admin tarafında oluşan hataların merkezi kaydı — admin panel "Hata Logları" sayfası için.
+/// source: 'api' (backend exception filter), 'web' (motorya-frontend client hatası), 'admin' (admin panel client hatası)
+model ErrorLog {
+  id         String   @id @default(cuid())
+  source     String
+  message    String
+  stack      String?
+  path       String?
+  method     String?
+  statusCode Int?
+  userId     String?
+  context    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([source, createdAt])
+  @@index([createdAt])
+}

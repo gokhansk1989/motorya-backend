@@ -6,9 +6,11 @@ import { join } from 'path';
 import { mkdirSync } from 'fs';
 import { AppModule } from './app.module';
 import { getAllowedOrigins } from './common/cors-origins';
+import { AllExceptionsFilter } from './modules/error-logs/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useGlobalFilters(app.get(AllExceptionsFilter));
 
   const uploadsDir = join(process.cwd(), 'uploads');
   mkdirSync(uploadsDir, { recursive: true });
