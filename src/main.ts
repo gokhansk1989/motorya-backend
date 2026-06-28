@@ -7,10 +7,12 @@ import { mkdirSync } from 'fs';
 import { AppModule } from './app.module';
 import { getAllowedOrigins } from './common/cors-origins';
 import { AllExceptionsFilter } from './modules/error-logs/all-exceptions.filter';
+import { SlowRequestInterceptor } from './modules/error-logs/slow-request.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useGlobalFilters(app.get(AllExceptionsFilter));
+  app.useGlobalInterceptors(app.get(SlowRequestInterceptor));
 
   const uploadsDir = join(process.cwd(), 'uploads');
   mkdirSync(uploadsDir, { recursive: true });

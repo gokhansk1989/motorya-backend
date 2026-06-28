@@ -2,10 +2,12 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from
 import { Request, Response } from 'express';
 import { ErrorLogsService } from './error-logs.service';
 
-// Backend'de oluşan HER hatayı (login, ilan verme, vb. herhangi bir endpoint) otomatik
+// Backend'de oluşan hataları (login, ilan verme, vb. herhangi bir endpoint) otomatik
 // olarak ErrorLog tablosuna kaydeder, ardından normal NestJS HTTP yanıtını bozmadan döner.
-// 4xx (validasyon, yetkisiz erişim vb. beklenen istemci hataları) loglanmaz — sadece
-// gerçek sunucu/uygulama hataları (5xx veya yakalanmamış exception) kaydedilir.
+// - 5xx / yakalanmamış exception -> source 'api' (gerçek sunucu hatası)
+// - 429 (ThrottlerGuard limit aşımı) -> source 'rate-limit' (kötüye kullanım/bot tespiti)
+// - 404 -> source '404' (kırık link / silinmiş kaynak raporu)
+// Diğer 4xx (validasyon, yetkisiz erişim vb. beklenen istemci hataları) loglanmaz.
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   constructor(private errorLogs: ErrorLogsService) {}
@@ -19,16 +21,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const status = isHttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const body = isHttpException ? exception.getResponse() : { message: 'Internal server error' };
 
-    if (status >= 500) {
+    const source = status >= 500 ? 'api' : status === 429 ? 'rate-limit' : status === 404 ? '404' : null;
+
+    if (source) {
       const err = exception as Error;
       this.errorLogs.log({
-        source: 'api',
-        message: err?.message ?? 'Unknown error',
-        stack: err?.stack ?? null,
+        source,
+        message: err?.message ?? (typeof body === 'string' ? body : (body as any)?.message) ?? 'Unknown error',
+        stack: source === 'api' ? err?.stack ?? null : null,
         path: request?.originalUrl,
         method: request?.method,
         statusCode: status,
         userId: (request as any)?.user?.id ?? null,
+        context: source === 'rate-limit' ? { ip: request?.ip } : undefined,
       });
     }
 
