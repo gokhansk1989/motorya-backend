@@ -43,7 +43,7 @@ export class SearchController {
 
   @Post('reindex')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN')
   reindex() {
     return this.listingsService.reindexAll();
   }
