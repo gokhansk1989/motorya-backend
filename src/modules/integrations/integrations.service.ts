@@ -6,11 +6,11 @@ const DEFAULTS = [
   { key: 'paytr', name: 'PayTR', config: { merchant_id: '', merchant_key: '', merchant_salt: '' } },
   { key: 'iyzico', name: 'iyzico', config: { api_key: '', secret_key: '', base_url: 'https://sandbox-api.iyzipay.com' } },
   { key: 'netgsm', name: 'NetGSM', config: { username: '', password: '', sender: 'MOTORYA' } },
-  { key: 'fcm', name: 'Firebase FCM', config: { server_key: '', project_id: '' } },
+  { key: 'fcm', name: 'Web Push (VAPID)', config: { public_key: '', private_key: '' } },
   { key: 's3', name: 'AWS S3', config: { access_key: '', secret_key: '', bucket: '', region: 'eu-central-1' } },
 ];
 
-const SENSITIVE = ['api_key', 'secret_key', 'merchant_key', 'merchant_salt', 'password', 'server_key'];
+const SENSITIVE = ['api_key', 'secret_key', 'merchant_key', 'merchant_salt', 'password', 'private_key'];
 
 @Injectable()
 export class IntegrationsService implements OnModuleInit {
@@ -20,7 +20,7 @@ export class IntegrationsService implements OnModuleInit {
     for (const d of DEFAULTS) {
       await this.prisma.integration.upsert({
         where: { key: d.key },
-        update: {},
+        update: { name: d.name },
         create: { key: d.key, name: d.name, config: d.config, enabled: false },
       });
     }
@@ -71,7 +71,7 @@ export class IntegrationsService implements OnModuleInit {
       paytr: ['merchant_id', 'merchant_key', 'merchant_salt'],
       iyzico: ['api_key', 'secret_key'],
       netgsm: ['username', 'password'],
-      fcm: ['server_key', 'project_id'],
+      fcm: ['public_key', 'private_key'],
       s3: ['access_key', 'secret_key', 'bucket'],
     };
     return (required[key] ?? []).every(f => !!config[f]);
