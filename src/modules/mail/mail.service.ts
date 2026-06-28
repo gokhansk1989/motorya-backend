@@ -1,13 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import sgMail from '@sendgrid/mail';
 import { IntegrationsService } from '../integrations/integrations.service';
+import { ErrorLogsService } from '../error-logs/error-logs.service';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
   private readonly appUrl = 'https://motorya.com.tr';
 
-  constructor(private integrations: IntegrationsService) {}
+  constructor(private integrations: IntegrationsService, private errorLogs: ErrorLogsService) {}
 
   private async getSgConfig(): Promise<{ apiKey: string; from: string } | null> {
     const cfg = await this.integrations.getConfig('sendgrid');
@@ -124,12 +125,26 @@ export class MailService {
 
   private async send(to: string, subject: string, html: string) {
     const cfg = await this.getSgConfig();
-    if (!cfg) { this.logger.warn('SendGrid yapılandırılmamış, mail atlanıyor'); return; }
+    if (!cfg) {
+      this.logger.warn('SendGrid yapılandırılmamış, mail atlanıyor');
+      this.errorLogs.log({
+        source: 'integration',
+        message: `SendGrid yapılandırılmamış — mail gönderilemedi: "${subject}"`,
+        context: { provider: 'sendgrid', to, subject },
+      });
+      return;
+    }
     try {
       sgMail.setApiKey(cfg.apiKey);
       await sgMail.send({ to, from: { email: cfg.from, name: 'Motorya' }, subject, html });
     } catch (err: any) {
       this.logger.error(`Mail gönderilemedi (${to}): ${err?.message}`);
+      this.errorLogs.log({
+        source: 'integration',
+        message: `SendGrid gönderim hatası (${to}): ${err?.message ?? 'bilinmeyen hata'}`,
+        stack: err?.stack ?? null,
+        context: { provider: 'sendgrid', to, subject },
+      });
     }
   }
 }

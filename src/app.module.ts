@@ -23,6 +23,7 @@ import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { ErrorLogsModule } from './modules/error-logs/error-logs.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { ErrorLogsModule } from './modules/error-logs/error-logs.module';
     PagesModule,
     IntegrationsModule,
     ErrorLogsModule,
+    FeedbackModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

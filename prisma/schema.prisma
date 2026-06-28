@@ -708,3 +708,19 @@ model ErrorLog {
   @@index([source, createdAt])
   @@index([createdAt])
 }
+
+/// Kullanıcıların "bu sayfa çalışmıyor" gibi serbest metin geri bildirimleri — admin panel
+/// "Geri Bildirimler" sayfası için. ErrorLog'dan ayrı: teknik olmayan, insan diliyle yazılan
+/// rapor + admin tarafında durum takibi (NEW/REVIEWED/RESOLVED) gerektiriyor.
+model UserFeedback {
+  id           String   @id @default(cuid())
+  message      String
+  page         String?
+  contactEmail String?
+  userId       String?
+  status       String   @default("NEW")
+  createdAt    DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
