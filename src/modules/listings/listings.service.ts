@@ -111,6 +111,7 @@ export class ListingsService {
       condition: listing.condition,
       city: listing.city ?? undefined,
       sizeLabel: listing.sizeLabel ?? undefined,
+      gender: listing.gender ?? undefined,
       categoryId: listing.categoryId,
       categoryName: listing.category?.name ?? '',
       brandId: listing.brandId ?? undefined,

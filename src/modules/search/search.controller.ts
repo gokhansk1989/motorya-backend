@@ -15,6 +15,7 @@ class SearchQueryDto {
   @IsOptional() @IsString() brandId?: string;
   @IsOptional() @IsString() condition?: string;
   @IsOptional() @IsString() city?: string;
+  @IsOptional() @IsEnum(['ERKEK', 'KADIN', 'UNISEX', 'COCUK']) gender?: string;
   @IsOptional() @Type(() => Number) @IsNumber() @IsPositive() minPrice?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @IsPositive() maxPrice?: number;
   @IsOptional() @IsEnum(['newest', 'oldest', 'price_asc', 'price_desc']) sort?: string = 'newest';

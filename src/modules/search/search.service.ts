@@ -14,6 +14,7 @@ export interface ListingDocument {
   condition: string;
   city?: string;
   sizeLabel?: string;
+  gender?: string;
   categoryId: string;
   categoryName: string;
   brandId?: string;
@@ -45,10 +46,10 @@ export class SearchService implements OnModuleInit {
       this.index = this.client.index('listings');
       await this.index.updateSettings({
         searchableAttributes: ['title', 'description', 'categoryName', 'brandName', 'city'],
-        filterableAttributes: ['categoryId', 'brandId', 'condition', 'city', 'price', 'status', 'sellerId'],
+        filterableAttributes: ['categoryId', 'brandId', 'condition', 'city', 'price', 'status', 'sellerId', 'gender'],
         sortableAttributes: ['price', 'createdAt'],
         displayedAttributes: [
-          'id', 'title', 'price', 'originalPrice', 'condition', 'city', 'sizeLabel',
+          'id', 'title', 'price', 'originalPrice', 'condition', 'city', 'sizeLabel', 'gender',
           'categoryId', 'categoryName', 'brandId', 'brandName', 'sellerId', 'sellerName',
           'imageUrl', 'slug', 'status', 'createdAt',
         ],
@@ -81,6 +82,7 @@ export class SearchService implements OnModuleInit {
     brandId?: string;
     condition?: string;
     city?: string;
+    gender?: string;
     minPrice?: number;
     maxPrice?: number;
     sort?: string;
@@ -94,6 +96,7 @@ export class SearchService implements OnModuleInit {
       brandId,
       condition,
       city,
+      gender,
       minPrice,
       maxPrice,
       sort = 'newest',
@@ -107,6 +110,7 @@ export class SearchService implements OnModuleInit {
     if (brandId) filters.push(`brandId = "${brandId}"`);
     if (condition) filters.push(`condition = "${condition}"`);
     if (city) filters.push(`city = "${city}"`);
+    if (gender) filters.push(`gender = "${gender}"`);
     if (minPrice !== undefined) filters.push(`price >= ${minPrice}`);
     if (maxPrice !== undefined) filters.push(`price <= ${maxPrice}`);
     if (excludeSellerIds && excludeSellerIds.length > 0) {
