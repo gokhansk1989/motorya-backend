@@ -13,6 +13,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { buildListingSlug } from '../listings/listings.service';
 import { SettingsService } from '../settings/settings.service';
 import { WebPushService } from '../users/webpush.service';
+import { FcmService } from '../users/fcm.service';
 import { MessagesGateway } from '../messages/messages.gateway';
 import { MessagesService } from '../messages/messages.service';
 
@@ -23,6 +24,7 @@ export class OffersService {
     private social: SocialService,
     private settings: SettingsService,
     private webPush: WebPushService,
+    private fcm: FcmService,
     private chatGateway: MessagesGateway,
     private messages: MessagesService,
   ) {}
@@ -84,6 +86,11 @@ export class OffersService {
       title: 'Yeni teklif aldınız',
       body: offerBody,
       url: `/ilan/${buildListingSlug(listing)}`,
+    }, 'offers').catch(() => null);
+    this.fcm.sendToUser(listing.sellerId, {
+      title: 'Yeni teklif aldınız',
+      body: offerBody,
+      data: { type: 'offer', offerId: offer.id, listingId: listing.id },
     }, 'offers').catch(() => null);
     this.chatGateway.notifyUser(listing.sellerId, 'offer:updated', { offerId: offer.id, listingId: listing.id, status: 'PENDING' });
 
@@ -150,6 +157,11 @@ export class OffersService {
       body: respondBody,
       url: `/ilan/${buildListingSlug(offer.listing)}`,
     }, 'offers').catch(() => null);
+    this.fcm.sendToUser(offer.buyerId, {
+      title: respondTitle,
+      body: respondBody,
+      data: { type: 'offer', offerId, listingId: offer.listingId },
+    }, 'offers').catch(() => null);
     this.chatGateway.notifyUser(offer.buyerId, 'offer:updated', { offerId, listingId: offer.listingId, status: newStatus });
 
     return updated;
@@ -199,6 +211,11 @@ export class OffersService {
       body: counterBody,
       url: `/ilan/${buildListingSlug(offer.listing)}`,
     }, 'offers').catch(() => null);
+    this.fcm.sendToUser(offer.buyerId, {
+      title: 'Satıcı karşı teklif yaptı',
+      body: counterBody,
+      data: { type: 'offer', offerId, listingId: offer.listingId },
+    }, 'offers').catch(() => null);
     this.chatGateway.notifyUser(offer.buyerId, 'offer:updated', { offerId, listingId: offer.listingId, status: 'COUNTER_OFFERED' });
 
     return updated;
@@ -245,6 +262,11 @@ export class OffersService {
       title: counterRespondTitle,
       body: counterRespondBody,
       url: `/ilan/${buildListingSlug(offer.listing)}`,
+    }, 'offers').catch(() => null);
+    this.fcm.sendToUser(offer.listing.sellerId, {
+      title: counterRespondTitle,
+      body: counterRespondBody,
+      data: { type: 'offer', offerId, listingId: offer.listingId },
     }, 'offers').catch(() => null);
     this.chatGateway.notifyUser(offer.listing.sellerId, 'offer:updated', { offerId, listingId: offer.listingId, status: newStatus });
 

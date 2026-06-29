@@ -1,6 +1,7 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebPushService } from '../users/webpush.service';
+import { FcmService } from '../users/fcm.service';
 import { MailService } from '../mail/mail.service';
 import { buildListingSlug } from '../listings/listings.service';
 import { CreateSavedSearchDto } from './dto/saved-search.dto';
@@ -12,6 +13,7 @@ export class SavedSearchService {
   constructor(
     private prisma: PrismaService,
     private webPush: WebPushService,
+    private fcm: FcmService,
     private mail: MailService,
   ) {}
 
@@ -89,6 +91,10 @@ export class SavedSearchService {
     this.webPush.sendToMany(
       matches.map((s) => s.userId),
       { title: 'Aradığın ilan yayınlandı', body: listing.title, url: `/ilan/${listingSlug}` },
+    ).catch(() => null);
+    this.fcm.sendToMany(
+      matches.map((s) => s.userId),
+      { title: 'Aradığın ilan yayınlandı', body: listing.title, data: { type: 'saved_search', listingId: listing.id } },
     ).catch(() => null);
 
     const userIds = [...new Set(matches.map((s) => s.userId))];

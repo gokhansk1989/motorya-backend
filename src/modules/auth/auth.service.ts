@@ -23,6 +23,10 @@ function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+function generateRefreshToken(): string {
+  return crypto.randomBytes(40).toString('hex');
+}
+
 // Onay metinleri güncellendiğinde sürüm artırılmalı — geçmiş onaylar hangi metne
 // verildiğini kaybetmesin diye eski UserConsent satırları değiştirilmez, yenisi eklenir.
 const TERMS_VERSION = 'v1';
@@ -172,11 +176,65 @@ export class AuthService {
 
     this.audit.log({ actorId: user.id, action: 'auth.login_success', entity: 'User', entityId: user.id, ip, userAgent });
 
+    // Mobil cihazdan giriş: kısa ömürlü access token + Device kaydına bağlı refresh token
+    if (dto.platform) {
+      const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, dto.platform, dto.deviceModel, dto.appVersion);
+      const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });
+      return {
+        accessToken,
+        refreshToken,
+        deviceId,
+        user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+      };
+    }
+
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
     return {
       accessToken,
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
     };
+  }
+
+  // Web girişinde Device kaydı yok (cookie/JWT 24h yeterli) — sadece mobil için.
+  private async issueDeviceSession(userId: string, platform: 'IOS' | 'ANDROID', deviceModel?: string, appVersion?: string) {
+    const refreshToken = generateRefreshToken();
+    const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+    const device = await this.prisma.device.create({
+      data: { userId, platform, model: deviceModel, appVersion, refreshTokenHash },
+    });
+    return { deviceId: device.id, refreshToken };
+  }
+
+  async refreshAccessToken(deviceId: string, refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device || device.revokedAt) throw new UnauthorizedException('Oturum geçersiz, lütfen tekrar giriş yapın');
+
+    const valid = await bcrypt.compare(refreshToken, device.refreshTokenHash);
+    if (!valid) throw new UnauthorizedException('Oturum geçersiz, lütfen tekrar giriş yapın');
+
+    const user = await this.prisma.user.findUnique({ where: { id: device.userId } });
+    if (!user || user.status === 'SUSPENDED' || user.status === 'BANNED') {
+      throw new UnauthorizedException('Hesabınız askıya alınmıştır.');
+    }
+
+    // Rotasyon: her refresh'te yeni refresh token üretilir, eskisi artık geçersiz.
+    const newRefreshToken = generateRefreshToken();
+    const newHash = await bcrypt.hash(newRefreshToken, 10);
+    await this.prisma.device.update({
+      where: { id: deviceId },
+      data: { refreshTokenHash: newHash, lastSeenAt: new Date() },
+    });
+
+    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });
+    return { accessToken, refreshToken: newRefreshToken };
+  }
+
+  async revokeDevice(userId: string, deviceId: string): Promise<{ ok: boolean }> {
+    await this.prisma.device.updateMany({
+      where: { id: deviceId, userId },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true };
   }
 
   async loginWithGoogle(profile: {

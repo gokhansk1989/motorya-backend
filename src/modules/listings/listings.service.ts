@@ -13,6 +13,7 @@ import { SearchService, ListingDocument } from '../search/search.service';
 import { SocialService } from '../social/social.service';
 import { MailService } from '../mail/mail.service';
 import { WebPushService } from '../users/webpush.service';
+import { FcmService } from '../users/fcm.service';
 import { AuditService } from '../audit/audit.service';
 import { SettingsService } from '../settings/settings.service';
 
@@ -97,6 +98,7 @@ export class ListingsService {
     private social: SocialService,
     private mail: MailService,
     private webPush: WebPushService,
+    private fcm: FcmService,
     private audit: AuditService,
     private settings: SettingsService,
   ) {}
@@ -587,6 +589,11 @@ export class ListingsService {
         body,
         url: `/ilan/${listingSlug}`,
       }, 'listingStatus').catch(() => null);
+      this.fcm.sendToUser(listing.sellerId, {
+        title: 'İlanın öne çıkarıldı! ⭐',
+        body,
+        data: { type: 'listing', listingId: id },
+      }, 'listingStatus').catch(() => null);
 
       return updated;
     }
@@ -850,6 +857,11 @@ export class ListingsService {
       ? { title: 'Fiyat düştü!', body: `"${listingTitle}" ${meta.oldPrice.toFixed(0)} ₺ → ${meta.newPrice.toFixed(0)} ₺`, url: `/ilan/${slugUrl}` }
       : { title: 'Favori ilan satıldı', body: `"${listingTitle}" artık mevcut değil.`, url: '/' };
     this.webPush.sendToMany(userIds, pushPayload, type === 'price_drop' ? 'priceDrops' : 'listingStatus').catch(() => null);
+    this.fcm.sendToMany(
+      userIds,
+      { title: pushPayload.title, body: pushPayload.body, data: { type: 'listing', listingId } },
+      type === 'price_drop' ? 'priceDrops' : 'listingStatus',
+    ).catch(() => null);
   }
 
   async reindexAll() {

@@ -4,6 +4,7 @@ import { EncryptionService } from './encryption.service';
 import { SocialService } from '../social/social.service';
 import { MessageFilterService } from './message-filter.service';
 import { WebPushService } from '../users/webpush.service';
+import { FcmService } from '../users/fcm.service';
 
 @Injectable()
 export class MessagesService {
@@ -13,6 +14,7 @@ export class MessagesService {
     private social: SocialService,
     private filter: MessageFilterService,
     private webPush: WebPushService,
+    private fcm: FcmService,
   ) {}
 
   // Konuşma başlat veya mevcut olanı getir
@@ -188,6 +190,11 @@ export class MessagesService {
         title: `${message.sender.displayName} mesaj gönderdi`,
         body: 'Yeni bir mesajınız var.',
         url: `/mesajlarim?c=${conversationId}`,
+      }, 'messages').catch(() => null);
+      this.fcm.sendToUser(otherParticipant.userId, {
+        title: `${message.sender.displayName} mesaj gönderdi`,
+        body: 'Yeni bir mesajınız var.',
+        data: { type: 'message', conversationId },
       }, 'messages').catch(() => null);
     }
 

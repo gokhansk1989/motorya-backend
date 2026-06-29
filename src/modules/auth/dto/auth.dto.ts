@@ -59,10 +59,38 @@ export class LoginDto {
 
   @IsString()
   password: string;
+
+  // Mobil uygulamadan giriş yapılıyorsa cihaz kaydı + refresh token döner
+  @IsOptional()
+  @IsIn(['IOS', 'ANDROID'])
+  platform?: 'IOS' | 'ANDROID';
+
+  @IsOptional()
+  @IsString()
+  deviceModel?: string;
+
+  @IsOptional()
+  @IsString()
+  appVersion?: string;
+}
+
+export class RefreshTokenDto {
+  @IsString()
+  deviceId: string;
+
+  @IsString()
+  refreshToken: string;
+}
+
+export class LogoutDeviceDto {
+  @IsString()
+  deviceId: string;
 }
 
 export class AuthResponseDto {
   accessToken: string;
+  refreshToken?: string;
+  deviceId?: string;
   user: {
     id: string;
     email: string;

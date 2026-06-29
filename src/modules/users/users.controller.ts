@@ -11,15 +11,30 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { OptionalJwtGuard } from '../../common/guards/optional-jwt.guard';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 import { UsersService } from './users.service';
 import { WebPushService } from './webpush.service';
+import { FcmService } from './fcm.service';
 import { UpdateProfileDto, ChangePasswordDto, UpdateNotificationPrefsDto } from './dto/users.dto';
+
+class RegisterPushTokenDto {
+  @IsString()
+  token: string;
+
+  @IsIn(['IOS', 'ANDROID'])
+  platform: 'IOS' | 'ANDROID';
+
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
+}
 
 @Controller('users')
 export class UsersController {
   constructor(
     private usersService: UsersService,
     private webPush: WebPushService,
+    private fcm: FcmService,
   ) {}
 
   @Get('me')
@@ -83,6 +98,19 @@ export class UsersController {
   @UseGuards(AuthGuard('jwt'))
   unsubscribePush(@Body('endpoint') endpoint: string) {
     return this.webPush.unsubscribe(endpoint);
+  }
+
+  // Mobil uygulama (FCM) push token kaydı
+  @Post('me/push-token')
+  @UseGuards(AuthGuard('jwt'))
+  registerPushToken(@Request() req, @Body() dto: RegisterPushTokenDto) {
+    return this.fcm.registerToken(req.user.id, dto.token, dto.platform, dto.deviceId);
+  }
+
+  @Post('me/push-token-unregister')
+  @UseGuards(AuthGuard('jwt'))
+  unregisterPushToken(@Body('token') token: string) {
+    return this.fcm.unregisterToken(token);
   }
 
   @Get(':id')

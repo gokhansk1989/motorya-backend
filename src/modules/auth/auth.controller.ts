@@ -2,7 +2,7 @@ import { Controller, Post, Get, Body, Query, Headers, UseGuards, Request, Res } 
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, RefreshTokenDto, LogoutDeviceDto } from './dto/auth.dto';
 import { IsBoolean, IsEmail, IsOptional, IsString, MinLength, Equals } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 
@@ -84,5 +84,17 @@ export class AuthController {
   @UseGuards(AuthGuard('jwt'))
   recordConsents(@Request() req, @Body() dto: ConsentsDto) {
     return this.authService.recordConsents(req.user.id, dto, req.ip);
+  }
+
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('refresh')
+  refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refreshAccessToken(dto.deviceId, dto.refreshToken);
+  }
+
+  @Post('logout-device')
+  @UseGuards(AuthGuard('jwt'))
+  logoutDevice(@Request() req, @Body() dto: LogoutDeviceDto) {
+    return this.authService.revokeDevice(req.user.id, dto.deviceId);
   }
 }
