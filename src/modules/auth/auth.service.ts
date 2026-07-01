@@ -118,7 +118,7 @@ export class AuthService {
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
     return {
       accessToken,
-      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
     };
   }
 
@@ -184,14 +184,14 @@ export class AuthService {
         accessToken,
         refreshToken,
         deviceId,
-        user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+        user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
       };
     }
 
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
     return {
       accessToken,
-      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
     };
   }
 
@@ -280,7 +280,7 @@ export class AuthService {
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
     return {
       accessToken,
-      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
       needsConsent: !termsConsent,
     };
   }
@@ -317,7 +317,7 @@ export class AuthService {
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
     return {
       accessToken,
-      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
     };
   }
 

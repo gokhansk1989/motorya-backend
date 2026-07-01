@@ -96,6 +96,7 @@ export class AuthResponseDto {
     email: string;
     displayName: string;
     role: string;
+    emailVerifiedAt?: Date | null;
   };
   needsConsent?: boolean;
 }

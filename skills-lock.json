@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "framer-motion": {
+      "source": "dylantarre/animation-principles",
+      "sourceType": "github",
+      "skillPath": "skills/09-by-tool-framework/framer-motion/SKILL.md",
+      "computedHash": "562bde7d5264b63f4e8402dc20b199118e97d652d501dc58af3fdf3a29f9a1dd"
+    },
+    "sleek-design-mobile-apps": {
+      "source": "sleekdotdesign/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/design-mobile-apps/SKILL.md",
+      "computedHash": "aafa60cd2532f5f4c917db4880769d8bf0132af5b35eb5d31e72d753e2121c04"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/ui-ux-pro-max/SKILL.md",
+      "computedHash": "a2d7eab9fd29c7685e10dc0d9acca085e32e817b59b6914c0c1be28a56062fbc"
+    }
+  }
+}
