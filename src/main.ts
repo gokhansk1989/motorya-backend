@@ -16,7 +16,12 @@ async function bootstrap() {
 
   const uploadsDir = join(process.cwd(), 'uploads');
   mkdirSync(uploadsDir, { recursive: true });
-  app.useStaticAssets(uploadsDir, { prefix: '/uploads' });
+  app.useStaticAssets(uploadsDir, {
+    prefix: '/uploads',
+    // Dosya adları içerik hash'i taşıdığından süresiz cache güvenli
+    maxAge: '365d',
+    immutable: true,
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
