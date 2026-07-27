@@ -16,7 +16,7 @@ export class ReviewsService {
   async createReview(authorId: string, dto: CreateReviewDto) {
     const listing = await this.prisma.listing.findUnique({
       where: { id: dto.listingId },
-      select: { id: true, status: true, sellerId: true },
+      select: { id: true, status: true, sellerId: true, soldToUserId: true },
     });
 
     if (!listing) throw new NotFoundException('Listing not found');
@@ -29,29 +29,38 @@ export class ReviewsService {
     let direction: ReviewDirection;
     let targetUserId: string;
 
+    /**
+     * Yorum hakkı iki yoldan doğar:
+     *  1) Kabul edilmiş teklif — resmî pazarlık akışını kullananlar
+     *  2) Satıcının "satıldı" işaretlerken alıcı olarak seçtiği kişi —
+     *     kullanıcıların çoğu teklif vermeden mesajlaşarak anlaştığı için
+     *     bu yol olmadan yorum havuzu pratikte hiç dolmuyordu.
+     * Her iki yol da karşı tarafın onayına dayanır, uydurma yorum üretilemez.
+     */
+    const hasAcceptedOffer = (buyerId: string) =>
+      this.prisma.offer.findFirst({
+        where: { listingId: dto.listingId, buyerId, status: 'ACCEPTED' },
+        select: { id: true },
+      });
+
     if (authorId === listing.sellerId) {
-      // Seller reviewing the buyer
+      // Satıcı, alıcıyı değerlendiriyor
       direction = 'SELLER_TO_BUYER';
-      if (!dto.buyerId) {
+      const buyerId = dto.buyerId ?? listing.soldToUserId;
+      if (!buyerId) {
         throw new BadRequestException('buyerId is required for seller-to-buyer reviews');
       }
-      // Verify buyer has an ACCEPTED offer on this listing
-      const offer = await this.prisma.offer.findFirst({
-        where: { listingId: dto.listingId, buyerId: dto.buyerId, status: 'ACCEPTED' },
-      });
-      if (!offer) {
-        throw new BadRequestException('Buyer does not have an accepted offer on this listing');
+      const eligible = listing.soldToUserId === buyerId || (await hasAcceptedOffer(buyerId));
+      if (!eligible) {
+        throw new BadRequestException('Bu alıcıyla tamamlanmış bir alışverişiniz yok');
       }
-      targetUserId = dto.buyerId;
+      targetUserId = buyerId;
     } else {
-      // Buyer reviewing the seller
+      // Alıcı, satıcıyı değerlendiriyor
       direction = 'BUYER_TO_SELLER';
-      // Verify author has an ACCEPTED offer on this listing
-      const offer = await this.prisma.offer.findFirst({
-        where: { listingId: dto.listingId, buyerId: authorId, status: 'ACCEPTED' },
-      });
-      if (!offer) {
-        throw new BadRequestException('You do not have an accepted offer on this listing');
+      const eligible = listing.soldToUserId === authorId || (await hasAcceptedOffer(authorId));
+      if (!eligible) {
+        throw new BadRequestException('Bu ilanda tamamlanmış bir alışverişiniz yok');
       }
       targetUserId = listing.sellerId;
     }

@@ -59,6 +59,61 @@ export class TasksService {
     }
   }
 
+  /**
+   * Günlük: mesajlaşma başlamış ama hâlâ yayında duran ilanların sahiplerine
+   * "satıldı mı?" hatırlatması gönderir.
+   *
+   * Satıcılar satışı işaretlemeyi unutuyor; ilan listeleri satılmış ürünlerle
+   * doluyor, alıcılar boşuna mesaj atıyor ve karşılıklı değerlendirme akışı
+   * hiç başlamıyor. Hatırlatma ilan başına yalnızca bir kez gönderilir.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_NOON)
+  async remindStaleListings() {
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const candidates = await this.prisma.listing.findMany({
+      where: {
+        status: 'ACTIVE',
+        deletedAt: null,
+        createdAt: { lt: cutoff },
+        conversations: { some: { createdAt: { lt: cutoff } } },
+      },
+      select: { id: true, title: true, sellerId: true },
+      take: 200,
+    });
+
+    if (candidates.length === 0) return;
+
+    // Daha önce hatırlatma gönderilmiş ilanları ele
+    const alreadyNotified = await this.prisma.notification.findMany({
+      where: {
+        type: 'listing.sold_reminder',
+        userId: { in: [...new Set(candidates.map(c => c.sellerId))] },
+      },
+      select: { payload: true },
+    });
+    const notifiedIds = new Set(
+      alreadyNotified
+        .map(n => (n.payload as { listingId?: string } | null)?.listingId)
+        .filter(Boolean) as string[],
+    );
+
+    const pending = candidates.filter(c => !notifiedIds.has(c.id));
+    if (pending.length === 0) return;
+
+    await this.prisma.notification.createMany({
+      data: pending.map(l => ({
+        userId: l.sellerId,
+        type: 'listing.sold_reminder',
+        title: 'Bu ilan satıldı mı?',
+        body: `"${l.title}" hâlâ yayında. Sattıysanız işaretleyin — alıcıyı seçince karşılıklı değerlendirme yapabilirsiniz.`,
+        payload: { listingId: l.id },
+      })),
+    });
+
+    this.logger.log(`Sent ${pending.length} sold-reminder notification(s)`);
+  }
+
   // Günlük: 30 günden eski audit log kayıtlarını sil (saklama süresi)
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
   async pruneAuditLogs() {

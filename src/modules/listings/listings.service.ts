@@ -879,7 +879,52 @@ export class ListingsService {
     return { indexed: listings.length };
   }
 
-  async markSold(userId: string, listingId: string) {
+  /**
+   * Alıcı adayları: ilanla ilgili teklif veren veya mesajlaşan kullanıcılar.
+   * Satıcı "satıldı" işaretlerken buradan alıcıyı seçer; seçim yorum hakkını açar.
+   */
+  async getBuyerCandidates(userId: string, listingId: string) {
+    const listing = await this.prisma.listing.findFirst({
+      where: { id: listingId, sellerId: userId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!listing) throw new NotFoundException('Listing not found');
+
+    const [offers, conversations] = await Promise.all([
+      this.prisma.offer.findMany({
+        where: { listingId },
+        select: { buyerId: true, status: true, buyer: { select: { id: true, displayName: true, avatarUrl: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.conversationParticipant.findMany({
+        where: {
+          conversation: { listingId },
+          userId: { not: userId },
+        },
+        select: { user: { select: { id: true, displayName: true, avatarUrl: true } } },
+      }),
+    ]);
+
+    const seen = new Map<string, { id: string; displayName: string; avatarUrl: string | null; source: string }>();
+    for (const o of offers) {
+      if (!o.buyer) continue;
+      seen.set(o.buyer.id, {
+        ...o.buyer,
+        source: o.status === 'ACCEPTED' ? 'accepted_offer' : 'offer',
+      });
+    }
+    for (const c of conversations) {
+      if (!c.user || seen.has(c.user.id)) continue;
+      seen.set(c.user.id, { ...c.user, source: 'message' });
+    }
+
+    // Kabul edilmiş teklif sahibi en üstte
+    return [...seen.values()].sort((a, b) =>
+      (a.source === 'accepted_offer' ? -1 : 0) - (b.source === 'accepted_offer' ? -1 : 0),
+    );
+  }
+
+  async markSold(userId: string, listingId: string, buyerId?: string) {
     const listing = await this.prisma.listing.findFirst({
       where: { id: listingId, sellerId: userId, deletedAt: null },
     });
@@ -888,10 +933,26 @@ export class ListingsService {
       throw new BadRequestException('Only active or reserved listings can be marked as sold');
     }
 
+    if (buyerId) {
+      if (buyerId === userId) {
+        throw new BadRequestException('Seller cannot be the buyer');
+      }
+      const buyer = await this.prisma.user.findFirst({
+        where: { id: buyerId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!buyer) throw new BadRequestException('Buyer not found');
+    }
+
     const [updated] = await this.prisma.$transaction([
       this.prisma.listing.update({
         where: { id: listingId },
-        data: { status: ListingStatus.SOLD, reservedUntil: null },
+        data: {
+          status: ListingStatus.SOLD,
+          reservedUntil: null,
+          soldToUserId: buyerId ?? null,
+          soldAt: new Date(),
+        },
       }),
       this.prisma.user.update({
         where: { id: userId },
@@ -913,7 +974,31 @@ export class ListingsService {
       },
     }).catch(() => null);
 
-    this.audit.log({ actorId: userId, action: 'listing.status_change', entity: 'Listing', entityId: listingId, meta: { from: listing.status, to: 'SOLD' } });
+    // Alıcı kaydedildiyse her iki tarafa da değerlendirme daveti gider —
+    // yorum akışını besleyen asıl mekanizma bu.
+    if (buyerId) {
+      const slug = buildListingSlug({ ...listing, category: null as any });
+      await this.prisma.notification.createMany({
+        data: [
+          {
+            userId: buyerId,
+            type: 'review.invite',
+            title: 'Alışverişiniz nasıl geçti?',
+            body: `"${listing.title}" için satıcıyı değerlendirin, diğer alıcılara yardımcı olun.`,
+            payload: { listingId, listingSlug: slug, role: 'buyer' },
+          },
+          {
+            userId,
+            type: 'review.invite',
+            title: 'Alıcıyı değerlendirin',
+            body: `"${listing.title}" alıcısı hakkındaki deneyiminizi paylaşın.`,
+            payload: { listingId, listingSlug: slug, role: 'seller' },
+          },
+        ],
+      }).catch(() => null);
+    }
+
+    this.audit.log({ actorId: userId, action: 'listing.status_change', entity: 'Listing', entityId: listingId, meta: { from: listing.status, to: 'SOLD', buyerId: buyerId ?? null } });
 
     return updated;
   }

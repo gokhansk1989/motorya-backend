@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "/Users/gokhansarikaya/Downloads/motorya-frontend"],
       "port": 3000
+    },
+    {
+      "name": "rooftop-runner",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8787", "--directory", "/Users/gokhansarikaya/Downloads/rooftop-runner"],
+      "port": 8787
     }
   ]
 }

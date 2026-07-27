@@ -124,14 +124,34 @@ export class SearchService implements OnModuleInit {
       price_desc: 'price:desc',
     };
 
+    const searchOptions = {
+      filter: filters.join(' AND '),
+      sort: [sortMap[sort] ?? 'createdAt:desc'],
+      offset: (page - 1) * limit,
+      limit,
+      facets: ['categoryId', 'brandId', 'condition', 'city'],
+    };
+
     try {
-      const result = await this.index.search(q, {
-        filter: filters.join(' AND '),
-        sort: [sortMap[sort] ?? 'createdAt:desc'],
-        offset: (page - 1) * limit,
-        limit,
-        facets: ['categoryId', 'brandId', 'condition', 'city'],
+      /**
+       * Meilisearch varsayılanı ('last'), eşleşme bulana kadar sorgunun
+       * sonundaki kelimeleri atar. Bu yardımcı bir davranış ama sessiz
+       * yapıldığında kullanıcı alakasız sonuçlara bakıp aramanın bozuk
+       * olduğunu sanıyor. Önce tüm kelimelerin geçtiği sonuçları arıyor,
+       * bulunamazsa gevşetip bunu `meta.relaxed` ile bildiriyoruz.
+       */
+      const isMultiWord = q.trim().split(/\s+/).length > 1;
+
+      let result = await this.index.search(q, {
+        ...searchOptions,
+        ...(isMultiWord ? { matchingStrategy: 'all' as const } : {}),
       });
+      let relaxed = false;
+
+      if (isMultiWord && (result.estimatedTotalHits ?? 0) === 0) {
+        result = await this.index.search(q, searchOptions);
+        relaxed = (result.estimatedTotalHits ?? 0) > 0;
+      }
 
       return {
         items: result.hits,
@@ -140,12 +160,13 @@ export class SearchService implements OnModuleInit {
           page,
           limit,
           totalPages: Math.ceil((result.estimatedTotalHits ?? 0) / limit),
+          relaxed,
         },
         facets: result.facetDistribution ?? {},
       };
     } catch (err) {
       this.logger.warn(`Search failed: ${err.message}`);
-      return { items: [], meta: { total: 0, page, limit, totalPages: 0 }, facets: {} };
+      return { items: [], meta: { total: 0, page, limit, totalPages: 0, relaxed: false }, facets: {} };
     }
   }
 

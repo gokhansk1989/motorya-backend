@@ -208,11 +208,18 @@ export class ListingsController {
     return this.listingsService.reportListing(req.user.id, id, reason, description);
   }
 
+  // Satıcının "satıldı" ekranında alıcıyı seçebilmesi için aday listesi
+  @Get(':id/buyer-candidates')
+  @UseGuards(AuthGuard('jwt'))
+  getBuyerCandidates(@Param('id') id: string, @Request() req) {
+    return this.listingsService.getBuyerCandidates(req.user.id, id);
+  }
+
   @Patch(':id/sold')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  markSold(@Param('id') id: string, @Request() req) {
-    return this.listingsService.markSold(req.user.id, id);
+  markSold(@Param('id') id: string, @Request() req, @Body() body?: { buyerId?: string }) {
+    return this.listingsService.markSold(req.user.id, id, body?.buyerId);
   }
 
   @Patch(':id/reserve')

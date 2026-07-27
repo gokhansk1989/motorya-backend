@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Post,
+  Delete,
   Param,
   Body,
   UseGuards,
@@ -16,6 +17,13 @@ import { UsersService } from './users.service';
 import { WebPushService } from './webpush.service';
 import { FcmService } from './fcm.service';
 import { UpdateProfileDto, ChangePasswordDto, UpdateNotificationPrefsDto } from './dto/users.dto';
+
+class DeleteAccountDto {
+  // Google ile giriş yapan hesaplarda passwordHash yok, bu alan opsiyonel.
+  @IsOptional()
+  @IsString()
+  password?: string;
+}
 
 class RegisterPushTokenDto {
   @IsString()
@@ -53,6 +61,18 @@ export class UsersController {
   @UseGuards(AuthGuard('jwt'))
   changePassword(@Request() req, @Body() dto: ChangePasswordDto) {
     return this.usersService.changePassword(req.user.id, dto, req.ip, req.headers['user-agent']);
+  }
+
+  // KVKK unutulma hakkı + App Store 5.1.1(v): uygulama içi hesap silme
+  @Delete('me')
+  @UseGuards(AuthGuard('jwt'))
+  deleteAccount(@Request() req, @Body() dto: DeleteAccountDto) {
+    return this.usersService.deleteAccount(
+      req.user.id,
+      dto?.password,
+      req.ip,
+      req.headers['user-agent'],
+    );
   }
 
   @Patch('me/notification-prefs')

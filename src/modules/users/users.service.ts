@@ -268,6 +268,101 @@ export class UsersService {
     return { success: true };
   }
 
+  /**
+   * KVKK "unutulma hakkı" ve App Store 5.1.1(v) gereği hesap silme.
+   *
+   * Kayıt tamamen silinmez, kişisel veriler anonimleştirilip hesap pasife
+   * alınır. Sebebi: mesajlar ve yorumlar karşı tarafın da verisidir —
+   * satır silinirse başkasının konuşma geçmişi ve itibar puanı bozulur,
+   * olası uyuşmazlıklarda kayıt kalmaz. Bu yaklaşım kişisel veriyi
+   * geri döndürülemez şekilde yok ederken ilişkisel bütünlüğü korur.
+   */
+  async deleteAccount(userId: string, password?: string, ip?: string, userAgent?: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.deletedAt) throw new NotFoundException('User not found');
+
+    // Şifreyle giriş yapan hesaplarda kimlik doğrulaması zorunlu.
+    // Google ile girenlerde passwordHash yoktur, oturum sahipliği yeterli.
+    if (user.passwordHash) {
+      if (!password) throw new BadRequestException('Password is required to delete the account');
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) throw new UnauthorizedException('Password is incorrect');
+    }
+
+    const anonymousSuffix = userId.slice(-8);
+
+    const activeListings = await this.prisma.listing.findMany({
+      where: { sellerId: userId, deletedAt: null, status: { in: ['ACTIVE', 'PENDING_REVIEW', 'RESERVED', 'DRAFT'] } },
+      select: { id: true },
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      // Açık ilanlar yayından kaldırılır
+      await tx.listing.updateMany({
+        where: { sellerId: userId, deletedAt: null, status: { in: ['ACTIVE', 'PENDING_REVIEW', 'RESERVED', 'DRAFT'] } },
+        data: { status: 'ARCHIVED' },
+      });
+
+      // Kişisel verilerin anonimleştirilmesi
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          email: `silinmis-${anonymousSuffix}@motorya.invalid`,
+          phone: null,
+          tcKimlik: null,
+          passwordHash: null,
+          googleId: null,
+          displayName: 'Silinmiş Kullanıcı',
+          avatarUrl: null,
+          bio: null,
+          city: null,
+          district: null,
+          birthDate: null,
+          gender: null,
+          payoutIban: null,
+          payoutName: null,
+          phoneVerifiedAt: null,
+          emailVerifiedAt: null,
+          identityVerifiedAt: null,
+          ibanVerifiedAt: null,
+          emailVerificationToken: null,
+          emailVerificationExpiry: null,
+          passwordResetToken: null,
+          passwordResetExpiry: null,
+          notificationPrefs: null,
+          status: 'BANNED',
+          deletedAt: new Date(),
+        },
+      });
+
+      // Oturumlar ve bildirim kanalları kapatılır
+      await tx.device.deleteMany({ where: { userId } });
+      await tx.pushToken.deleteMany({ where: { userId } });
+      await tx.webPushSubscription.deleteMany({ where: { userId } });
+      await tx.savedSearch.deleteMany({ where: { userId } });
+      await tx.notification.deleteMany({ where: { userId } });
+    });
+
+    // Arama indeksinden ilanları kaldır (transaction dışında — harici servis)
+    await Promise.all(
+      activeListings.map(l =>
+        this.search.removeListing(l.id).catch(() => undefined),
+      ),
+    );
+
+    this.audit.log({
+      actorId: userId,
+      action: 'user.account_delete',
+      entity: 'User',
+      entityId: userId,
+      meta: { archivedListings: activeListings.length },
+      ip,
+      userAgent,
+    });
+
+    return { success: true, archivedListings: activeListings.length };
+  }
+
   async getNotifications(userId: string, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
     const [items, total, unreadCount] = await Promise.all([
