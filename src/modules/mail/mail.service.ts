@@ -7,6 +7,7 @@ import { ErrorLogsService } from '../error-logs/error-logs.service';
 export class MailService {
   private readonly logger = new Logger(MailService.name);
   private readonly appUrl = 'https://motorya.com.tr';
+  private readonly adminUrl = process.env.ADMIN_URL ?? 'https://admin.motorya.com.tr';
 
   constructor(private integrations: IntegrationsService, private errorLogs: ErrorLogsService) {}
 
@@ -38,6 +39,19 @@ export class MailService {
         <p><strong>"${listingTitle}"</strong> ilanın alındı ve ekibimiz tarafından inceleniyor.</p>
         <p>İnceleme genellikle birkaç saat içinde tamamlanır. Onaylandığında sana haber vereceğiz.</p>
         <a href="${this.appUrl}/ilanlarim" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanlarıma Git</a>
+      </div>
+    `);
+  }
+
+  /** Moderatöre: kuyrukta onay bekleyen ilan var. */
+  async sendModerationQueueEmail(email: string, name: string, listingTitle: string) {
+    await this.send(email, `Onay bekleyen ilan: ${listingTitle}`, `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#f97316">Onay Bekleyen İlan 📋</h2>
+        <p>Merhaba ${name},</p>
+        <p><strong>"${listingTitle}"</strong> moderasyon kuyruğuna düştü ve incelemenizi bekliyor.</p>
+        <p style="color:#767c89;font-size:14px">Satıcı, ilanı onaylanana kadar yayında göremiyor — hızlı inceleme kullanıcı deneyimi için önemli.</p>
+        <a href="${this.adminUrl}/listings" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Moderasyon Paneline Git</a>
       </div>
     `);
   }

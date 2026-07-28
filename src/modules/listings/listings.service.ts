@@ -319,9 +319,52 @@ export class ListingsService {
       listing.title,
     ).catch(() => null);
 
+    // Moderatörlere haber ver — kuyruğa ilan düştüğünü kimse bilmiyordu,
+    // gece verilen ilan sabaha kadar bekliyordu.
+    this.notifyModeratorsOfPendingListing(listing.id, listing.title).catch(() => null);
+
     this.audit.log({ actorId: sellerId, action: 'listing.create', entity: 'Listing', entityId: listing.id, meta: { title: listing.title } });
 
     return { ...listing, slug: buildListingSlug(listing) };
+  }
+
+  /**
+   * Yeni ilan moderasyon kuyruğuna düştüğünde yöneticilere bildirim + e-posta.
+   * E-posta kuyruk boşken (0'dan 1'e geçiş) gönderilir; yoğun saatlerde
+   * her ilan için ayrı mail atıp gelen kutusunu doldurmamak için.
+   */
+  private async notifyModeratorsOfPendingListing(listingId: string, title: string) {
+    const [moderators, pendingCount] = await Promise.all([
+      this.prisma.user.findMany({
+        where: {
+          role: { in: ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'] },
+          deletedAt: null,
+          status: 'ACTIVE',
+        },
+        select: { id: true, email: true, displayName: true },
+      }),
+      this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null } }),
+    ]);
+
+    if (moderators.length === 0) return;
+
+    await this.prisma.notification.createMany({
+      data: moderators.map(m => ({
+        userId: m.id,
+        type: 'moderation.pending',
+        title: 'Onay bekleyen ilan var',
+        body: `"${title}" incelemenizi bekliyor. Kuyrukta ${pendingCount} ilan var.`,
+        payload: { listingId, pendingCount },
+      })),
+    });
+
+    if (pendingCount === 1) {
+      await Promise.all(
+        moderators.map(m =>
+          this.mail.sendModerationQueueEmail(m.email, m.displayName, title).catch(() => null),
+        ),
+      );
+    }
   }
 
   async getListings(query: ListingsQueryDto, viewerId?: string) {

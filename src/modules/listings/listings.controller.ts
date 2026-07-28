@@ -14,6 +14,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { OptionalJwtGuard } from '../../common/guards/optional-jwt.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -25,8 +26,12 @@ import { CreateCategoryDto, UpdateCategoryDto, CreateBrandDto, UpdateBrandDto, S
 export class ListingsController {
   constructor(private listingsService: ListingsService) {}
 
+  // Global sınır (100/dk) ilan spam'i için fazla gevşek: tek hesap dakikalar
+  // içinde moderasyon kuyruğunu boğabilir. Gerçek kullanıcı saatte 10 ilandan
+  // fazlasını elle giremez.
   @Post()
   @UseGuards(AuthGuard('jwt'))
+  @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
   create(@Request() req, @Body() dto: CreateListingDto) {
     return this.listingsService.createListing(req.user.id, dto);
   }
