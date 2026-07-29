@@ -137,7 +137,9 @@ export class ListingsService {
 
   async getCategoryBySlug(slug: string) {
     const category = await this.prisma.category.findUnique({ where: { slug } });
-    if (!category) return null;
+    // `return null` NestJS'te 200 + boş gövde döndürüyordu; istemci tarafında
+    // res.json() patlıyor ve sayfa 500 veriyordu. Olmayan kategori 404 olmalı.
+    if (!category) throw new NotFoundException('Category not found');
     const children = await this.prisma.category.findMany({ where: { parentId: category.id }, orderBy: { sortOrder: 'asc' } });
     const grandchildren = children.length > 0
       ? await this.prisma.category.findMany({ where: { parentId: { in: children.map(c => c.id) } }, orderBy: { sortOrder: 'asc' } })
