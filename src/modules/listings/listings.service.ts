@@ -507,7 +507,22 @@ export class ListingsService {
 
     if (!listing) throw new NotFoundException('Listing not found');
 
-    if (listing.status !== ListingStatus.ACTIVE && listing.sellerId !== viewerId) {
+    /**
+     * RESERVED ve SOLD ilanlar herkese açık kalır: teklif veren, favorileyen
+     * veya mesajlaşan kullanıcı ilanı görebilmeli — aksi halde kendi teklifine
+     * tıklayınca "ilan bulunamadı" alıyordu. Satılmış ilanın görünür kalması
+     * ayrıca değerlendirme akışı ve SEO için gerekli (yapısal veri zaten
+     * SOLD durumunu schema.org/SoldOut olarak bildiriyor).
+     *
+     * Taslak, inceleme bekleyen, reddedilen ve arşivlenen ilanlar yalnızca
+     * sahibine görünür.
+     */
+    const publiclyVisible: ListingStatus[] = [
+      ListingStatus.ACTIVE,
+      ListingStatus.RESERVED,
+      ListingStatus.SOLD,
+    ];
+    if (!publiclyVisible.includes(listing.status) && listing.sellerId !== viewerId) {
       throw new NotFoundException('Listing not found');
     }
 
