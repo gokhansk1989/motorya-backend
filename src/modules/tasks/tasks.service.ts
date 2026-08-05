@@ -1,12 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private mail: MailService) {}
 
   // Her 30 dakikada süresi dolan rezervasyonları kontrol et
   @Cron(CronExpression.EVERY_30_MINUTES)
@@ -112,6 +113,124 @@ export class TasksService {
     });
 
     this.logger.log(`Sent ${pending.length} sold-reminder notification(s)`);
+  }
+
+  /**
+   * Üye yaşam döngüsü hatırlatmaları.
+   *
+   * Kural: kişi başına ömür boyu en fazla 2 mail. Alan adının gönderim
+   * itibarı yeni olduğu için, ilgisiz kullanıcıya tekrar tekrar yazmak
+   * doğrulama ve mesaj bildirimlerinin de spam'e düşmesine yol açar.
+   *
+   *  - 7. gün:  hiç ilan vermemiş herkese "ilk ilanını ver"
+   *  - 30. gün: YALNIZCA ilgi göstermiş olanlara (favori / kayıtlı arama /
+   *             takip) alıcı diliyle yeniden etkileşim maili. Hiç sinyal
+   *             vermemiş kullanıcıya yazılmaz — getirisi sıfır, maliyeti itibar.
+   *
+   * Her iki mail de Notification kaydıyla tek seferliğe kilitlenir.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_10AM)
+  async sendLifecycleReminders() {
+    await this.sendFirstListingReminders();
+    await this.sendReengagementReminders();
+  }
+
+  /** Kayıttan 7 gün sonra, hiç ilan vermemiş üyelere. */
+  private async sendFirstListingReminders() {
+    const now = Date.now();
+    const from = new Date(now - 8 * 24 * 60 * 60 * 1000);
+    const to = new Date(now - 7 * 24 * 60 * 60 * 1000);
+
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        status: 'ACTIVE',
+        emailVerifiedAt: { not: null },
+        createdAt: { gte: from, lt: to },
+        listings: { none: {} },
+        notifications: { none: { type: 'lifecycle.first_listing' } },
+      },
+      select: { id: true, email: true, displayName: true },
+      take: 200,
+    });
+
+    if (candidates.length === 0) return;
+
+    // Bildirimi mailden ÖNCE yazıyoruz: mail gönderimi yarıda kalsa bile
+    // aynı kullanıcıya ikinci kez yazılmasın (spam riski > kaçan mail riski).
+    await this.prisma.notification.createMany({
+      data: candidates.map(u => ({
+        userId: u.id,
+        type: 'lifecycle.first_listing',
+        title: 'İlk ilanını vermeye ne dersin?',
+        body: 'Kullanmadığın ekipmanı Motorya\'da ücretsiz satabilirsin.',
+        payload: {},
+      })),
+    });
+
+    let sent = 0;
+    for (const u of candidates) {
+      const ok = await this.mail
+        .sendFirstListingReminderEmail(u.email, u.displayName)
+        .then(() => true)
+        .catch(() => false);
+      if (ok) sent++;
+    }
+    this.logger.log(`Sent ${sent}/${candidates.length} first-listing reminder(s)`);
+  }
+
+  /** Kayıttan 30 gün sonra, ilgi göstermiş ama hâlâ ilan vermemiş üyelere. */
+  private async sendReengagementReminders() {
+    const now = Date.now();
+    const from = new Date(now - 31 * 24 * 60 * 60 * 1000);
+    const to = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        status: 'ACTIVE',
+        emailVerifiedAt: { not: null },
+        createdAt: { gte: from, lt: to },
+        listings: { none: {} },
+        notifications: { none: { type: 'lifecycle.reengagement' } },
+        // İlgi sinyali şart — hiçbiri yoksa mail atmıyoruz.
+        OR: [
+          { favorites: { some: {} } },
+          { savedSearches: { some: {} } },
+          { following: { some: {} } },
+        ],
+      },
+      select: {
+        id: true, email: true, displayName: true,
+        _count: { select: { favorites: true, savedSearches: true } },
+      },
+      take: 200,
+    });
+
+    if (candidates.length === 0) return;
+
+    await this.prisma.notification.createMany({
+      data: candidates.map(u => ({
+        userId: u.id,
+        type: 'lifecycle.reengagement',
+        title: 'Senin için yenilikler var',
+        body: 'İlgilendiğin kategorilerde yeni ilanlar eklendi.',
+        payload: {},
+      })),
+    });
+
+    let sent = 0;
+    for (const u of candidates) {
+      const ok = await this.mail
+        .sendReengagementEmail(u.email, u.displayName, {
+          favorites: u._count.favorites,
+          savedSearches: u._count.savedSearches,
+        })
+        .then(() => true)
+        .catch(() => false);
+      if (ok) sent++;
+    }
+    this.logger.log(`Sent ${sent}/${candidates.length} re-engagement mail(s)`);
   }
 
   // Günlük: 30 günden eski audit log kayıtlarını sil (saklama süresi)

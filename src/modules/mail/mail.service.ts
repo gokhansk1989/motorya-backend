@@ -31,6 +31,104 @@ export class MailService {
     `);
   }
 
+  /**
+   * Ortak e-posta iskeleti.
+   *
+   * Mevcut şablonlar düz <div> ile kurulmuştu; Outlook bunları bozuyor.
+   * Tablo tabanlı bu sarmalayıcı tüm istemcilerde aynı görünür.
+   */
+  private wrap(bodyHtml: string, footerNote?: string) {
+    return `
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#fafafa;padding:24px 12px;">
+        <tr><td align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;background:#ffffff;border-radius:12px;border:1px solid #e4e6ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+            <tr><td style="padding:28px 32px 0;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                <td style="width:40px;"><div style="width:40px;height:40px;border-radius:10px;background:#f97316;color:#ffffff;text-align:center;line-height:40px;font-size:20px;font-weight:800;">M</div></td>
+                <td style="padding-left:10px;font-size:19px;font-weight:800;color:#f97316;">MOTORYA</td>
+              </tr></table>
+            </td></tr>
+            ${bodyHtml}
+            <tr><td style="padding:26px 32px 24px;">
+              <div style="border-top:1px solid #e4e6ea;padding-top:16px;font-size:12px;color:#9aa0ab;line-height:1.6;text-align:center;">
+                ${footerNote ?? 'Bu e-postayı Motorya üyesi olduğunuz için aldınız.'}<br>
+                <a href="${this.appUrl}/profilim" style="color:#9aa0ab;">Bildirim tercihleri</a>
+                &nbsp;·&nbsp;
+                <a href="${this.appUrl}" style="color:#9aa0ab;">motorya.com.tr</a>
+              </div>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>`;
+  }
+
+  /** 7. gün: kayıt olmuş ama hiç ilan vermemiş üyeye tek seferlik hatırlatma. */
+  async sendFirstListingReminderEmail(email: string, name: string) {
+    await this.send(email, 'Garajında duran bir ekipman var mı?', this.wrap(`
+      <tr><td style="padding:26px 32px 0;">
+        <div style="font-size:21px;font-weight:800;color:#1a1d24;line-height:1.35;">Garajında duran bir ekipman var mı, ${name}?</div>
+        <div style="font-size:15px;color:#464b57;line-height:1.65;padding-top:12px;">
+          Motorya'ya katılalı bir hafta oldu. Kullanmadığın kask, mont ya da eldiven
+          varsa, onu arayan biri şu an burada.
+        </div>
+      </td></tr>
+      <tr><td style="padding:22px 32px 0;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#fff7ed;border-radius:10px;">
+          <tr><td style="padding:16px 18px;font-size:14px;color:#464b57;line-height:1.7;">
+            <span style="color:#f97316;font-weight:700;">·</span> İlan vermek tamamen ücretsiz, komisyon yok<br>
+            <span style="color:#f97316;font-weight:700;">·</span> Birkaç fotoğraf ve fiyat yeter, 2 dakika sürer<br>
+            <span style="color:#f97316;font-weight:700;">·</span> Alıcılar seni doğrudan uygulamadan bulur
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:24px 32px 0;" align="center">
+        <a href="${this.appUrl}/ilan-ver" style="display:inline-block;background:#f97316;color:#ffffff;padding:14px 34px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;">İlk İlanımı Ver</a>
+      </td></tr>
+      <tr><td style="padding:20px 32px 0;">
+        <div style="font-size:13.5px;color:#767c89;line-height:1.6;text-align:center;">
+          Ne satacağına karar veremedin mi?
+          <a href="${this.appUrl}/ara" style="color:#f97316;">Nelerin satıldığına göz at</a>
+        </div>
+      </td></tr>
+    `));
+  }
+
+  /**
+   * 30. gün: yalnızca ilgi göstermiş (favori/kayıtlı arama) üyelere.
+   * Satıcı diliyle değil alıcı diliyle yazılıyor — kullanıcının kendi
+   * ilgisine dayanan gerçek bir haber, tekrarlanan bir dürtme değil.
+   */
+  async sendReengagementEmail(
+    email: string,
+    name: string,
+    signal: { favorites: number; savedSearches: number },
+  ) {
+    const lead = signal.savedSearches > 0
+      ? 'Kaydettiğin aramalara uyan yeni ilanlar eklendi.'
+      : 'Favorilerine eklediğin ilanlarda hareket var.';
+    const cta = signal.savedSearches > 0
+      ? { label: 'Yeni İlanları Gör', href: `${this.appUrl}/ara` }
+      : { label: 'Favorilerimi Aç', href: `${this.appUrl}/favoriler` };
+
+    await this.send(email, `${name}, senin için yenilikler var`, this.wrap(`
+      <tr><td style="padding:26px 32px 0;">
+        <div style="font-size:21px;font-weight:800;color:#1a1d24;line-height:1.35;">Merhaba ${name}, buralar hareketlendi</div>
+        <div style="font-size:15px;color:#464b57;line-height:1.65;padding-top:12px;">${lead}</div>
+      </td></tr>
+      <tr><td style="padding:24px 32px 0;" align="center">
+        <a href="${cta.href}" style="display:inline-block;background:#f97316;color:#ffffff;padding:14px 34px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;">${cta.label}</a>
+      </td></tr>
+      <tr><td style="padding:22px 32px 0;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#fff7ed;border-radius:10px;">
+          <tr><td style="padding:16px 18px;font-size:14px;color:#464b57;line-height:1.65;">
+            Bu arada — sende de satılacak bir ekipman varsa ilan vermek ücretsiz.
+            <a href="${this.appUrl}/ilan-ver" style="color:#f97316;font-weight:600;">İlan ver</a>
+          </td></tr>
+        </table>
+      </td></tr>
+    `, 'Bu e-postayı Motorya\'daki ilgi alanlarınıza göre aldınız.'));
+  }
+
   async sendListingPendingEmail(email: string, name: string, listingTitle: string) {
     await this.send(email, `İlanın incelemeye alındı: ${listingTitle}`, `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
