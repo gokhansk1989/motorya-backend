@@ -32,6 +32,9 @@ function generateRefreshToken(): string {
 const TERMS_VERSION = 'v1';
 const KVKK_VERSION = 'v1';
 
+/** "Kurucu Üye" rozeti verilecek üye sayısı. */
+const FOUNDER_LIMIT = 100;
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -67,6 +70,12 @@ export class AuthService {
     const token = generateToken();
     const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+    // İlk 100 üyeye kalıcı "Kurucu Üye" rozeti. Erken gelmeyi dezavantaj
+    // olmaktan çıkarıp ayrıcalığa çeviriyor; rozet profilde ve ilan
+    // detayında güven sinyali olarak görünüyor.
+    const founderCount = await this.prisma.user.count({ where: { isFounder: true } });
+    const isFounder = founderCount < FOUNDER_LIMIT;
+
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
@@ -79,6 +88,7 @@ export class AuthService {
         city: dto.city,
         district: dto.district,
         status: 'PENDING',
+        isFounder,
         emailVerificationToken: token,
         emailVerificationExpiry: expiry,
       },
@@ -256,7 +266,9 @@ export class AuthService {
           data: { googleId, avatarUrl: byEmail.avatarUrl ?? avatarUrl, emailVerifiedAt: byEmail.emailVerifiedAt ?? new Date(), status: byEmail.status === 'PENDING' ? 'ACTIVE' : byEmail.status },
         });
       } else {
-        // Yeni Google kullanıcısı oluştur
+        // Yeni Google kullanıcısı oluştur — e-posta kaydıyla aynı kurucu
+        // rozeti kuralına tabi.
+        const founderCount = await this.prisma.user.count({ where: { isFounder: true } });
         user = await this.prisma.user.create({
           data: {
             email,
@@ -265,6 +277,7 @@ export class AuthService {
             avatarUrl,
             passwordHash: null,
             status: 'ACTIVE',
+            isFounder: founderCount < FOUNDER_LIMIT,
             emailVerifiedAt: new Date(),
           },
         });
