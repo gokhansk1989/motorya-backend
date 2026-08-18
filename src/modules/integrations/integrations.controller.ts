@@ -5,7 +5,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UpdateIntegrationDto } from './dto/integrations.dto';
 
-const KNOWN_KEYS = ['sendgrid', 'paytr', 'iyzico', 'netgsm', 'fcm', 's3'];
+const KNOWN_KEYS = ['resend', 'paytr', 'iyzico', 'netgsm', 'fcm', 's3'];
 
 @Controller('integrations')
 @UseGuards(AuthGuard('jwt'), RolesGuard)

@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 const DEFAULTS = [
-  { key: 'sendgrid', name: 'SendGrid', config: { api_key: '', from_email: 'noreply@motorya.com.tr' } },
+  { key: 'resend', name: 'Resend', config: { api_key: '', from_email: 'noreply@motorya.com.tr' } },
   { key: 'paytr', name: 'PayTR', config: { merchant_id: '', merchant_key: '', merchant_salt: '' } },
   { key: 'iyzico', name: 'iyzico', config: { api_key: '', secret_key: '', base_url: 'https://sandbox-api.iyzipay.com' } },
   { key: 'netgsm', name: 'NetGSM', config: { username: '', password: '', sender: 'MOTORYA' } },
@@ -24,6 +24,9 @@ export class IntegrationsService implements OnModuleInit {
         create: { key: d.key, name: d.name, config: d.config, enabled: false },
       });
     }
+    // SendGrid Resend ile değiştirildi; panelde iki e-posta sağlayıcısı
+    // görünmesin diye kullanılmayan kayıt kaldırılıyor.
+    await this.prisma.integration.deleteMany({ where: { key: 'sendgrid' } });
   }
 
   async list() {
@@ -67,7 +70,7 @@ export class IntegrationsService implements OnModuleInit {
 
   private isConfigured(config: Record<string, string>, key: string): boolean {
     const required: Record<string, string[]> = {
-      sendgrid: ['api_key', 'from_email'],
+      resend: ['api_key', 'from_email'],
       paytr: ['merchant_id', 'merchant_key', 'merchant_salt'],
       iyzico: ['api_key', 'secret_key'],
       netgsm: ['username', 'password'],

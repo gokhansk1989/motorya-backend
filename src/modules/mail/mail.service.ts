@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { ErrorLogsService } from '../error-logs/error-logs.service';
 
@@ -11,12 +11,19 @@ export class MailService {
 
   constructor(private integrations: IntegrationsService, private errorLogs: ErrorLogsService) {}
 
-  private async getSgConfig(): Promise<{ apiKey: string; from: string } | null> {
-    const cfg = await this.integrations.getConfig('sendgrid');
-    const apiKey = cfg.api_key || process.env.SENDGRID_API_KEY;
+  // Resend istemcisi API anahtarı başına önbelleklenir; panelden anahtar
+  // değiştirildiğinde bir sonraki gönderimde yeni istemci kurulur.
+  private client: { key: string; resend: Resend } | null = null;
+
+  private async getMailConfig(): Promise<{ resend: Resend; from: string } | null> {
+    const cfg = await this.integrations.getConfig('resend');
+    const apiKey = cfg.api_key || process.env.RESEND_API_KEY;
     const from = cfg.from_email || 'noreply@motorya.com.tr';
     if (!apiKey) return null;
-    return { apiKey, from };
+    if (this.client?.key !== apiKey) {
+      this.client = { key: apiKey, resend: new Resend(apiKey) };
+    }
+    return { resend: this.client.resend, from };
   }
 
   async sendVerificationEmail(email: string, name: string, token: string) {
@@ -236,26 +243,32 @@ export class MailService {
   }
 
   private async send(to: string, subject: string, html: string) {
-    const cfg = await this.getSgConfig();
+    const cfg = await this.getMailConfig();
     if (!cfg) {
-      this.logger.warn('SendGrid yapılandırılmamış, mail atlanıyor');
+      this.logger.warn('Resend yapılandırılmamış, mail atlanıyor');
       this.errorLogs.log({
         source: 'integration',
-        message: `SendGrid yapılandırılmamış — mail gönderilemedi: "${subject}"`,
-        context: { provider: 'sendgrid', to, subject },
+        message: `Resend yapılandırılmamış — mail gönderilemedi: "${subject}"`,
+        context: { provider: 'resend', to, subject },
       });
       return;
     }
     try {
-      sgMail.setApiKey(cfg.apiKey);
-      await sgMail.send({ to, from: { email: cfg.from, name: 'Motorya' }, subject, html });
+      // Resend hatayı fırlatmaz, { data, error } döner — error'ı elle kontrol et.
+      const { error } = await cfg.resend.emails.send({
+        from: `Motorya <${cfg.from}>`,
+        to: [to],
+        subject,
+        html,
+      });
+      if (error) throw new Error(`${error.name}: ${error.message}`);
     } catch (err: any) {
       this.logger.error(`Mail gönderilemedi (${to}): ${err?.message}`);
       this.errorLogs.log({
         source: 'integration',
-        message: `SendGrid gönderim hatası (${to}): ${err?.message ?? 'bilinmeyen hata'}`,
+        message: `Resend gönderim hatası (${to}): ${err?.message ?? 'bilinmeyen hata'}`,
         stack: err?.stack ?? null,
-        context: { provider: 'sendgrid', to, subject },
+        context: { provider: 'resend', to, subject },
       });
     }
   }

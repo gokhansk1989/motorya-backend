@@ -651,10 +651,10 @@ model BlogPost {
   @@index([published, publishedAt])
 }
 
-/// Servis entegrasyonları (SendGrid, PayTR vb.) — config JSON şifreli değil, hassas alanlar maskelenir
+/// Servis entegrasyonları (Resend, PayTR vb.) — config JSON şifreli değil, hassas alanlar maskelenir
 model Integration {
   id        String   @id @default(cuid())
-  key       String   @unique // 'sendgrid', 'paytr', 'netgsm' vb.
+  key       String   @unique // 'resend', 'paytr', 'netgsm' vb.
   name      String
   enabled   Boolean  @default(false)
   config    Json     @default("{}")
