@@ -43,6 +43,7 @@ export class UsersService {
         tcKimlik: true,
         birthDate: true,
         gender: true,
+        phone: true,
         role: true,
         status: true,
         ratingAvg: true,
@@ -247,6 +248,7 @@ export class UsersService {
         tcKimlik: true,
         birthDate: true,
         gender: true,
+        phone: true,
       },
     });
   }

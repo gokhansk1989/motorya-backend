@@ -38,6 +38,11 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsIn(['MALE', 'FEMALE', 'OTHER'])
   gender?: 'MALE' | 'FEMALE' | 'OTHER';
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^0?5\d{9}$/, { message: 'Gecerli bir cep telefonu numarasi giriniz' })
+  phone?: string;
 }
 
 export class ChangePasswordDto {
