@@ -23,6 +23,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const source = status >= 500 ? 'api' : status === 429 ? 'rate-limit' : status === 404 ? '404' : null;
 
+    // 404 gurultusunu filtrele: bot/tarayıcı istekleri (favicon, .git,
+    // meta tag'lerden URL uretimi, root path) log'a yazilmaz.
+    if (source === '404' && this.isNoisy404(request?.originalUrl ?? '', request?.headers?.['user-agent'] as string | undefined)) {
+      response.status(status).json(typeof body === 'string' ? { message: body } : body);
+      return;
+    }
+
     if (source) {
       const err = exception as Error;
       this.errorLogs.log({
@@ -38,5 +45,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     response.status(status).json(typeof body === 'string' ? { message: body } : body);
+  }
+
+  // Gerçek kullanicidan gelmeyen 404 desenleri
+  private isNoisy404(url: string, ua?: string): boolean {
+    // Favicon, root, git config, sitemap variantlari
+    if (/^\/(favicon\.(ico|png)|robots\.txt|sitemap.*\.xml|\.git|\.env|\.well-known|apple-touch-icon)/.test(url)) return true;
+    if (url === '/' || url === '') return true;
+    // /pages/ altinda meta tag scrape'i yapan bot istekleri (SEO tarayicilari)
+    if (/^\/pages\/[^a-z]/i.test(url)) return true;
+    if (/^\/pages\/(tr_TR|website|index|width=|Motorya|\d)/.test(url)) return true;
+    if (/^\/pages\/[^\/]{80,}/.test(url)) return true;
+    // Bilinen bot user-agent'lari
+    if (ua && /nmap|nikto|sqlmap|masscan|shodan|censys|zgrab|python-requests\/2/i.test(ua)) return true;
+    return false;
   }
 }
