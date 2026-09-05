@@ -11,6 +11,12 @@ import { SlowRequestInterceptor } from './modules/error-logs/slow-request.interc
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // API domain'i (api.motorya.com.tr) Google indeksinden hariç tut. Ozellikle
+  // /auth/google gibi endpoint'ler GSC raporlarinda 404 uretiyor.
+  app.use((_req: any, res: any, next: any) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    next();
+  });
   app.useGlobalFilters(app.get(AllExceptionsFilter));
   app.useGlobalInterceptors(app.get(SlowRequestInterceptor));
 
