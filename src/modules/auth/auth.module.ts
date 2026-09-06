@@ -16,7 +16,7 @@ import { getJwtSecret } from '../../common/jwt-secret';
     MailModule,
     JwtModule.register({
       secret: getJwtSecret(),
-      signOptions: { expiresIn: '24h' },
+      signOptions: { expiresIn: '2h' },
     }),
   ],
   providers: [AuthService, JwtStrategy, GoogleStrategy],

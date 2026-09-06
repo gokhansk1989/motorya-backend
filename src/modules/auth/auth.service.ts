@@ -186,27 +186,21 @@ export class AuthService {
 
     this.audit.log({ actorId: user.id, action: 'auth.login_success', entity: 'User', entityId: user.id, ip, userAgent });
 
-    // Mobil cihazdan giriş: kısa ömürlü access token + Device kaydına bağlı refresh token
-    if (dto.platform) {
-      const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, dto.platform, dto.deviceModel, dto.appVersion);
-      const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });
-      return {
-        accessToken,
-        refreshToken,
-        deviceId,
-        user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
-      };
-    }
-
-    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
+    // Her cihazdan giriş: 2 saatlik access token + Device kaydı üzerinden refresh token.
+    // dto.platform yoksa web varsayilir (WEB); model/appVersion yalnizca mobil icin dolu.
+    const platform: 'IOS' | 'ANDROID' | 'WEB' = dto.platform ?? 'WEB';
+    const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, platform, dto.deviceModel, dto.appVersion);
+    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });
     return {
       accessToken,
+      refreshToken,
+      deviceId,
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
     };
   }
 
   // Web girişinde Device kaydı yok (cookie/JWT 24h yeterli) — sadece mobil için.
-  private async issueDeviceSession(userId: string, platform: 'IOS' | 'ANDROID', deviceModel?: string, appVersion?: string) {
+  private async issueDeviceSession(userId: string, platform: 'IOS' | 'ANDROID' | 'WEB', deviceModel?: string, appVersion?: string) {
     const refreshToken = generateRefreshToken();
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
     const device = await this.prisma.device.create({
