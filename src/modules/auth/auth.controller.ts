@@ -88,7 +88,7 @@ export class AuthController {
     return this.authService.recordConsents(req.user.id, dto, req.ip);
   }
 
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refreshAccessToken(dto.deviceId, dto.refreshToken);

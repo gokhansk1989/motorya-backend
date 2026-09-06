@@ -324,11 +324,14 @@ export class AuthService {
       data: { adminMfaOtp: null, adminMfaOtpExpiry: null },
     });
 
-    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
+    const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, 'WEB');
+    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });
     return {
       accessToken,
+      refreshToken,
+      deviceId,
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
-    };
+    } as any;
   }
 
   async forgotPassword(email: string): Promise<{ message: string }> {
