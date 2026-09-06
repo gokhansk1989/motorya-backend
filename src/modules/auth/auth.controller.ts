@@ -74,10 +74,12 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleCallback(@Request() req, @Res() res) {
-    const { accessToken, user, needsConsent } = req.user as any;
+    const { accessToken, refreshToken, deviceId, user, needsConsent } = req.user as any;
     const frontendUrl = this.config.get('FRONTEND_URL', 'https://motorya.com.tr');
     const userEncoded = encodeURIComponent(JSON.stringify(user));
-    return res.redirect(`${frontendUrl}/callback?token=${accessToken}&user=${userEncoded}&needsConsent=${!!needsConsent}`);
+    const rt = refreshToken ? `&refreshToken=${encodeURIComponent(refreshToken)}` : '';
+    const did = deviceId ? `&deviceId=${encodeURIComponent(deviceId)}` : '';
+    return res.redirect(`${frontendUrl}/callback?token=${accessToken}${rt}${did}&user=${userEncoded}&needsConsent=${!!needsConsent}`);
   }
 
   @Post('consents')

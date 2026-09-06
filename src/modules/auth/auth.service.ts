@@ -284,12 +284,15 @@ export class AuthService {
 
     const termsConsent = await this.prisma.userConsent.findFirst({ where: { userId: user.id, type: 'TERMS' } });
 
-    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
+    const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, 'WEB');
+    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });
     return {
       accessToken,
+      refreshToken,
+      deviceId,
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
       needsConsent: !termsConsent,
-    };
+    } as any;
   }
 
   // Google ile kayıt sözleşme/KVKK onaylarını atlıyor — ilk girişte ayrı bir ekranla tamamlanır.
