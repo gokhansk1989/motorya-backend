@@ -64,6 +64,10 @@ export class LoginDto {
   @IsString()
   password: string;
 
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
+
   // Mobil uygulamadan giriş yapılıyorsa cihaz kaydı + refresh token döner
   @IsOptional()
   @IsIn(['IOS', 'ANDROID'])

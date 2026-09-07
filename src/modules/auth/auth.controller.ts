@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { verifyTurnstile } from '../../common/turnstile';
+import { requiresCaptcha, recordFailed, resetAttempts } from '../../common/login-attempts';
 import { RegisterDto, LoginDto, RefreshTokenDto, LogoutDeviceDto } from './dto/auth.dto';
 import { IsBoolean, IsEmail, IsOptional, IsString, MinLength, Equals } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
@@ -41,8 +42,23 @@ export class AuthController {
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
-  login(@Body() dto: LoginDto, @Request() req, @Headers('x-client') client?: string) {
-    return this.authService.login(dto, client === 'admin-panel', req.ip, req.headers['user-agent']);
+  async login(@Body() dto: LoginDto & { turnstileToken?: string }, @Request() req, @Headers('x-client') client?: string) {
+    if (requiresCaptcha(dto.email)) {
+      const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
+      if (!ok) throw new BadRequestException({ message: 'Bot doğrulaması gerekli', captchaRequired: true });
+    }
+    try {
+      const result = await this.authService.login(dto, client === 'admin-panel', req.ip, req.headers['user-agent']);
+      resetAttempts(dto.email);
+      return result;
+    } catch (err: any) {
+      recordFailed(dto.email);
+      if (requiresCaptcha(dto.email)) {
+        const original = err?.response?.message ?? err?.message ?? 'Giriş başarısız';
+        throw new BadRequestException({ message: original, captchaRequired: true });
+      }
+      throw err;
+    }
   }
 
   @Get('verify-email')
