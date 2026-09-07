@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -27,6 +28,7 @@ import { FeedbackModule } from './modules/feedback/feedback.module';
 
 @Module({
   imports: [
+    SentryModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
@@ -55,6 +57,9 @@ import { FeedbackModule } from './modules/feedback/feedback.module';
     FeedbackModule,
   ],
   controllers: [HealthController],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_FILTER, useClass: SentryGlobalFilter },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}
