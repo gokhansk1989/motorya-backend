@@ -13,6 +13,7 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { HealthController } from './health.controller';
+import { RootController } from './root.controller';
 import { SearchModule } from './modules/search/search.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { MessagesModule } from './modules/messages/messages.module';
@@ -56,7 +57,7 @@ import { FeedbackModule } from './modules/feedback/feedback.module';
     ErrorLogsModule,
     FeedbackModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, RootController],
   providers: [
     { provide: APP_FILTER, useClass: SentryGlobalFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
