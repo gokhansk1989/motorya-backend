@@ -1,6 +1,10 @@
 import { IsBoolean, IsEmail, IsString, IsOptional, IsDateString, IsIn, MinLength, Matches, Length, Equals } from 'class-validator';
 
 export class RegisterDto {
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
+
   @IsEmail()
   email: string;
 

@@ -1,12 +1,16 @@
-import { Controller, Post, Get, Body, Query, Headers, UseGuards, Request, Res } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, Headers, UseGuards, Request, Res, BadRequestException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
+import { verifyTurnstile } from '../../common/turnstile';
 import { RegisterDto, LoginDto, RefreshTokenDto, LogoutDeviceDto } from './dto/auth.dto';
 import { IsBoolean, IsEmail, IsOptional, IsString, MinLength, Equals } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 
-class ForgotPasswordDto { @IsEmail() email: string; }
+class ForgotPasswordDto {
+  @IsEmail() email: string;
+  @IsOptional() @IsString() turnstileToken?: string;
+}
 class ResetPasswordDto { @IsString() token: string; @IsString() @MinLength(8) password: string; }
 class ResendVerificationDto { @IsEmail() email: string; }
 class AdminMfaVerifyDto { @IsEmail() email: string; @IsString() otp: string; }
@@ -29,7 +33,9 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
-  register(@Body() dto: RegisterDto, @Request() req) {
+  async register(@Body() dto: RegisterDto & { turnstileToken?: string }, @Request() req) {
+    const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
+    if (!ok) throw new BadRequestException('Bot doğrulaması başarısız');
     return this.authService.register(dto, req.ip);
   }
 
@@ -51,7 +57,9 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('forgot-password')
-  forgotPassword(@Body() dto: ForgotPasswordDto) {
+  async forgotPassword(@Body() dto: ForgotPasswordDto & { turnstileToken?: string }, @Request() req) {
+    const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
+    if (!ok) throw new BadRequestException('Bot doğrulaması başarısız');
     return this.authService.forgotPassword(dto.email);
   }
 
