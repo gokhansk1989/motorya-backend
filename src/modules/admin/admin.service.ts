@@ -330,6 +330,15 @@ export class AdminService {
     }
 
     const skip = (page - 1) * limit;
+    // Durum dağılımı: moderasyonda "kaç aktif / askıda / banlı" bilgisi
+    // sayfalamadan bağımsız lazım. Aynı `where` ile hesaplanıyor, yani
+    // arama yapıldığında eşleşen kayıtların dağılımını gösteriyor.
+    const statusGroupsPromise = this.prisma.user.groupBy({
+      by: ['status'],
+      where,
+      _count: { _all: true },
+    });
+
     const [items, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
@@ -366,7 +375,16 @@ export class AdminService {
       }
     }));
 
-    return { items: enriched, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+    const statusGroups = await statusGroupsPromise;
+    const byStatus = { ACTIVE: 0, PENDING: 0, SUSPENDED: 0, BANNED: 0 };
+    for (const g of statusGroups) {
+      byStatus[g.status as keyof typeof byStatus] = g._count._all;
+    }
+
+    return {
+      items: enriched,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit), byStatus },
+    };
   }
 
   // Reports
