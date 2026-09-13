@@ -30,6 +30,28 @@ async function main() {
   );
 
   console.log('✓ Report.conversationId eklendi (kolon + FK + index)');
+
+  // Geriye dönük doldurma: otomatik bağlama yalnızca yeni şikayetlerde
+  // çalışıyor, eski şikayetler boş kalıyordu. Şikayet eden ile satıcı aynı
+  // ilan üzerinden yazışmışsa bağı burada kuruyoruz. Yalnızca NULL olanlara
+  // dokunuyor — script her açılışta koştuğu için tekrarı zararsız.
+  const linked = await prisma.$executeRawUnsafe(`
+    UPDATE "Report" r
+    SET "conversationId" = c.id
+    FROM "Conversation" c
+    JOIN "Listing" l ON l.id = c."listingId"
+    WHERE r."conversationId" IS NULL
+      AND r."listingId" = c."listingId"
+      AND EXISTS (
+        SELECT 1 FROM "ConversationParticipant" p
+        WHERE p."conversationId" = c.id AND p."userId" = r."reporterId"
+      )
+      AND EXISTS (
+        SELECT 1 FROM "ConversationParticipant" p
+        WHERE p."conversationId" = c.id AND p."userId" = l."sellerId"
+      );
+  `);
+  console.log(`✓ Geriye dönük bağlanan şikayet sayısı: ${linked}`);
 }
 
 main()
