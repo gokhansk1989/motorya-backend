@@ -1107,16 +1107,32 @@ export class ListingsService {
     });
     if (existing) return { alreadyReported: true };
 
+    // Şikayet eden kişi satıcıyla bu ilan üzerinden yazışmışsa şikayeti o
+    // konuşmaya bağla — moderatör Şikayetler ekranından doğrudan yazışmaya
+    // geçebilsin. Dolandırıcılık şikayetlerinin kanıtı genelde orada.
+    const conversation = await this.prisma.conversation.findFirst({
+      where: {
+        listingId,
+        AND: [
+          { participants: { some: { userId: reporterId } } },
+          { participants: { some: { userId: listing.sellerId } } },
+        ],
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    });
+
     const report = await this.prisma.report.create({
       data: {
         reporterId,
         targetType: 'LISTING',
         listingId,
+        conversationId: conversation?.id ?? null,
         reason: description ? `${reason}: ${description}` : reason,
         status: 'OPEN',
       },
     });
-    this.audit.log({ actorId: reporterId, action: 'report.submit', entity: 'Report', entityId: report.id, meta: { listingId, reason } });
+    this.audit.log({ actorId: reporterId, action: 'report.submit', entity: 'Report', entityId: report.id, meta: { listingId, reason, conversationId: conversation?.id ?? null } });
 
     return { id: report.id, alreadyReported: false };
   }

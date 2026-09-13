@@ -507,6 +507,7 @@ model Conversation {
 
   participants ConversationParticipant[]
   messages     Message[]
+  reports      Report[]
 
   @@index([listingId])
 }
@@ -566,12 +567,18 @@ model Report {
   listingId    String?
   listing      Listing?         @relation(fields: [listingId], references: [id])
   targetUserId String?
+  // Şikayet bir yazışmadan doğduysa ilgili konuşma — moderatör Şikayetler
+  // ekranından doğrudan mesajlara geçebilsin diye. Konuşma silinirse
+  // şikayet kaydı kalır, bağ kopar (SetNull).
+  conversationId String?
+  conversation   Conversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   reason       String
   status       ReportStatus     @default(OPEN)
   createdAt    DateTime         @default(now())
   reviewedAt   DateTime?
 
   @@index([status, createdAt])
+  @@index([conversationId])
 }
 
 /// Kullanıcının kaydettiği arama kriterleri — yeni ilan eşleştiğinde bildirim tetikler.

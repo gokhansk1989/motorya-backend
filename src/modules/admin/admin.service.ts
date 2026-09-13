@@ -450,6 +450,9 @@ export class AdminService {
               seller: { select: { id: true, displayName: true } },
             },
           },
+          // Şikayet bir yazışmadan doğduysa: moderatör tek tıkla mesajlara
+          // geçebilsin diye konuşma kimliği ve mesaj sayısı. İçerik dönmez.
+          conversation: { select: { id: true, _count: { select: { messages: true } } } },
         },
       }),
       this.prisma.report.count({ where }),
