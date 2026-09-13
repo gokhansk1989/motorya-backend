@@ -136,6 +136,24 @@ export class AdminController {
     return this.adminService.updateReportStatus(id, req.user.id, dto.status, dto.note);
   }
 
+  // Konuşma listesi — içerik dönmez, yalnızca katılımcı/ilan/sayaç bilgisi.
+  // Anlaşmazlıkta doğru konuşmayı bulmak için; okuma ayrı endpoint'te.
+  @Get('conversations')
+  @Roles('SUPER_ADMIN')
+  getConversations(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('userId') userId?: string,
+    @Query('listingId') listingId?: string,
+    @Query('q') q?: string,
+  ) {
+    return this.adminService.getConversations(Number(page) || 1, Number(limit) || 20, {
+      userId,
+      listingId,
+      q,
+    });
+  }
+
   // Dispute için konuşma mesajlarını şifresiz oku (SUPER_ADMIN only, audit log düşer)
   @Get('conversations/:id/messages')
   @Roles('SUPER_ADMIN')

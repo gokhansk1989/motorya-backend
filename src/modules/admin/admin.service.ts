@@ -370,6 +370,66 @@ export class AdminService {
   }
 
   // Reports
+  /**
+   * Konuşmaları listeler — anlaşmazlık incelemesinde doğru konuşmayı bulmak için.
+   * Mesaj İÇERİĞİ burada dönmez; içerik yalnızca MessagesService.getMessagesForAdmin
+   * üzerinden, gerekçe ile ve denetim kaydı düşerek okunabilir.
+   */
+  async getConversations(page = 1, limit = 20, opts: { userId?: string; listingId?: string; q?: string } = {}) {
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (opts.listingId) where.listingId = opts.listingId;
+    if (opts.userId) where.participants = { some: { userId: opts.userId } };
+    if (opts.q) {
+      // Katılımcı adı/e-postası ya da ilan başlığı ile ara
+      where.OR = [
+        { participants: { some: { user: { displayName: { contains: opts.q, mode: 'insensitive' } } } } },
+        { participants: { some: { user: { email: { contains: opts.q, mode: 'insensitive' } } } } },
+        { listing: { title: { contains: opts.q, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.conversation.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          listing: { select: { id: true, title: true, status: true } },
+          participants: {
+            include: { user: { select: { id: true, displayName: true, email: true, status: true } } },
+          },
+          _count: { select: { messages: true } },
+        },
+      }),
+      this.prisma.conversation.count({ where }),
+    ]);
+
+    // Son mesaj zamanı (içerik değil) — listede sıralama/bağlam için
+    const lastMessages = items.length
+      ? await this.prisma.message.groupBy({
+          by: ['conversationId'],
+          where: { conversationId: { in: items.map((c) => c.id) }, deletedAt: null },
+          _max: { createdAt: true },
+        })
+      : [];
+    const lastByConv = new Map(lastMessages.map((m) => [m.conversationId, m._max.createdAt]));
+
+    return {
+      items: items.map((c) => ({
+        id: c.id,
+        listing: c.listing,
+        participants: c.participants.map((p) => p.user),
+        messageCount: c._count.messages,
+        lastMessageAt: lastByConv.get(c.id) ?? null,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+      })),
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
   async getReports(page = 1, limit = 20, status?: string) {
     const skip = (page - 1) * limit;
     const where: any = {};
