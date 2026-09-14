@@ -184,7 +184,7 @@ export class AuthService {
       return { mfaRequired: true, email: user.email } as any;
     }
 
-    this.audit.log({ actorId: user.id, action: 'auth.login_success', entity: 'User', entityId: user.id, ip, userAgent });
+    this.audit.log({ actorId: user.id, action: 'auth.login_success', entity: 'User', entityId: user.id, meta: { method: 'password' }, ip, userAgent });
 
     // Her cihazdan giriş: 2 saatlik access token + Device kaydı üzerinden refresh token.
     // dto.platform yoksa web varsayilir (WEB); model/appVersion yalnizca mobil icin dolu.
@@ -284,6 +284,14 @@ export class AuthService {
 
     const termsConsent = await this.prisma.userConsent.findFirst({ where: { userId: user.id, type: 'TERMS' } });
 
+    // Google girişleri de kaydedilmeliydi: aksi halde bu kullanıcılar denetim
+    // kaydında hiç görünmüyor, "son giriş" bilgisi onlar için boş çıkıyordu.
+    // ip/userAgent yok — Passport stratejisi request'i bu metoda taşımıyor.
+    this.audit.log({
+      actorId: user.id, action: 'auth.login_success', entity: 'User', entityId: user.id,
+      meta: { method: 'google' },
+    });
+
     const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, 'WEB');
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });
     return {
@@ -310,7 +318,7 @@ export class AuthService {
     return { ok: true };
   }
 
-  async verifyAdminMfa(email: string, otp: string): Promise<AuthResponseDto> {
+  async verifyAdminMfa(email: string, otp: string, ip?: string, userAgent?: string): Promise<AuthResponseDto> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user || !user.adminMfaOtp) throw new UnauthorizedException('Geçersiz doğrulama isteği');
 
@@ -322,6 +330,14 @@ export class AuthService {
     await this.prisma.user.update({
       where: { id: user.id },
       data: { adminMfaOtp: null, adminMfaOtpExpiry: null },
+    });
+
+    // Admin paneline giriş buraya kadar hiç kaydedilmiyordu: login() MFA
+    // dalında erken dönüyor ve alttaki audit.log'a hiç ulaşmıyor. Admin
+    // eylemlerini kaydedip girişlerini kaydetmemek denetimde boşluk bırakıyordu.
+    this.audit.log({
+      actorId: user.id, action: 'auth.login_success', entity: 'User', entityId: user.id,
+      meta: { method: 'admin_mfa' }, ip, userAgent,
     });
 
     const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, 'WEB');

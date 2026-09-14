@@ -375,6 +375,19 @@ export class AdminService {
       }
     }));
 
+    // Son giriş zamanı denetim kaydından türetiliyor — User'a ayrı bir kolon
+    // eklemeye gerek yok ve geçmiş girişler de kendiliğinden geliyor.
+    // AuditLog'da @@index([actorId, createdAt]) var, sayfadaki 20 kullanıcı
+    // için tek groupBy yetiyor.
+    const loginRows = items.length
+      ? await this.prisma.auditLog.groupBy({
+          by: ['actorId'],
+          where: { actorId: { in: items.map((u) => u.id) }, action: 'auth.login_success' },
+          _max: { createdAt: true },
+        })
+      : [];
+    const lastLoginByUser = new Map(loginRows.map((r) => [r.actorId, r._max.createdAt]));
+
     const statusGroups = await statusGroupsPromise;
     const byStatus = { ACTIVE: 0, PENDING: 0, SUSPENDED: 0, BANNED: 0 };
     for (const g of statusGroups) {
@@ -382,7 +395,7 @@ export class AdminService {
     }
 
     return {
-      items: enriched,
+      items: enriched.map((u) => ({ ...u, lastLoginAt: lastLoginByUser.get(u.id) ?? null })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit), byStatus },
     };
   }

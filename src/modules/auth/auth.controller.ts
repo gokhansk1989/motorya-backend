@@ -87,8 +87,10 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('admin-mfa-verify')
-  verifyAdminMfa(@Body() dto: AdminMfaVerifyDto) {
-    return this.authService.verifyAdminMfa(dto.email, dto.otp);
+  verifyAdminMfa(@Body() dto: AdminMfaVerifyDto, @Request() req) {
+    // ip/userAgent denetim kaydı için: admin paneline kimin nereden girdiği
+    // güvenlik incelemesinde gereken ilk bilgi.
+    return this.authService.verifyAdminMfa(dto.email, dto.otp, req.ip, req.headers['user-agent']);
   }
 
   @Get('google')
