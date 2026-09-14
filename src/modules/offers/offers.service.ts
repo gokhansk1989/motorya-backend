@@ -17,6 +17,18 @@ import { FcmService } from '../users/fcm.service';
 import { MessagesGateway } from '../messages/messages.gateway';
 import { MessagesService } from '../messages/messages.service';
 
+// Teklif durumlarının kullanıcıya gösterilecek karşılıkları. Hata metninde
+// ham enum ("ACCEPTED") göstermek kullanıcıya bir şey anlatmıyordu.
+const OFFER_STATUS_TR: Record<string, string> = {
+  PENDING: 'beklemede',
+  ACCEPTED: 'kabul edildi',
+  REJECTED: 'reddedildi',
+  COUNTER_OFFERED: 'karşı teklif verildi',
+  WITHDRAWN: 'geri çekildi',
+  EXPIRED: 'süresi doldu',
+};
+const statusTr = (s: string) => OFFER_STATUS_TR[s] ?? s.toLowerCase();
+
 @Injectable()
 export class OffersService {
   constructor(
@@ -38,8 +50,8 @@ export class OffersService {
       where: { id: dto.listingId, status: 'ACTIVE', deletedAt: null },
       include: { category: { include: { parent: { select: { slug: true } } } } },
     });
-    if (!listing) throw new NotFoundException('Listing not found or not available');
-    if (listing.sellerId === buyerId) throw new ForbiddenException('Cannot offer on your own listing');
+    if (!listing) throw new NotFoundException('İlan bulunamadı veya artık teklif almıyor');
+    if (listing.sellerId === buyerId) throw new ForbiddenException('Kendi ilanınıza teklif veremezsiniz');
 
     if (await this.social.isBlocked(buyerId, listing.sellerId)) {
       throw new ForbiddenException('Bu satıcıyla işlem yapamazsınız');
@@ -47,14 +59,14 @@ export class OffersService {
 
     const amount = new Decimal(dto.amount);
     if (amount.gte(listing.price)) {
-      throw new BadRequestException('Offer amount must be less than listing price');
+      throw new BadRequestException('Teklifiniz ilan fiyatından düşük olmalı');
     }
 
     // Aynı ilanda bekleyen teklif varsa yeni teklif açılamaz
     const pending = await this.prisma.offer.findFirst({
       where: { listingId: dto.listingId, buyerId, status: 'PENDING' },
     });
-    if (pending) throw new ConflictException('You already have a pending offer on this listing');
+    if (pending) throw new ConflictException('Bu ilanda zaten bekleyen bir teklifiniz var');
 
     const offer = await this.prisma.offer.create({
       data: {
@@ -113,13 +125,13 @@ export class OffersService {
       where: { id: offerId },
       include: { listing: { include: { category: { include: { parent: { select: { slug: true } } } } } } },
     });
-    if (!offer) throw new NotFoundException('Offer not found');
+    if (!offer) throw new NotFoundException('Teklif bulunamadı');
     if (offer.listing.sellerId !== sellerId) throw new ForbiddenException();
     if (offer.status !== 'PENDING') {
-      throw new BadRequestException(`Offer is already ${offer.status.toLowerCase()}`);
+      throw new BadRequestException(`Bu teklif zaten ${statusTr(offer.status)}`);
     }
     if (offer.expiresAt && offer.expiresAt < new Date()) {
-      throw new BadRequestException('Offer has expired');
+      throw new BadRequestException('Teklifin süresi dolmuş');
     }
 
     const newStatus = dto.action === 'ACCEPTED' ? 'ACCEPTED' : 'REJECTED';
@@ -172,10 +184,10 @@ export class OffersService {
       where: { id: offerId },
       include: { listing: { include: { category: { include: { parent: { select: { slug: true } } } } } } },
     });
-    if (!offer) throw new NotFoundException('Offer not found');
+    if (!offer) throw new NotFoundException('Teklif bulunamadı');
     if (offer.listing.sellerId !== sellerId) throw new ForbiddenException();
     if (offer.status !== 'PENDING') {
-      throw new BadRequestException(`Offer is already ${offer.status.toLowerCase()}`);
+      throw new BadRequestException(`Bu teklif zaten ${statusTr(offer.status)}`);
     }
 
     const counter = new Decimal(dto.counterAmount);
@@ -226,10 +238,10 @@ export class OffersService {
       where: { id: offerId },
       include: { listing: { include: { category: { include: { parent: { select: { slug: true } } } } } } },
     });
-    if (!offer) throw new NotFoundException('Offer not found');
+    if (!offer) throw new NotFoundException('Teklif bulunamadı');
     if (offer.buyerId !== buyerId) throw new ForbiddenException();
     if (offer.status !== 'COUNTER_OFFERED') {
-      throw new BadRequestException('No counter offer to respond to');
+      throw new BadRequestException('Yanıtlanacak bir karşı teklif yok');
     }
 
     const newStatus = action === 'ACCEPTED' ? 'ACCEPTED' : 'REJECTED';
@@ -275,10 +287,10 @@ export class OffersService {
 
   async withdrawOffer(offerId: string, buyerId: string) {
     const offer = await this.prisma.offer.findUnique({ where: { id: offerId } });
-    if (!offer) throw new NotFoundException('Offer not found');
+    if (!offer) throw new NotFoundException('Teklif bulunamadı');
     if (offer.buyerId !== buyerId) throw new ForbiddenException();
     if (offer.status !== 'PENDING') {
-      throw new BadRequestException(`Cannot withdraw offer with status: ${offer.status}`);
+      throw new BadRequestException(`Bu teklif ${statusTr(offer.status)}, geri çekilemez`);
     }
 
     const updated = await this.prisma.offer.update({ where: { id: offerId }, data: { status: 'WITHDRAWN' } });
@@ -289,7 +301,7 @@ export class OffersService {
 
   async getOffersForListing(listingId: string, sellerId: string) {
     const listing = await this.prisma.listing.findFirst({ where: { id: listingId, deletedAt: null } });
-    if (!listing) throw new NotFoundException('Listing not found');
+    if (!listing) throw new NotFoundException('İlan bulunamadı');
     if (listing.sellerId !== sellerId) throw new ForbiddenException();
 
     return this.prisma.offer.findMany({
