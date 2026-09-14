@@ -17,6 +17,7 @@ import { ModerateListingDto, ModerateUserDto, ChangeRoleDto, UpdateReportStatusD
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MessagesService } from '../messages/messages.service';
+import { collectSystemMetrics, evaluateHealth, THRESHOLDS } from '../../common/system-metrics';
 
 @Controller('admin')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -30,6 +31,16 @@ export class AdminController {
   @Get('metrics')
   getMetrics() {
     return this.adminService.getMetrics();
+  }
+
+  // Sunucu kaynak durumu — panelde bağlam için. Alarm DEĞİL: panel de aynı
+  // makinede çalıştığı için sunucu boğulduğunda bu uç nokta da cevap veremez.
+  // Gerçek alarm dışarıdan, /health/resources üzerinden UptimeRobot ile.
+  @Get('system')
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  getSystem() {
+    const metrics = collectSystemMetrics();
+    return { ...metrics, ...evaluateHealth(metrics), thresholds: THRESHOLDS };
   }
 
   @Get('notifications/summary')
