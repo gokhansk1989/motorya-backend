@@ -1,30 +1,6 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: vites_postgres
-    environment:
-      POSTGRES_DB: ${DB_NAME:-vites}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev-password}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    container_name: vites_redis
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
+  # Arama motoru. Portu dışarı yayınlanmıyor: API aynı Docker ağından
+  # http://meilisearch:7700 ile erişiyor, dışarıya açmanın bir faydası yok.
   meilisearch:
     image: getmeili/meilisearch:v1.7
     container_name: vites_meilisearch
@@ -33,23 +9,18 @@ services:
       MEILI_ENV: production
     volumes:
       - meili_data:/meili_data
-    ports:
-      - "7700:7700"
     restart: unless-stopped
 
   api:
     build: .
     container_name: vites_api
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      meilisearch:
+        condition: service_started
     env_file:
       - .env
     environment:
       NODE_ENV: production
-      REDIS_URL: redis://redis:6379
       MEILI_HOST: http://meilisearch:7700
       PORT: 3000
     ports:
@@ -60,7 +31,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
-  redis_data:
   meili_data:
   uploads_data:
