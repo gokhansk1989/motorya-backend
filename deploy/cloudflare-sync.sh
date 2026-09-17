@@ -31,9 +31,15 @@ if ! nginx -t >/dev/null 2>&1; then
   exit 1
 fi
 systemctl reload nginx
+echo "nginx: gercek IP yapilandirmasi guncellendi"
+
+echo "ufw: kurallar uygulaniyor..."
 
 # --- ufw: 80/443 yalnizca Cloudflare'e acik ---
-ufw status numbered | grep -i "cloudflare" | grep -oE "^\[ *[0-9]+" | grep -oE "[0-9]+" \
+# Eski cloudflare kurallarini temizle. Ilk calistirmada hic kural yoktur ve
+# grep 1 doner; "set -e + pipefail" altinda bu betigi sessizce oldururdu -
+# nitekim ilk denemede tam olarak bu oldu. Bu yuzden basarisizligi yutuyoruz.
+{ ufw status numbered | grep -i "cloudflare" | grep -oE "^\[ *[0-9]+" | grep -oE "[0-9]+" || true; } \
   | sort -rn | while read -r n; do yes | ufw delete "$n" >/dev/null 2>&1 || true; done
 
 for ip in $V4 $V6; do
@@ -44,4 +50,14 @@ done
 yes | ufw delete allow 80/tcp  >/dev/null 2>&1 || true
 yes | ufw delete allow 443/tcp >/dev/null 2>&1 || true
 
-echo "[$(date -u +%FT%TZ)] Cloudflare listesi uygulandi ($(echo "$V4" | wc -l) IPv4, $(echo "$V6" | wc -l) IPv6)"
+
+# Sonucu dogrula: kurallar gercekten uygulandi mi? Betik daha once sessizce
+# yarida kesilmisti; "calisti sandim ama hicbir sey degismemis" durumunu
+# bir daha yasamayalim.
+UYGULANAN=$(ufw status | grep -ci "cloudflare" || true)
+if [ "$UYGULANAN" -lt 10 ]; then
+  echo "HATA: yalnizca $UYGULANAN cloudflare kurali var, beklenen 20+" >&2
+  exit 1
+fi
+
+echo "[$(date -u +%FT%TZ)] Cloudflare listesi uygulandi ($(echo "$V4" | wc -l) IPv4, $(echo "$V6" | wc -l) IPv6, $UYGULANAN ufw kurali)"
