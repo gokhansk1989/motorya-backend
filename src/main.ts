@@ -12,6 +12,20 @@ import { SlowRequestInterceptor } from './modules/error-logs/slow-request.interc
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Ziyaretcinin gercek IP'sini gorebilmek icin proxy zincirine guven.
+  // Bu ayar olmadan req.ip, konteynerin komsusu olan docker koprusunu
+  // (172.18.0.1) donduruyordu; yani HERKES ayni IP gorunuyordu. Sonucu:
+  // throttler'in "girise dakikada 10 deneme" kurali kisi basina degil tum
+  // site icin toplam calisiyordu - bir saldirgan o kotayi doldurup butun
+  // kullanicilarin giris yapmasini engelleyebilirdi. Denetim kayitlarinda da
+  // kimin nereden geldigi hic gorunmuyordu.
+  //
+  // Yalnizca yerel proxy'ye (nginx) guveniyoruz; gercek IP'yi nginx
+  // Cloudflare'in CF-Connecting-IP basligindan cikariyor. Bu yuzden
+  // istemcinin kendi gonderdigi X-Forwarded-For basligi bize guven
+  // kazandirmiyor - aradaki tek guvenilen halka nginx.
+  app.set('trust proxy', ['loopback', '172.16.0.0/12']);
   // API domain'i (api.motorya.com.tr) Google indeksinden hariç tut. Ozellikle
   // /auth/google gibi endpoint'ler GSC raporlarinda 404 uretiyor.
   app.use((_req: any, res: any, next: any) => {
