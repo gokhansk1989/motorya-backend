@@ -237,12 +237,21 @@ export class AdminService {
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
+  // Prisma'nin dondurdugu ham User kaydi passwordHash ve tcKimlik gibi alanlar
+  // iceriyor; bunlar hicbir API yanitinda yer almamali (tarayici hafizasina,
+  // gelistirici konsoluna, ara sunucu kayitlarina dusuyor). Panelin ihtiyaci
+  // olan alanlar bunlar.
+  private readonly guvenliKullaniciAlanlari = {
+    id: true, email: true, displayName: true, role: true, status: true,
+    createdAt: true, updatedAt: true,
+  } as const;
+
   async changeUserRole(id: string, adminId: string, role: UserRole) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
     const [updated] = await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id }, data: { role } }),
+      this.prisma.user.update({ where: { id }, data: { role }, select: this.guvenliKullaniciAlanlari }),
       this.prisma.auditLog.create({
         data: {
           actorId: adminId,
@@ -269,7 +278,7 @@ export class AdminService {
     if (!user) throw new NotFoundException('User not found');
 
     const [updated] = await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id }, data: { status: dto.status } }),
+      this.prisma.user.update({ where: { id }, data: { status: dto.status }, select: this.guvenliKullaniciAlanlari }),
       this.prisma.auditLog.create({
         data: {
           actorId: adminId,
