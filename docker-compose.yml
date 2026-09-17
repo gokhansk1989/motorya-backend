@@ -23,8 +23,11 @@ services:
       NODE_ENV: production
       MEILI_HOST: http://meilisearch:7700
       PORT: 3000
+    # Yalnizca yerel arayuze baglan: disari acilan kapi nginx olsun.
+    # Docker yayinlanan portlarda ufw'yi atlattigi icin "3000:3000" demek
+    # API'yi dogrudan internete acmak anlamina geliyordu.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - uploads_data:/app/uploads
     command: node dist/main.js
