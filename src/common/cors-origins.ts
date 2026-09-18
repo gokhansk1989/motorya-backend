@@ -5,6 +5,10 @@
 export function getAllowedOrigins(): string[] {
   return (
     process.env.CORS_ORIGIN?.split(',') || [
+      // 3000: `next dev`in varsayilan portu. Sunucuda frontend 3001'de kostugu
+      // icin liste 3001/3002 ile sinirliydi ve yerelde gelistirirken her istek
+      // CORS'a takiliyordu.
+      'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:3002',
       'http://motorya.com.tr',
