@@ -25,7 +25,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     // 404 gurultusunu filtrele: bot/tarayıcı istekleri (favicon, .git,
     // meta tag'lerden URL uretimi, root path) log'a yazilmaz.
-    if (source === '404' && this.isNoisy404(request?.originalUrl ?? '', request?.headers?.['user-agent'] as string | undefined)) {
+    if (source === '404' && !this.shouldLog404(request?.originalUrl ?? '', request?.headers?.referer as string | undefined)) {
       response.status(status).json(typeof body === 'string' ? { message: body } : body);
       return;
     }
@@ -47,17 +47,30 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json(typeof body === 'string' ? { message: body } : body);
   }
 
-  // Gerçek kullanicidan gelmeyen 404 desenleri
-  private isNoisy404(url: string, ua?: string): boolean {
-    // Favicon, root, git config, sitemap variantlari
-    if (/^\/(favicon\.(ico|png)|robots\.txt|sitemap.*\.xml|\.git|\.env|\.well-known|apple-touch-icon)/.test(url)) return true;
-    if (url === '/' || url === '') return true;
-    // /pages/ altinda meta tag scrape'i yapan bot istekleri (SEO tarayicilari)
-    if (/^\/pages\/[^a-z]/i.test(url)) return true;
-    if (/^\/pages\/(tr_TR|website|index|width=|Motorya|\d)/.test(url)) return true;
-    if (/^\/pages\/[^\/]{80,}/.test(url)) return true;
-    // Bilinen bot user-agent'lari
-    if (ua && /nmap|nikto|sqlmap|masscan|shodan|censys|zgrab|python-requests\/2/i.test(ua)) return true;
+  // 404'lerde mantik TERSINE cevrildi.
+  //
+  // Onceden "gurultulu desenleri" sayan bir liste vardi; tarayicilar surekli
+  // yeni yol deniyor ve liste hep geriden geliyordu. Uretimde 11.047 hata
+  // kaydinin 10.349'u (%94) bu sekilde birikmis bot 404'uydu - gercek hatalar
+  // aralarinda kayboluyordu.
+  //
+  // Artik yalnizca BIZIM olabilecek 404'ler kaydediliyor:
+  //   - sitemizden gelen bir baglanti kirildiysa (referer kendi alan adimiz)
+  //   - ya da yol, uygulamanin gercek rota desenlerinden birine benziyorsa
+  // Geri kalan her sey (wp-admin, .env, /metrics, rastgele tarama) yazilmaz.
+  private shouldLog404(url: string, referer?: string): boolean {
+    const yol = (url || '').split('?')[0];
+
+    // Kendi sayfamizdan gelen tiklama: gercek kirik baglanti, mutlaka gorelim
+    if (referer && /^https?:\/\/(www\.)?motorya\.com\.tr/.test(referer)) return true;
+
+    // Uygulamanin gercek rota desenleri
+    const bizimRotalar = /^\/(ilan|kategori|kullanici|blog|sayfa|ara|ilan-ver|ilanlarim|favoriler|mesajlarim|tekliflerim|bildirimler|profilim|fiyat-alarm|sss)(\/|$)/;
+    if (bizimRotalar.test(yol)) return true;
+
+    // API tarafinda gercekten var olabilecek kaynaklar
+    if (/^\/(listings|users|offers|messages|blog|categories|brands)(\/|$)/.test(yol)) return true;
+
     return false;
   }
 }

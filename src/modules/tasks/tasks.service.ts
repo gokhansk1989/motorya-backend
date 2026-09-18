@@ -245,4 +245,23 @@ export class TasksService {
       this.logger.log(`Pruned ${result.count} audit log entr(y/ies) older than 30 days`);
     }
   }
+
+  // Gunluk: eski hata kayitlarini temizle.
+  // Tablo sinirsiz buyuyordu; hata kaydi tanisal bir aractir, arsiv degil.
+  // 5xx'leri daha uzun tutuyoruz cunku nadir ve degerliler; 404/429 gurultusu
+  // birkac gun sonra ise yaramiyor.
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async pruneErrorLogs() {
+    const gun = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+
+    const gurultu = await this.prisma.errorLog.deleteMany({
+      where: { statusCode: { in: [404, 429] }, createdAt: { lt: gun(14) } },
+    });
+    const eski = await this.prisma.errorLog.deleteMany({
+      where: { createdAt: { lt: gun(90) } },
+    });
+
+    const toplam = gurultu.count + eski.count;
+    if (toplam > 0) this.logger.log(`Hata kaydi temizlendi: ${toplam} satir`);
+  }
 }
