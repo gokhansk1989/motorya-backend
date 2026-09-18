@@ -246,22 +246,16 @@ export class TasksService {
     }
   }
 
-  // Gunluk: eski hata kayitlarini temizle.
-  // Tablo sinirsiz buyuyordu; hata kaydi tanisal bir aractir, arsiv degil.
-  // 5xx'leri daha uzun tutuyoruz cunku nadir ve degerliler; 404/429 gurultusu
-  // birkac gun sonra ise yaramiyor.
+  // Gunluk: 14 gunden eski hata kayitlarini sil.
+  // Bu tablo teshis aracidir, arsiv degil: uzun vadeli hata gecmisi Sentry'de
+  // duruyor. Tek bir saklama suresi tutmak, kod tarafinda da panelde de daha
+  // anlasilir - "hangi kayit ne kadar duruyor" sorusu ortadan kalkiyor.
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async pruneErrorLogs() {
-    const gun = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
-
-    const gurultu = await this.prisma.errorLog.deleteMany({
-      where: { statusCode: { in: [404, 429] }, createdAt: { lt: gun(14) } },
+    const sinir = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const { count } = await this.prisma.errorLog.deleteMany({
+      where: { createdAt: { lt: sinir } },
     });
-    const eski = await this.prisma.errorLog.deleteMany({
-      where: { createdAt: { lt: gun(90) } },
-    });
-
-    const toplam = gurultu.count + eski.count;
-    if (toplam > 0) this.logger.log(`Hata kaydi temizlendi: ${toplam} satir`);
+    if (count > 0) this.logger.log(`Hata kaydi temizlendi: ${count} satir (14 gunden eski)`);
   }
 }
