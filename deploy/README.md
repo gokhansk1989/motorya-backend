@@ -15,11 +15,15 @@ Backend 3000 portunda Docker Compose ile çalışıyor (`docker-compose.yml` rep
 Aşağıdakiler sır içerdiği veya veri olduğu için repoda tutulmuyor.
 Liste burada duruyor ki taşımada ne eksik olduğu bilinsin.
 
-**1. Veritabanı — uygulama sunucusunda DEĞİL.**
-`DATABASE_URL` ayrı bir makineyi gösteriyor (`motorya_postgres` konteyneri).
-Uygulama sunucusundaki `vites_postgres` konteyneri kullanılmıyor, içi neredeyse
-boş. Yedek alırken yanlış olanı almamak için `.env`deki `DATABASE_URL`in
-gösterdiği host'u teyit et.
+**1. Veritabanı — aynı makinede, Docker'da DEĞİL.**
+Postgres 16 sisteme kurulu; `DATABASE_URL` Docker köprüsü üzerinden
+(`172.17.0.1:5432`) ona bağlanıyor. Veritabanının adı **`vites`** —
+projenin eski adı; yeniden adlandırmak kesinti gerektirdiği için
+ertelendi. Aynı sunucuda `ortamnasil` veritabanı da var, yedek alırken
+hangisini aldığını teyit et (`deploy/pg-backup.sh` ikisini de alır).
+
+Not: AWS döneminde veritabanı ayrı bir makinedeydi ve `motorya_postgres`
+adlı bir konteynerde çalışıyordu. Bu artık geçerli değil.
 
 **2. Yüklenen görseller** — `motorya-backend_uploads_data` Docker volume'ünde
 (`/app/uploads`). S3'te değil; volume kopyalanmazsa tüm ilan görselleri gider.

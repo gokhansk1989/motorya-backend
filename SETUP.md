@@ -19,8 +19,8 @@
 
 ```bash
 # 1. Repo'yu klonla
-git clone <repo> vites-backend
-cd vites-backend
+git clone <repo> motorya-backend
+cd motorya-backend
 
 # 2. .env dosyasını oluştur
 cp .env.example .env
@@ -33,7 +33,9 @@ docker-compose logs -f api
 ```
 
 Container'lar başlatıldığında:
-- **PostgreSQL**: `localhost:5432` (vites / dev-password)
+- **PostgreSQL**: `localhost:5432` (motorya / dev-password)
+  Not: canlıdaki veritabanının adı hâlâ `vites` — projenin eski adı.
+  Yalnızca yerel geliştirmede `motorya` kullanılır.
 - **Redis**: `localhost:6379`
 - **API**: `http://localhost:3000`
 
@@ -105,8 +107,8 @@ Eğer Docker kullanmak istemiyorsan:
 
 ```bash
 # 1. Klonla
-git clone <repo> vites-backend
-cd vites-backend
+git clone <repo> motorya-backend
+cd motorya-backend
 
 # 2. Dependencies
 npm install

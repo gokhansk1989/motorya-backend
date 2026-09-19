@@ -16,7 +16,7 @@ build/
 *.tsbuildinfo
 
 # Nested repos
-vites-frontend/
+motorya-frontend/
 docker-compose.yml.bak
 
 # Environment

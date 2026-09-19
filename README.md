@@ -12,7 +12,7 @@ Motosiklet ekipman pazarının arka ucudur. Emanet (escrow) durum makinesi, kiml
 
 ```bash
 # Repo'yu klonla
-git clone <repo> vites-backend && cd vites-backend
+git clone <repo> motorya-backend && cd motorya-backend
 
 # Dependencies'leri yükle
 npm install
@@ -125,8 +125,8 @@ npm run test:e2e
 ### Docker ile
 
 ```bash
-docker build -t vites-api:latest .
-docker run -p 3000:3000 --env-file .env vites-api:latest
+docker build -t motorya-api:latest .
+docker run -p 3000:3000 --env-file .env motorya-api:latest
 ```
 
 ### AWS EC2'ye
