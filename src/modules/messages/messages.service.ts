@@ -172,18 +172,20 @@ export class MessagesService {
       }),
     ]);
 
-    // Karşı tarafa bildirim (fire-and-forget)
+    // Karşı tarafa push (fire-and-forget).
+    //
+    // Bildirim KAYDI bilerek oluşturulmuyor. Her mesaj hem sohbete hem
+    // zile düşüyordu ve iki yerin "okundu" bilgisi ayrıydı: mesajınki
+    // ConversationParticipant.lastReadAt, bildiriminki Notification.readAt.
+    // Sohbeti okumak bildirimi okundu yapmadığı için zildeki sayı bir daha
+    // hiç düşmüyordu - tek sohbete gelen 5 mesaj zilde 5 satır olarak
+    // birikiyordu. Artık ayrım net: Mesajlar = sohbetler, Bildirimler =
+    // ilan/teklif/alarm. Okunmamış mesaj sayısı mesaj ikonunun kendi
+    // rozetinde ve tek bir kaynaktan (lastReadAt) hesaplanıyor.
+    //
+    // Push ayrı bir kanal ve doğru çalışıyor; uygulama kapalıyken haber
+    // vermenin başka yolu yok, o yüzden duruyor.
     if (otherParticipant) {
-      this.prisma.notification.create({
-        data: {
-          userId: otherParticipant.userId,
-          type: 'message.new',
-          title: `${message.sender.displayName} mesaj gönderdi`,
-          body,
-          payload: { conversationId },
-        },
-      }).catch(() => null);
-
       // Push bildiriminde mesaj içeriğini taşımıyoruz — şifreli mesajlaşmanın gizliliğini
       // 3. parti push servisine (FCM/Mozilla push relay) sızdırmamak için generic metin kullanıyoruz.
       this.webPush.sendToUser(otherParticipant.userId, {

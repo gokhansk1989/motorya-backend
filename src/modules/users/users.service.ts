@@ -378,18 +378,75 @@ export class UsersService {
 
   async getNotifications(userId: string, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
+    // Mesaj bildirimleri artık üretilmiyor (bkz. messages.service.ts) ama
+    // eskiden kalanlar veritabanında duruyor. Listeden ve sayaçtan
+    // dışarıda tutuluyorlar; aksi halde zil, okunmuş mesajlar yüzünden
+    // sonsuza kadar yanlış sayardı.
+    const where = { userId, NOT: { type: 'message.new' } };
     const [items, total, unreadCount] = await Promise.all([
       this.prisma.notification.findMany({
-        where: { userId },
+        where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       }),
-      this.prisma.notification.count({ where: { userId } }),
-      this.prisma.notification.count({ where: { userId, readAt: null } }),
+      this.prisma.notification.count({ where }),
+      this.prisma.notification.count({ where: { ...where, readAt: null } }),
     ]);
     const itemsWithReadFlag = items.map((n) => ({ ...n, isRead: n.readAt !== null }));
     return { items: itemsWithReadFlag, meta: { total, page, limit, unreadCount } };
+  }
+
+  /**
+   * Profil ekranındaki sayaçlar ve mesaj rozeti.
+   *
+   * Mobil uygulama bu ucu çağırıyordu ama uç hiç yazılmamıştı; 404 dönüyor
+   * ve profildeki üç kart kalıcı olarak "—" gösteriyordu.
+   *
+   * `unreadMessages` tek kaynaktan hesaplanıyor: kullanıcının katıldığı
+   * konuşmalarda, kendi göndermediği ve son okuma anından sonra gelen
+   * mesajlar. Zil ile mesaj rozeti artık ayrı şeyleri sayıyor.
+   */
+  async getSummary(userId: string) {
+    const [user, activeListings, pendingOffers, favorites, katilimlar] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { ratingAvg: true, salesCount: true },
+      }),
+      this.prisma.listing.count({
+        where: { sellerId: userId, status: 'ACTIVE', deletedAt: null },
+      }),
+      this.prisma.offer.count({
+        where: { status: 'PENDING', listing: { sellerId: userId, deletedAt: null } },
+      }),
+      this.prisma.favorite.count({ where: { userId } }),
+      this.prisma.conversationParticipant.findMany({
+        where: { userId },
+        select: { conversationId: true, lastReadAt: true },
+      }),
+    ]);
+
+    let unreadMessages = 0;
+    if (katilimlar.length > 0) {
+      unreadMessages = await this.prisma.message.count({
+        where: {
+          senderId: { not: userId },
+          OR: katilimlar.map((k) => ({
+            conversationId: k.conversationId,
+            ...(k.lastReadAt ? { createdAt: { gt: k.lastReadAt } } : {}),
+          })),
+        },
+      });
+    }
+
+    return {
+      activeListings,
+      pendingOffers,
+      favorites,
+      unreadMessages,
+      rating: user?.ratingAvg ?? null,
+      salesCount: user?.salesCount ?? 0,
+    };
   }
 
   async markNotificationsRead(userId: string, ids?: string[]) {

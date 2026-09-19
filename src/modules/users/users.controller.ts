@@ -81,6 +81,12 @@ export class UsersController {
     return this.usersService.updateNotificationPrefs(req.user.id, dto);
   }
 
+  @Get('me/summary')
+  @UseGuards(AuthGuard('jwt'))
+  getSummary(@Request() req) {
+    return this.usersService.getSummary(req.user.id);
+  }
+
   @Get('me/notifications')
   @UseGuards(AuthGuard('jwt'))
   getNotifications(
