@@ -44,6 +44,40 @@ export class TasksService {
     this.logger.log(`Expired ${expired.length} reservation(s): ${ids.join(', ')}`);
   }
 
+  // Saatlik: süresi dolan öne çıkarmaların bayrağını indir.
+  //
+  // Neden gerekli: `isFeatured` bir kez true yapılıyor ve hiçbir yerde geri
+  // alınmıyordu. Liste sorgusu `featuredUntil > now()` kontrolü yaptığı için
+  // ilan vitrinden düşüyor, ama alanın kendisi true kalıyor ve ilan kartıyla
+  // ilan detayındaki "ÖNE ÇIKAN" rozeti bu alana bakıyor. Yani 7 günlük bir
+  // öne çıkarma satıldığında rozet süresiz kalıyordu. Bu cron yazıldığında
+  // veritabanında tam olarak bu durumda 12 kayıt vardı (hepsi Temmuz'da
+  // süresi dolmuş, hepsi hâlâ isFeatured=true) - ilk koşuda temizlenirler.
+  //
+  // Saatlik, günlük değil: öne çıkarma ücretli bir şey ve "süresi bitti ama
+  // hâlâ vitrinde" ile "süresi bitmedi ama vitrinden düştü" arasındaki fark
+  // şikâyet konusudur. Sorgu tek indeks taraması (@@index([isFeatured,
+  // featuredUntil])), saatte bir koşması bedava sayılır.
+  @Cron(CronExpression.EVERY_HOUR)
+  async expireFeaturedListings() {
+    const sonuc = await this.prisma.listing.updateMany({
+      where: {
+        isFeatured: true,
+        // Bitiş tarihi geçmiş VEYA hiç yok. Tarihsiz öne çıkarma zaten
+        // vitrinde görünmüyor (liste sorgusu `featuredUntil > now()` arıyor),
+        // yalnızca rozeti süresiz taşıyor - yani onarılması gereken aynı
+        // tutarsızlığın ikinci hâli. Öne çıkarma ucu her zaman tarih yazdığı
+        // için bu kombinasyon ancak elle müdahaleyle oluşur.
+        OR: [{ featuredUntil: { lte: new Date() } }, { featuredUntil: null }],
+      },
+      data: { isFeatured: false, featuredUntil: null },
+    });
+
+    if (sonuc.count > 0) {
+      this.logger.log(`Öne çıkarma süresi dolan ${sonuc.count} ilan vitrinden indirildi`);
+    }
+  }
+
   // Günlük: süresi dolan teklifleri EXPIRED'a çek
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async expireOffers() {
