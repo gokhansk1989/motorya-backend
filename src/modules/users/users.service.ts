@@ -250,23 +250,18 @@ export class UsersService {
     }
 
     const { birthDate, displayName: _eskiIstemci, ...rest } = dto;
-    return this.prisma.user.update({
+    await this.prisma.user.update({
       where: { id: userId },
       data: { ...rest, ...gorunenAd, ...(birthDate !== undefined ? { birthDate: birthDate ? new Date(birthDate) : null } : {}) },
-      select: {
-        id: true,
-        displayName: true,
-        realName: true,
-        bio: true,
-        avatarUrl: true,
-        city: true,
-        district: true,
-        tcKimlik: true,
-        birthDate: true,
-        gender: true,
-        phone: true,
-      },
+      select: { id: true },
     });
+
+    // Profilin TAMAMI donuyor. Daha once yalnizca duzenlenebilir alanlar
+    // donuyordu ve istemci bunu oturumdaki kullanici nesnesinin yerine
+    // koyuyordu: emailVerifiedAt, role, isFounder gibi alanlar kayboluyor,
+    // profilini kaydeden herkese "e-postaniz dogrulanmamis" uyarisi
+    // cikiyordu. Tek kaynak getProfile olsun ki bir daha ayrisamasinlar.
+    return this.getProfile(userId);
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto, ip?: string, userAgent?: string) {
