@@ -1,9 +1,23 @@
 import { IsString, IsOptional, IsUrl, IsBoolean, IsDateString, IsIn, Length, Matches, MinLength, MaxLength } from 'class-validator';
 
 export class UpdateProfileDto {
+  // Gercek ad-soyad. Yayinlanmaz; yalnizca yonetim paneli ve fatura gorur.
+  // Herkese acik gorunen ad artik kullanici adidir ve yalnizca
+  // PATCH /users/me/username ile degistirilebilir - aksi halde buradan
+  // "Ad Soyad" yazip kullanici adi kurallarini (kucuk harf, rezerve
+  // kelimeler, benzersizlik) atlamak mumkun olurdu.
   @IsOptional()
   @IsString()
   @MinLength(2)
+  @MaxLength(60)
+  realName?: string;
+
+  // Yayindaki mobil surumler hala bu alani gonderiyor. forbidNonWhitelisted
+  // acik oldugu icin DTO'dan tamamen cikarmak, guncellememis her telefonda
+  // profil kaydetmeyi 400 ile kirardi. Kabul ediliyor ama servis tarafinda
+  // atiliyor - gorunen ad buradan degistirilemez.
+  @IsOptional()
+  @IsString()
   @MaxLength(60)
   displayName?: string;
 

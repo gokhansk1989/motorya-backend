@@ -36,6 +36,7 @@ export class UsersService {
         id: true,
         email: true,
         displayName: true,
+        realName: true,
         bio: true,
         avatarUrl: true,
         city: true,
@@ -229,18 +230,33 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
+    // Kullanici adini henuz secmemis uyelerde gorunen ad, gercek adin
+    // kendisidir. Gercek adini duzeltirse gorunen ad eski haliyle yayinda
+    // kalmasin - yoksa "duzelttim" sandigi ad sitede durmaya devam ederdi.
+    let gorunenAd: { displayName: string } | {} = {};
+    if (dto.realName) {
+      const mevcut = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { realName: true, displayName: true },
+      });
+      if (mevcut?.realName && mevcut.displayName === mevcut.realName) {
+        gorunenAd = { displayName: dto.realName };
+      }
+    }
+
     if (dto.tcKimlik) {
       const existing = await this.prisma.user.findFirst({ where: { tcKimlik: dto.tcKimlik, id: { not: userId } } });
       if (existing) throw new ConflictException('Bu TC Kimlik numarası başka bir hesapla ilişkili');
     }
 
-    const { birthDate, ...rest } = dto;
+    const { birthDate, displayName: _eskiIstemci, ...rest } = dto;
     return this.prisma.user.update({
       where: { id: userId },
-      data: { ...rest, ...(birthDate !== undefined ? { birthDate: birthDate ? new Date(birthDate) : null } : {}) },
+      data: { ...rest, ...gorunenAd, ...(birthDate !== undefined ? { birthDate: birthDate ? new Date(birthDate) : null } : {}) },
       select: {
         id: true,
         displayName: true,
+        realName: true,
         bio: true,
         avatarUrl: true,
         city: true,
