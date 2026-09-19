@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebPushService } from '../users/webpush.service';
 import { FcmService } from '../users/fcm.service';
@@ -18,6 +18,22 @@ export class SavedSearchService {
   ) {}
 
   async create(userId: string, dto: CreateSavedSearchDto) {
+    // En az bir filtre şart.
+    //
+    // Yalnızca `label` zorunlu olduğu için tamamen boş bir arama
+    // kaydedilebiliyordu: her yeni ilan o aramaya uyar ve kullanıcı
+    // farkında olmadan kendine bir musluk açmış olur. Üstelik anlamsız -
+    // "her şeyden haberdar et" isteyen zaten uygulamayı açar.
+    const filtreler = [
+      dto.search?.trim(), dto.categoryId, dto.brandId, dto.city?.trim(),
+      dto.condition, dto.minPrice, dto.maxPrice,
+    ];
+    if (!filtreler.some((f) => f !== undefined && f !== null && f !== '')) {
+      throw new BadRequestException(
+        'Alarm kurmak için en az bir filtre seç (arama metni, kategori, marka, şehir, durum ya da fiyat aralığı).',
+      );
+    }
+
     const count = await this.prisma.savedSearch.count({ where: { userId } });
     if (count >= MAX_SAVED_SEARCHES_PER_USER) {
       throw new ForbiddenException(`En fazla ${MAX_SAVED_SEARCHES_PER_USER} kayıtlı arama tutabilirsin`);
