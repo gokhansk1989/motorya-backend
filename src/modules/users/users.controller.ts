@@ -16,7 +16,7 @@ import { IsIn, IsOptional, IsString } from 'class-validator';
 import { UsersService } from './users.service';
 import { WebPushService } from './webpush.service';
 import { FcmService } from './fcm.service';
-import { UpdateProfileDto, ChangePasswordDto, UpdateNotificationPrefsDto } from './dto/users.dto';
+import { UpdateProfileDto, ChangePasswordDto, UpdateNotificationPrefsDto, SetUsernameDto } from './dto/users.dto';
 
 class DeleteAccountDto {
   // Google ile giriş yapan hesaplarda passwordHash yok, bu alan opsiyonel.
@@ -101,6 +101,12 @@ export class UsersController {
   @UseGuards(AuthGuard('jwt'))
   setVacation(@Request() req, @Body('enabled') enabled: boolean) {
     return this.usersService.setVacationMode(req.user.id, enabled);
+  }
+
+  @Patch('me/username')
+  @UseGuards(AuthGuard('jwt'))
+  setUsername(@Request() req, @Body() dto: SetUsernameDto) {
+    return this.usersService.setUsername(req.user.id, dto.username);
   }
 
   @Get('push/vapid-public-key')

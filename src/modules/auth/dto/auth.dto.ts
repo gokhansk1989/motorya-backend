@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsString, IsOptional, IsDateString, IsIn, MinLength, Matches, Length, Equals } from 'class-validator';
+import { IsBoolean, IsEmail, IsString, IsOptional, IsDateString, IsIn, MinLength, Matches, Length, Equals, MaxLength } from 'class-validator';
 
 export class RegisterDto {
   @IsOptional()
@@ -12,9 +12,22 @@ export class RegisterDto {
   @MinLength(8)
   password: string;
 
+  // Herkese acik gorunen ad = KULLANICI ADI. Gercek ad-soyad realName'de
+  // saklanir ve yayinlanmaz; bu yuzden burada kimlik bilgisi degil, kisinin
+  // sectigi takma ad bekleniyor.
   @IsString()
-  @MinLength(2)
+  @MinLength(3, { message: 'Kullanıcı adı en az 3 karakter olmalı' })
+  @MaxLength(20, { message: 'Kullanıcı adı en fazla 20 karakter olabilir' })
+  @Matches(/^[a-z0-9._]+$/, {
+    message: 'Kullanıcı adı yalnızca küçük harf, rakam, nokta ve alt çizgi içerebilir',
+  })
   displayName: string;
+
+  // Gercek ad-soyad: fatura ve kimlik dogrulama icin gerekli, herkese acik
+  // hicbir yerde gosterilmez.
+  @IsString()
+  @MinLength(3, { message: 'Ad soyad en az 3 karakter olmalı' })
+  realName: string;
 
   // İlan vermek isteyene kadar opsiyonel — bkz. ListingsService.createListing
   @IsOptional()
@@ -107,4 +120,5 @@ export class AuthResponseDto {
     emailVerifiedAt?: Date | null;
   };
   needsConsent?: boolean;
+  needsUsername?: boolean;
 }

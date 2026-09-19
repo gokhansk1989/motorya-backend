@@ -76,11 +76,21 @@ export class AuthService {
     const founderCount = await this.prisma.user.count({ where: { isFounder: true } });
     const isFounder = founderCount < FOUNDER_LIMIT;
 
+    // Kullanici adi herkese acik tek kimlik; cakismasi karisiklik yaratir.
+    const adAlinmis = await this.prisma.user.findFirst({
+      where: { displayName: { equals: dto.displayName, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (adAlinmis) {
+      throw new BadRequestException('Bu kullanıcı adı alınmış, başka bir tane deneyin');
+    }
+
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
         passwordHash: hashedPassword,
-        displayName: dto.displayName,
+        displayName: dto.displayName,   // herkese acik: kullanici adi
+        realName: dto.realName,         // yalnizca panel/fatura
         tcKimlik: dto.tcKimlik,
         phone: dto.phone,
         birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
@@ -202,12 +212,18 @@ export class AuthService {
       select: { id: true },
     });
 
+    // Kullanici adi secmemis olanlari yonlendirebilmek icin. Isaret basit:
+    // gorunen ad hala gercek adla ayniysa kullanici henuz secim yapmamistir.
+    // Bu kisilerin gercek adi ilan, mesaj ve teklif ekranlarinda goruntuleniyor.
+    const kullaniciAdiSecilmemis = !!user.realName && user.displayName === user.realName;
+
     return {
       accessToken,
       refreshToken,
       deviceId,
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
       needsConsent: !termsConsent,
+      needsUsername: kullaniciAdiSecilmemis,
     };
   }
 

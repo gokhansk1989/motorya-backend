@@ -67,3 +67,16 @@ export class UpdateNotificationPrefsDto {
   @IsOptional() @IsBoolean()
   listingStatus?: boolean;
 }
+
+// Kullanici adi kurallari: herkese acik gorunen tek kimlik oldugu icin hem
+// okunabilir hem carpisma yaratmayacak kadar kisitli olmali.
+// Nokta/alt cizgi disinda noktalama yok; bosluk yok (URL ve mention icin).
+export class SetUsernameDto {
+  @IsString()
+  @MinLength(3, { message: 'Kullanıcı adı en az 3 karakter olmalı' })
+  @MaxLength(20, { message: 'Kullanıcı adı en fazla 20 karakter olabilir' })
+  @Matches(/^[a-z0-9._]+$/, {
+    message: 'Kullanıcı adı yalnızca küçük harf, rakam, nokta ve alt çizgi içerebilir',
+  })
+  username: string;
+}

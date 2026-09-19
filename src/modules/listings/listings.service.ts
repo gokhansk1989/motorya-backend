@@ -266,9 +266,18 @@ export class ListingsService {
       throw new ServiceUnavailableException('Yeni ilan girişi şu anda kapalı.');
     }
 
-    const seller = await this.prisma.user.findUnique({ where: { id: sellerId }, select: { tcKimlik: true } });
+    const seller = await this.prisma.user.findUnique({
+      where: { id: sellerId },
+      select: { tcKimlik: true, displayName: true, realName: true },
+    });
     if (!seller?.tcKimlik) {
       throw new BadRequestException('İlan vermek için önce profilinden T.C. Kimlik numaranı tamamlaman gerekiyor.');
+    }
+    // Ilan sayfasi herkese acik ve arama motorlarinca dizine ekleniyor; satici
+    // adi orada goruntuleniyor. Gercek ad-soyadin yayinlanmamasi icin ilan
+    // vermeden once kullanici adi secilmis olmali.
+    if (seller.realName && seller.displayName === seller.realName) {
+      throw new BadRequestException('İlan vermek için önce profilinden bir kullanıcı adı belirlemen gerekiyor.');
     }
 
     const { imageUrls = [], ...rest } = dto;

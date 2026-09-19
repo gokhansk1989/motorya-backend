@@ -43,6 +43,10 @@ enum UserStatus {
 model User {
   id           String     @id @default(cuid())
   email        String     @unique
+  // displayName = herkese acik KULLANICI ADI (ilan, mesaj, teklif, profil).
+  // realName    = gercek ad-soyad; yalnizca yonetim paneli ve fatura gorur.
+  // Gercek adin yayinlanmasi icin mesru bir gerekce yok, bu yuzden ayrildi.
+  realName     String?
   phone        String?    @unique
   tcKimlik     String?    @unique
   passwordHash String?

@@ -358,6 +358,9 @@ export class AdminService {
           id: true,
           email: true,
           displayName: true,
+          // Gercek ad artik herkese acik degil; yonetim panelinde gorunur
+          // kalmali (kimlik dogrulama, fatura, sikayet incelemesi).
+          realName: true,
           role: true,
           status: true,
           ratingAvg: true,

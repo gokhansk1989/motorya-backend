@@ -472,4 +472,41 @@ export class UsersService {
       return { vacationMode: false, restoredCount: archivedListings.length };
     }
   }
+
+  // Kullanici adi herkese acik gorunen tek kimlik; benzersiz olmali ve
+  // sonradan serbestce degistirilmesi guven sorunu yaratir (satici "ayni kisi
+  // mi" sorusunu zorlastirir). Su an degistirmeye izin veriyoruz ama rezerve
+  // kelimeleri disariyoruz: profil/ilan yollariyla karismasin.
+  private static readonly REZERVE = new Set([
+    'admin', 'administrator', 'motorya', 'destek', 'yonetici', 'moderator',
+    'ilan', 'kategori', 'blog', 'ara', 'profil', 'sistem', 'root', 'api',
+  ]);
+
+  async setUsername(userId: string, username: string) {
+    const ad = username.trim().toLowerCase();
+
+    if (UsersService.REZERVE.has(ad)) {
+      throw new BadRequestException('Bu kullanıcı adı kullanılamaz');
+    }
+
+    const sahipli = await this.prisma.user.findFirst({
+      where: { displayName: { equals: ad, mode: 'insensitive' }, NOT: { id: userId } },
+      select: { id: true },
+    });
+    if (sahipli) {
+      throw new BadRequestException('Bu kullanıcı adı alınmış');
+    }
+
+    const guncel = await this.prisma.user.update({
+      where: { id: userId },
+      data: { displayName: ad },
+      select: { id: true, displayName: true },
+    });
+
+    await this.prisma.auditLog.create({
+      data: { actorId: userId, action: 'user.username_set', entity: 'User', entityId: userId, meta: { username: ad } },
+    }).catch(() => null);
+
+    return guncel;
+  }
 }
