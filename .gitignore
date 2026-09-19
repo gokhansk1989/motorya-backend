@@ -1,6 +1,11 @@
 # Dependencies
 node_modules/
-package-lock.json
+# package-lock.json BILEREK git'te tutuluyor.
+# Onceden goz ardi ediliyordu ve Dockerfile "npm install" kullaniyordu; yani
+# sunucu her deploy'da bagimliliklari sifirdan cozuyordu. Sonuc: ayni kod,
+# farkli surumler - konteynerde js-yaml 5.3.0 varken yerelde bambaska bir
+# agac olusuyordu. Yukari akista bozuk ya da acikli bir surum ciktiginda
+# canliya sessizce girerdi.
 yarn.lock
 pnpm-lock.yaml
 

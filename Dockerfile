@@ -7,7 +7,8 @@ RUN apk add --no-cache openssl
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN npm install --no-audit --no-fund --legacy-peer-deps
+# npm ci: lock dosyasindaki surumleri aynen kurar, yeniden cozmez.
+RUN npm ci --no-audit --no-fund --legacy-peer-deps
 RUN npx prisma generate
 
 COPY . .
