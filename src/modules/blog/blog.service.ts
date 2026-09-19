@@ -46,6 +46,25 @@ export class BlogService {
     return post;
   }
 
+  /**
+   * Okunma sayaci.
+   *
+   * Neden sunucuda getBySlug icinde degil: blog sayfasi Next tarafinda
+   * `revalidate: 300` ile onbellege aliniyor, yani kac kisi okursa okusun
+   * backend'e 5 dakikada en fazla bir istek geliyor. Orada saymak okuyucu
+   * sayisini degil onbellek yenileme sayisini olcerdi (gunde ~288, sabit).
+   * Bu yuzden sayim tarayicidan bildiriliyor; istemci ayni oturumda ayni
+   * yaziyi bir kez bildiriyor, boylece yenileme tusu sayiyi sismiyor.
+   *
+   * Yayinda olmayan yazi sayilmaz - taslak onizlemesi istatistigi bozmasin.
+   */
+  async recordView(slug: string) {
+    await this.prisma.blogPost.updateMany({
+      where: { slug, published: true },
+      data: { viewCount: { increment: 1 } },
+    });
+  }
+
   // Admin methods
   async adminList(page = 1, limit = 20) {
     const skip = (page - 1) * limit;

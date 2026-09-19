@@ -1,7 +1,8 @@
 import {
   Controller, Get, Post, Put, Delete, Param, Body, Query,
-  UseGuards, ParseIntPipe, DefaultValuePipe,
+  UseGuards, ParseIntPipe, DefaultValuePipe, HttpCode,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { BlogService } from './blog.service';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -64,5 +65,16 @@ export class BlogController {
   @Get(':slug')
   getBySlug(@Param('slug') slug: string) {
     return this.blog.getBySlug(slug);
+  }
+
+  // Okunma bildirimi. Kimlik aranmiyor - okumak icin uye olmak gerekmiyor.
+  // Acik bir sayac ucu oldugu icin IP basina dakikada 10 ile sinirli;
+  // global 100'luk sinir birinin sayilari sisirmesine fazlasiyla izin
+  // verirdi. Govde dondurmuyor: istemci cevabi beklemiyor.
+  @Post(':slug/view')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @HttpCode(204)
+  async recordView(@Param('slug') slug: string) {
+    await this.blog.recordView(slug);
   }
 }
