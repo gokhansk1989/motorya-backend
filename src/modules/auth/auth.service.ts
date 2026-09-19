@@ -191,11 +191,23 @@ export class AuthService {
     const platform: 'IOS' | 'ANDROID' | 'WEB' = dto.platform ?? 'WEB';
     const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, platform, dto.deviceModel, dto.appVersion);
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });
+
+    // Sozlesme/KVKK onayi olmayanlari onay ekranina yonlendirebilmek icin.
+    // Bu bilgi Google girisinde zaten donuyordu ama parola ile giriste yoktu;
+    // dolayisiyla onay akisi eklenmeden once kaydolan kullanicilara onay hic
+    // sorulmuyordu. Olcum: 20 kullanicinin 13'unde hicbir onay kaydi yok -
+    // yani onlarla iletisim kurmanin yasal zemini eksikti.
+    const termsConsent = await this.prisma.userConsent.findFirst({
+      where: { userId: user.id, type: 'TERMS' },
+      select: { id: true },
+    });
+
     return {
       accessToken,
       refreshToken,
       deviceId,
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
+      needsConsent: !termsConsent,
     };
   }
 
