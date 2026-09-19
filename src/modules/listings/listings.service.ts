@@ -578,8 +578,31 @@ export class ListingsService {
         brand: true,
       },
     });
-    return candidates
-      .filter((l) => l.originalPrice && Number(l.originalPrice) > Number(l.price))
+    const indirimliler = candidates.filter(
+      (l) => l.originalPrice && Number(l.originalPrice) > Number(l.price),
+    );
+
+    // Satici basina en fazla bir ilan.
+    //
+    // Neden: bu liste ana sayfanin hero kosesinde donen bir seritte
+    // gosteriliyor. Ayni saticinin ayni modelden iki ilani (ornegin ayni
+    // fiyattan, ayni indirim oraniyla iki LS2 kask) yan yana dondugunde
+    // ziyaretcinin okumasi "burasi bos / veriler sahte" oluyor - nitekim
+    // uretimde tam olarak bu haldeydi: iki ilan, tek satici, ikisi de
+    // 5500 -> 2000, ikisi de %64. Cesitlilik burada adaletten daha
+    // onemli; amac indirim yapan herkesi listelemek degil, pazarin canli
+    // oldugunu gostermek.
+    //
+    // Siralama updatedAt'e gore geldigi icin bir saticinin EN SON
+    // guncelledigi ilan secilmis olur.
+    const gorulenSatici = new Set<string>();
+    const cesitli = indirimliler.filter((l) => {
+      if (gorulenSatici.has(l.sellerId)) return false;
+      gorulenSatici.add(l.sellerId);
+      return true;
+    });
+
+    return cesitli
       .slice(0, limit)
       .map((l) => ({ ...l, slug: buildListingSlug(l) }));
   }
