@@ -329,12 +329,19 @@ export class AdminService {
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
-  async getUsers(page = 1, limit = 20, search?: string) {
+  // Gercek ad-soyad yalnizca ADMIN ve SUPER_ADMIN'e doner. Moderatorun isi
+  // ilan ve sikayet moderasyonu; uyelerin yasal adini gormesi gerekmiyor ve
+  // bu ekran panele erisimi olan herkesin onunde duruyor.
+  async getUsers(page = 1, limit = 20, search?: string, rol?: string) {
+    const gercekAdiGorebilir = rol === 'ADMIN' || rol === 'SUPER_ADMIN';
     const where: any = { deletedAt: null };
     if (search) {
       where.OR = [
         { email: { contains: search, mode: 'insensitive' } },
         { displayName: { contains: search, mode: 'insensitive' } },
+        ...(gercekAdiGorebilir
+          ? [{ realName: { contains: search, mode: 'insensitive' } }]
+          : []),
       ];
     }
 
@@ -358,9 +365,10 @@ export class AdminService {
           id: true,
           email: true,
           displayName: true,
-          // Gercek ad artik herkese acik degil; yonetim panelinde gorunur
-          // kalmali (kimlik dogrulama, fatura, sikayet incelemesi).
-          realName: true,
+          // Gercek ad artik herkese acik degil; panelde gorunur kalmali
+          // (kimlik dogrulama, fatura, sikayet incelemesi) - ama yalnizca
+          // ADMIN/SUPER_ADMIN icin.
+          realName: gercekAdiGorebilir,
           role: true,
           status: true,
           ratingAvg: true,

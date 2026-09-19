@@ -88,11 +88,12 @@ export class AdminController {
 
   @Get('users')
   getUsers(
+    @Request() req,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
   ) {
-    return this.adminService.getUsers(Number(page) || 1, Number(limit) || 20, search);
+    return this.adminService.getUsers(Number(page) || 1, Number(limit) || 20, search, req.user.role);
   }
 
   @Patch('users/:id/role')
