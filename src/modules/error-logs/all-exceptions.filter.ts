@@ -61,18 +61,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private shouldLog404(url: string, referer?: string): boolean {
     const yol = (url || '').split('?')[0];
 
+    // Onay bekleyen ilanin sayfasi acildiginda by-slug 404 doner: sunucu
+    // onaylanmamis ilani vermiyor, sayfa istemci tarafinda sahibine
+    // gosteriliyor. Yani bu bir hata degil, tasarimin kendisi.
+    //
+    // Bu kontrol referer kontrolunden ONCE olmali: istek zaten bizim
+    // sayfamizdan geliyor, dolayisiyla referer kosulu once calisinca
+    // istisna hic devreye girmiyordu ve 404'ler kaydedilmeye devam
+    // ediyordu (son 24 saatteki 6 kaydin 4'u buydu).
+    if (yol.startsWith('/listings/by-slug')) return false;
+
     // Kendi sayfamizdan gelen tiklama: gercek kirik baglanti, mutlaka gorelim
     if (referer && /^https?:\/\/(www\.)?motorya\.com\.tr/.test(referer)) return true;
 
     // Uygulamanin gercek rota desenleri
-    const bizimRotalar = /^\/(ilan|kategori|kullanici|blog|sayfa|ara|ilan-ver|ilanlarim|favoriler|mesajlarim|tekliflerim|bildirimler|profilim|fiyat-alarm|sss)(\/|$)/;
+    const bizimRotalar = /^\/(ilan|kategori|kullanici|blog|sayfa|ara|ilan-ver|ilanlarim|favoriler|mesajlarim|tekliflerim|bildirimler|profilim|alarmlarim|kategoriler|sss)(\/|$)/;
     if (bizimRotalar.test(yol)) return true;
 
-    // Onay bekleyen ilanin sayfasi acildiginda by-slug 404 doner: sunucu
-    // onaylanmamis ilani vermiyor, sayfa istemci tarafinda sahibine
-    // gosteriliyor. Yani bu bir hata degil, tasarimin kendisi - kayda
-    // yazmak gurultu uretiyordu (bir gunde 4 ornek olctuk).
-    if (yol.startsWith('/listings/by-slug')) return false;
 
     // API tarafinda gercekten var olabilecek kaynaklar
     if (/^\/(listings|users|offers|messages|blog|categories|brands)(\/|$)/.test(yol)) return true;
