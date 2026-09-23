@@ -378,6 +378,40 @@ export class ListingsService {
     }
   }
 
+  /**
+   * Şikâyet gelince moderatörlere haber ver.
+   *
+   * Şikâyet yalnızca Report satırı oluşturuyordu; kimseye bildirim
+   * gitmiyordu. App Store 1.2 maddesi "uygunsuz içerik şikâyetlerine 24
+   * saat içinde işlem yapılmalı" diyor - haber gitmeden bu mümkün değil.
+   * Yeni ilan eklenince bildirim gidiyordu ama şikâyette gitmiyordu.
+   *
+   * Push de gönderiliyor: bir şikâyet, kuyrukta bekleyen yeni ilandan
+   * daha aciledir; moderatörün paneli açmasını beklemek doğru değil.
+   */
+  private async notifyModeratorsOfReport(reportId: string, listingId: string, listingTitle: string, reason: string) {
+    const moderators = await this.prisma.user.findMany({
+      where: { role: { in: ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'] }, deletedAt: null },
+      select: { id: true, email: true, displayName: true },
+    });
+    if (moderators.length === 0) return;
+
+    await this.prisma.notification.createMany({
+      data: moderators.map(m => ({
+        userId: m.id,
+        type: 'report.received',
+        title: '🚩 İlan şikâyet edildi',
+        body: `"${listingTitle}" — ${reason}`,
+        payload: { reportId, listingId },
+      })),
+    });
+
+    this.webPush.sendToMany(
+      moderators.map(m => m.id),
+      { title: 'İlan şikâyet edildi', body: listingTitle, url: '/' },
+    ).catch(() => null);
+  }
+
   async getListings(query: ListingsQueryDto, viewerId?: string) {
     const {
       search,
@@ -1165,6 +1199,10 @@ export class ListingsService {
       },
     });
     this.audit.log({ actorId: reporterId, action: 'report.submit', entity: 'Report', entityId: report.id, meta: { listingId, reason, conversationId: conversation?.id ?? null } });
+
+    // Bildirimi beklemiyoruz: şikâyetin kaydı asıl iş, bildirim
+    // gönderilemezse kullanıcıya hata dönmemeli.
+    this.notifyModeratorsOfReport(report.id, listingId, listing.title, reason).catch(() => null);
 
     return { id: report.id, alreadyReported: false };
   }

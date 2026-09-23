@@ -36,9 +36,17 @@ export class RegisterDto {
   @Matches(/^[1-9][0-9]{10}$/, { message: 'Geçerli bir TC Kimlik numarası giriniz' })
   tcKimlik?: string;
 
+  // Opsiyonel.
+  //
+  // App Store incelemesi 5.1.1(v) ile reddetti: "uygulamanin cekirdek
+  // islevi icin gerekli olmayan kisisel bilgi zorunlu tutulamaz". Telefon
+  // burada gercekten gerekli degil - ilan vermek icin TC kimlik isteniyor,
+  // iletisim mesajlasma uzerinden yuruyor. Isteyen girebilsin diye alan
+  // duruyor, ama bos birakilabiliyor.
+  @IsOptional()
   @IsString()
   @Matches(/^(05)[0-9]{9}$/, { message: 'Geçerli bir Türk cep telefonu giriniz (05XX...)' })
-  phone: string;
+  phone?: string;
 
   @IsOptional()
   @IsDateString()

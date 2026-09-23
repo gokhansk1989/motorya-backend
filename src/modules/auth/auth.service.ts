@@ -59,7 +59,9 @@ export class AuthService {
     const [byEmail, byTc, byPhone] = await Promise.all([
       this.prisma.user.findUnique({ where: { email: dto.email } }),
       dto.tcKimlik ? this.prisma.user.findFirst({ where: { tcKimlik: dto.tcKimlik } }) : null,
-      this.prisma.user.findUnique({ where: { phone: dto.phone } }),
+      // Telefon opsiyonel: bos gelince benzersizlik sorgusu yapilmamali,
+      // yoksa phone=undefined ile arama hata verir.
+      dto.phone ? this.prisma.user.findUnique({ where: { phone: dto.phone } }) : null,
     ]);
 
     if (byEmail) throw new ConflictException('Bu e-posta adresi zaten kayıtlı');
@@ -92,7 +94,9 @@ export class AuthService {
         displayName: dto.displayName,   // herkese acik: kullanici adi
         realName: dto.realName,         // yalnizca panel/fatura
         tcKimlik: dto.tcKimlik,
-        phone: dto.phone,
+        // Bos string yerine null: `phone` benzersiz bir alan, iki
+        // kullanici bos string ile kayit olursa ikincisi cakisirdi.
+        phone: dto.phone || null,
         birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
         gender: dto.gender,
         city: dto.city,
