@@ -15,6 +15,24 @@ class ForgotPasswordDto {
 class ResetPasswordDto { @IsString() token: string; @IsString() @MinLength(8) password: string; }
 class ResendVerificationDto { @IsEmail() email: string; }
 class AdminMfaVerifyDto { @IsEmail() email: string; @IsString() otp: string; }
+/**
+ * Turnstile jetonu tasiyan istek govdeleri.
+ *
+ * Onceden `@Body() dto: RegisterDto & { turnstileToken?: string }` yaziliyordu.
+ * TypeScript kesisim tipi icin `design:paramtypes` olarak `Object` uretir;
+ * ValidationPipe metatype'i sinif olarak goremeyince DOGRULAMAYI TUMDEN
+ * ATLIYORDU. Yani /auth/register, /auth/login ve /auth/forgot-password
+ * uzerinde hicbir kural islemiyordu: e-posta bicimi, sifre uzunlugu,
+ * kullanici adi kurallari, hatta sozlesme onayi (@Equals(true)) bile.
+ *
+ * Olcum: sunucunun icinden /auth/login'e "bu-eposta-degil" gonderince
+ * dogrulama hatasi degil "sifre hatali" donuyordu.
+ *
+ * turnstileToken zaten RegisterDto/LoginDto icinde tanimliymis, yani
+ * kesisim tipi hem gereksiz hem zararliydi. Dogrudan DTO sinifi
+ * kullanilinca metatype gercek bir sinif oluyor ve tum kurallar yeniden
+ * devreye giriyor.
+ */
 class ConsentsDto {
   @IsBoolean() @Equals(true, { message: "Üyelik Sözleşmesi'ni kabul etmeniz gerekiyor" })
   acceptedTerms: boolean;
@@ -34,7 +52,7 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
-  async register(@Body() dto: RegisterDto & { turnstileToken?: string }, @Request() req) {
+  async register(@Body() dto: RegisterDto, @Request() req) {
     const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
     if (!ok) throw new BadRequestException('Bot doğrulaması başarısız');
     return this.authService.register(dto, req.ip);
@@ -42,7 +60,7 @@ export class AuthController {
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
-  async login(@Body() dto: LoginDto & { turnstileToken?: string }, @Request() req, @Headers('x-client') client?: string) {
+  async login(@Body() dto: LoginDto, @Request() req, @Headers('x-client') client?: string) {
     if (requiresCaptcha(dto.email)) {
       const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
       if (!ok) throw new BadRequestException({ message: 'Bot doğrulaması gerekli', captchaRequired: true });
@@ -73,7 +91,7 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('forgot-password')
-  async forgotPassword(@Body() dto: ForgotPasswordDto & { turnstileToken?: string }, @Request() req) {
+  async forgotPassword(@Body() dto: ForgotPasswordDto, @Request() req) {
     const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
     if (!ok) throw new BadRequestException('Bot doğrulaması başarısız');
     return this.authService.forgotPassword(dto.email);
