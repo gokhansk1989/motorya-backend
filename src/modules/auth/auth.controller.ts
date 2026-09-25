@@ -50,11 +50,32 @@ export class AuthController {
     private config: ConfigService,
   ) {}
 
+  // Mobil uygulamadan gelen kayıt isteklerinde Turnstile aranmaz.
+  //
+  // Neden: Turnstile bir TARAYICI doğrulaması. Uygulamada bunu sağlamak için
+  // widget'ı kendi alan adımızdaki bir sayfada açıp WebView'e gömmüştük.
+  // Gerçek cihazda test edildiğinde doğrulama hiç tamamlanmadı: widget
+  // "doğrulanıyor" durumunda takılı kaldı, jeton üretilmedi ve kayıt düğmesi
+  // hiç açılmadı - yani mobil kayıt tamamen kilitliydi. Cloudflare WebView'i
+  // şüpheli sayıp çözülemeyen bir challenge veriyor; bu bizim kodumuzla
+  // düzeltilebilecek bir şey değil.
+  //
+  // Mobil tarafta kalan korumalar: dakikada 5 istek sınırı (aşağıdaki
+  // @Throttle), zorunlu e-posta doğrulaması ve uygulamanın imzalı binary
+  // olması. Web'de Turnstile aynen duruyor - orada çalışıyor.
+  //
+  // DİKKAT - bu başlık taklit edilebilir: "x-client: mobile" yazan herkes
+  // Turnstile'ı atlar, yani web koruması da fiilen bu başlığın arkasına
+  // düşer. Bilinçli bir ödünç: alternatif, mobil kaydın hiç çalışmaması.
+  // Kalıcı çözüm Turnstile değil, App Attest / Play Integrity ile
+  // uygulamanın gerçekten bizim uygulamamız olduğunu kanıtlamak.
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
-  async register(@Body() dto: RegisterDto, @Request() req) {
-    const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
-    if (!ok) throw new BadRequestException('Bot doğrulaması başarısız');
+  async register(@Body() dto: RegisterDto, @Request() req, @Headers('x-client') client?: string) {
+    if (client !== 'mobile') {
+      const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
+      if (!ok) throw new BadRequestException('Bot doğrulaması başarısız');
+    }
     return this.authService.register(dto, req.ip);
   }
 
@@ -89,11 +110,14 @@ export class AuthController {
     return this.authService.resendVerification(dto.email);
   }
 
+  // Şifre sıfırlamada da aynı durum: uygulama jeton üretemiyor.
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('forgot-password')
-  async forgotPassword(@Body() dto: ForgotPasswordDto, @Request() req) {
-    const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
-    if (!ok) throw new BadRequestException('Bot doğrulaması başarısız');
+  async forgotPassword(@Body() dto: ForgotPasswordDto, @Request() req, @Headers('x-client') client?: string) {
+    if (client !== 'mobile') {
+      const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
+      if (!ok) throw new BadRequestException('Bot doğrulaması başarısız');
+    }
     return this.authService.forgotPassword(dto.email);
   }
 
