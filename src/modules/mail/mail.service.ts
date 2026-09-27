@@ -301,6 +301,140 @@ export class MailService {
     `));
   }
 
+
+  // ---------------------------------------------------------------------
+  // Etkileşim mailleri
+  //
+  // Ortak gerekçe: bu olayların hepsinin uygulama içi bildirimi ve push'u
+  // zaten vardı, ama ikisi de yalnızca uygulamayı/siteyi açan kullanıcıya
+  // ulaşıyor. Bir pazaryerinde alışverişi kapatan şey karşı tarafın zamanında
+  // haberdar olması; mail, günlerce uygulamayı açmayan kullanıcıya ulaşan tek
+  // kanal. Her biri ilgili bildirim tercihine bağlı - kullanıcı push'u
+  // kapatmışsa mail de gitmez, yoksa kapatmanın anlamı kalmaz.
+  // ---------------------------------------------------------------------
+
+  /** Okunmamış mesaj hatırlatması (15 dk okunmadıysa, en fazla günde bir). */
+  async sendUnreadMessagesEmail(email: string, name: string, okunmamis: number, gonderen: string) {
+    const link = `${this.appUrl}/mesajlarim`;
+    await this.send(email, `💬 ${gonderen} sana mesaj gönderdi`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">Okunmamış Mesajın Var 💬</h2>
+      <p>Merhaba ${name},</p>
+      <p><strong>${gonderen}</strong> sana mesaj gönderdi${okunmamis > 1 ? ` (toplam ${okunmamis} okunmamış mesajın var)` : ''}.</p>
+      <p style="color:#555">Alıcılar genellikle ilk yanıt veren satıcıyla devam ediyor - hızlı dönmek satışı kapatıyor.</p>
+      <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Mesajları Oku</a>
+      <p style="color:#888;font-size:13px">Bu bildirimleri profilindeki bildirim ayarlarından kapatabilirsin.</p>
+    `));
+  }
+
+  /** Satıcıya: ilanına teklif geldi. */
+  async sendOfferReceivedEmail(email: string, name: string, listingTitle: string, tutar: number, slug: string) {
+    const link = `${this.appUrl}/tekliflerim`;
+    await this.send(email, `💸 İlanına teklif geldi: ${listingTitle}`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">Yeni Teklif 💸</h2>
+      <p>Merhaba ${name},</p>
+      <p><strong>"${listingTitle}"</strong> ilanına teklif geldi:</p>
+      <p style="font-size:22px;font-weight:700;color:#16a34a;margin:12px 0">${tutar.toLocaleString('tr-TR')} ₺</p>
+      <p style="color:#555">Teklif <strong>48 saat</strong> içinde yanıtlanmazsa kendiliğinden düşer.</p>
+      <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Teklifi Görüntüle</a>
+      <p style="color:#888;font-size:13px"><a href="${this.appUrl}/ilan/${slug}" style="color:#f97316">İlanı aç</a></p>
+    `));
+  }
+
+  /** Alıcıya: teklifin yanıtlandı. */
+  async sendOfferAnsweredEmail(
+    email: string,
+    name: string,
+    listingTitle: string,
+    durum: 'ACCEPTED' | 'REJECTED' | 'COUNTERED',
+    tutar: number,
+    slug: string,
+  ) {
+    const baslik = durum === 'ACCEPTED' ? '🎉 Teklifin kabul edildi'
+      : durum === 'COUNTERED' ? '↩️ Satıcı karşı teklif verdi'
+      : 'Teklifin yanıtlandı';
+    const govde = durum === 'ACCEPTED'
+      ? `<p><strong>"${listingTitle}"</strong> ilanı için verdiğin <strong>${tutar.toLocaleString('tr-TR')} ₺</strong> teklif kabul edildi. Satıcıyla mesajlaşarak teslimatı planlayabilirsin.</p>`
+      : durum === 'COUNTERED'
+        ? `<p><strong>"${listingTitle}"</strong> ilanı için satıcı <strong>${tutar.toLocaleString('tr-TR')} ₺</strong> karşı teklif verdi.</p>`
+        : `<p><strong>"${listingTitle}"</strong> ilanı için verdiğin teklif kabul edilmedi. Benzer ilanlara göz atabilirsin.</p>`;
+    await this.send(email, `${baslik}: ${listingTitle}`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">${baslik}</h2>
+      <p>Merhaba ${name},</p>
+      ${govde}
+      <a href="${this.appUrl}/tekliflerim" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Tekliflerim</a>
+      <p style="color:#888;font-size:13px"><a href="${this.appUrl}/ilan/${slug}" style="color:#f97316">İlanı aç</a></p>
+    `));
+  }
+
+  /** Satıcıya: yanıtlanmamış teklif yarın düşecek. */
+  async sendOfferExpiringEmail(email: string, name: string, listingTitle: string, tutar: number) {
+    await this.send(email, `⏳ Teklif yarın düşüyor: ${listingTitle}`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">Yanıt Bekleyen Teklif ⏳</h2>
+      <p>Merhaba ${name},</p>
+      <p><strong>"${listingTitle}"</strong> ilanına gelen <strong>${tutar.toLocaleString('tr-TR')} ₺</strong> teklif <strong>24 saat içinde</strong> kendiliğinden düşecek.</p>
+      <p style="color:#555">Kabul, ret ya da karşı teklif - hangisi olursa olsun yanıtlamak alıcıyı elde tutuyor.</p>
+      <a href="${this.appUrl}/tekliflerim" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Teklifi Yanıtla</a>
+    `));
+  }
+
+  /** Takipçiye: takip ettiğin satıcı yeni ilan verdi. */
+  async sendFollowedSellerListingEmail(email: string, name: string, saticiAdi: string, listingTitle: string, slug: string) {
+    await this.send(email, `🔔 ${saticiAdi} yeni ilan verdi`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">Takip Ettiğin Satıcıdan Yeni İlan 🔔</h2>
+      <p>Merhaba ${name},</p>
+      <p>Takip ettiğin <strong>${saticiAdi}</strong> yeni bir ilan yayınladı:</p>
+      <p style="font-size:18px;font-weight:600;margin:12px 0">${listingTitle}</p>
+      <a href="${this.appUrl}/ilan/${slug}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
+      <p style="color:#888;font-size:13px">Takibi bırakmak istersen satıcının profilinden yapabilirsin.</p>
+    `));
+  }
+
+  /** Satıcıya: ilanın uzun süredir yayında, gözden geçir. */
+  async sendStaleListingEmail(email: string, name: string, listingTitle: string, gun: number, slug: string) {
+    await this.send(email, `İlanın ${gun} gündür yayında: ${listingTitle}`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">İlanını Gözden Geçir</h2>
+      <p>Merhaba ${name},</p>
+      <p><strong>"${listingTitle}"</strong> ilanın ${gun} gündür yayında ve henüz satılmadı.</p>
+      <p style="color:#555">Fiyatı güncellemek ilanı arama sonuçlarında öne çıkarıyor ve favorileyenlere "fiyat düştü" bildirimi gönderiyor. Satıldıysa ilanı kapatmayı unutma.</p>
+      <a href="${this.appUrl}/ilan/${slug}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Düzenle</a>
+    `));
+  }
+
+  /** Moderatörlere: içerik şikâyet edildi. */
+  async sendReportEmail(email: string, name: string, listingTitle: string, sebep: string, listingId: string) {
+    await this.send(email, `🚩 Şikâyet: ${listingTitle}`, this.wrap(`
+      <h2 style="color:#dc2626;margin:0 0 16px">İçerik Şikâyet Edildi 🚩</h2>
+      <p>Merhaba ${name},</p>
+      <p><strong>"${listingTitle}"</strong> ilanı şikâyet edildi.</p>
+      <p style="background:#fef2f2;border-left:3px solid #dc2626;padding:10px 14px;margin:14px 0"><strong>Sebep:</strong> ${sebep}</p>
+      <p style="color:#555">Kullanım şartlarımızda şikâyetleri <strong>24 saat içinde</strong> inceleyeceğimizi taahhüt ediyoruz - bu söz App Store incelemesinde de verildi.</p>
+      <a href="${this.adminUrl}/listings" style="display:inline-block;background:#dc2626;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı İncele</a>
+    `));
+  }
+
+  /** Yönetime: haftalık moderasyon özeti. */
+  async sendModerationWeeklySummaryEmail(
+    email: string,
+    name: string,
+    o: { bekleyen: number; onaylanan: number; reddedilen: number; sikayet: number; yeniUye: number },
+  ) {
+    const satir = (etiket: string, deger: number, renk = '#1c1917') =>
+      `<tr><td style="padding:7px 0;color:#555">${etiket}</td><td style="padding:7px 0;text-align:right;font-weight:700;color:${renk}">${deger}</td></tr>`;
+    await this.send(email, `📊 Haftalık moderasyon özeti — Motorya`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">Haftalık Özet 📊</h2>
+      <p>Merhaba ${name},</p>
+      <p>Son 7 günde Motorya'da olanlar:</p>
+      <table style="width:100%;border-collapse:collapse;margin:14px 0">
+        ${satir('Onay bekleyen ilan', o.bekleyen, o.bekleyen > 0 ? '#dc2626' : '#16a34a')}
+        ${satir('Onaylanan ilan', o.onaylanan)}
+        ${satir('Reddedilen ilan', o.reddedilen)}
+        ${satir('Şikâyet', o.sikayet, o.sikayet > 0 ? '#dc2626' : '#1c1917')}
+        ${satir('Yeni üye', o.yeniUye)}
+      </table>
+      <a href="${this.adminUrl}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Yönetim Paneli</a>
+    `));
+  }
+
   private async send(to: string, subject: string, html: string) {
     const cfg = await this.getMailConfig();
     if (!cfg) {

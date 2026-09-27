@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { buildListingSlug } from '../listings/listings.service';
 
 @Injectable()
 export class TasksService {
@@ -301,6 +302,271 @@ export class TasksService {
   }
 
   // Günlük: 30 günden eski audit log kayıtlarını sil (saklama süresi)
+  /**
+   * Okunmamış mesaj hatırlatması — 15 dakikada bir.
+   *
+   * Pazaryerinde satışı kapatan şey karşı tarafın zamanında dönmesi; alıcılar
+   * genellikle ilk yanıt veren satıcıyla devam ediyor. Mesaj geldiğinde push
+   * gidiyor ama push'u kapatmış ya da uygulamayı açmayan kullanıcıya hiçbir
+   * şey ulaşmıyordu.
+   *
+   * Spam olmaması için üç sınır: (1) mesajın üzerinden en az 15 dakika
+   * geçmeli - anında mail atmak, konuşma zaten sürerken rahatsız eder;
+   * (2) aynı konuşma için günde bir mail; (3) bildirim tercihinde
+   * "messages" kapalıysa hiç gitmez.
+   */
+  @Cron('*/15 * * * *')
+  async remindUnreadMessages() {
+    const simdi = Date.now();
+    const esik = new Date(simdi - 15 * 60 * 1000);
+    const gunOnce = new Date(simdi - 24 * 60 * 60 * 1000);
+
+    // Okunmamış mesajı olan katılımcılar: son mesaj 15 dk'dan eski ve
+    // kullanıcının lastReadAt'inden yeni.
+    const katilimcilar = await this.prisma.conversationParticipant.findMany({
+      where: {
+        conversation: {
+          messages: { some: { createdAt: { lte: esik } } },
+        },
+      },
+      select: {
+        userId: true,
+        lastReadAt: true,
+        conversationId: true,
+        conversation: {
+          select: {
+            messages: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: { createdAt: true, senderId: true, sender: { select: { displayName: true } } },
+            },
+          },
+        },
+      },
+      take: 500,
+    });
+
+    const adaylar = katilimcilar.filter(k => {
+      const son = k.conversation.messages[0];
+      if (!son) return false;
+      if (son.senderId === k.userId) return false;            // kendi mesajı
+      if (son.createdAt > esik) return false;                  // henüz taze
+      if (k.lastReadAt && k.lastReadAt >= son.createdAt) return false; // okumuş
+      return true;
+    });
+    if (adaylar.length === 0) return;
+
+    // Son 24 saatte bu konuşma için mail atılmış olanları ele.
+    const sonHatirlatmalar = await this.prisma.notification.findMany({
+      where: {
+        userId: { in: adaylar.map(a => a.userId) },
+        type: 'message.unread_reminder',
+        createdAt: { gte: gunOnce },
+      },
+      select: { userId: true, payload: true },
+    });
+    const atlanacak = new Set(
+      sonHatirlatmalar.map(n => `${n.userId}:${(n.payload as any)?.conversationId ?? ''}`),
+    );
+
+    const gonderilecek = adaylar.filter(a => !atlanacak.has(`${a.userId}:${a.conversationId}`));
+    if (gonderilecek.length === 0) return;
+
+    const kullanicilar = await this.prisma.user.findMany({
+      where: {
+        id: { in: gonderilecek.map(g => g.userId) },
+        deletedAt: null,
+        status: 'ACTIVE',
+        emailVerifiedAt: { not: null },
+      },
+      select: { id: true, email: true, displayName: true, notificationPrefs: true },
+    });
+    const kMap = new Map(kullanicilar.map(u => [u.id, u]));
+
+    let sent = 0;
+    for (const a of gonderilecek) {
+      const u = kMap.get(a.userId);
+      if (!u) continue;
+      const prefs = (u.notificationPrefs as any) ?? {};
+      if (prefs.messages === false) continue;
+
+      const son = a.conversation.messages[0];
+      const gonderen = son.sender?.displayName ?? 'Bir kullanıcı';
+
+      // Kaydı mailden ÖNCE yaz: gönderim yarıda kalsa bile aynı konuşma
+      // için 24 saat içinde ikinci mail çıkmasın.
+      await this.prisma.notification.create({
+        data: {
+          userId: a.userId,
+          type: 'message.unread_reminder',
+          title: 'Okunmamış mesajın var',
+          body: `${gonderen} sana mesaj gönderdi.`,
+          payload: { conversationId: a.conversationId },
+        },
+      });
+
+      const ok = await this.mail
+        .sendUnreadMessagesEmail(u.email, u.displayName, 1, gonderen)
+        .then(() => true)
+        .catch(() => false);
+      if (ok) sent++;
+    }
+    if (sent > 0) this.logger.log(`Sent ${sent} unread-message reminder(s)`);
+  }
+
+  /**
+   * Yanıtlanmamış teklifler için son hatırlatma — her gün 09:00.
+   *
+   * Teklifler 48 saatte kendiliğinden düşüyor. Haberi olmayan satıcı alıcıyı
+   * sessizce kaybediyor ve iki taraf da "geç kaldım" diye şikâyet ediyor.
+   * Son 24 saate girmiş, hâlâ PENDING tekliflere tek bir hatırlatma.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  async remindExpiringOffers() {
+    const simdi = new Date();
+    const yarin = new Date(simdi.getTime() + 24 * 60 * 60 * 1000);
+
+    const teklifler = await this.prisma.offer.findMany({
+      where: {
+        status: 'PENDING',
+        expiresAt: { gt: simdi, lte: yarin },
+      },
+      select: {
+        id: true,
+        amount: true,
+        listing: { select: { title: true, sellerId: true } },
+      },
+      take: 200,
+    });
+    if (teklifler.length === 0) return;
+
+    const saticiIds = [...new Set(teklifler.map(t => t.listing.sellerId))];
+    const saticilar = await this.prisma.user.findMany({
+      where: { id: { in: saticiIds }, deletedAt: null, status: 'ACTIVE', emailVerifiedAt: { not: null } },
+      select: { id: true, email: true, displayName: true, notificationPrefs: true },
+    });
+    const sMap = new Map(saticilar.map(u => [u.id, u]));
+
+    let sent = 0;
+    for (const t of teklifler) {
+      const u = sMap.get(t.listing.sellerId);
+      if (!u) continue;
+      const prefs = (u.notificationPrefs as any) ?? {};
+      if (prefs.offers === false) continue;
+      const ok = await this.mail
+        .sendOfferExpiringEmail(u.email, u.displayName, t.listing.title, Number(t.amount))
+        .then(() => true)
+        .catch(() => false);
+      if (ok) sent++;
+    }
+    if (sent > 0) this.logger.log(`Sent ${sent} expiring-offer reminder(s)`);
+  }
+
+  /**
+   * 30 gündür satılmamış ilanlar için satıcıya hatırlatma — her gün 11:00.
+   *
+   * Envanterin tazeliği arama sonuçlarının kalitesini belirliyor: aylardır
+   * duran, fiyatı güncel olmayan ilanlar hem kullanıcıyı yanıltıyor hem de
+   * satılmış olabiliyor. Fiyat güncellemesi ayrıca favorileyenlere "fiyat
+   * düştü" bildirimi çıkarıyor, yani ilanı yeniden dolaşıma sokuyor.
+   *
+   * İlan başına ömür boyu tek mail - her ay hatırlatmak bunaltırdı.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_11AM)
+  async remindLongRunningListings() {
+    const esik = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const ilanlar = await this.prisma.listing.findMany({
+      where: { status: 'ACTIVE', deletedAt: null, createdAt: { lt: esik } },
+      select: {
+        id: true, title: true, sellerId: true, createdAt: true,
+        category: { select: { slug: true, name: true, parent: { select: { slug: true, name: true } } } },
+        city: true, brand: { select: { name: true } },
+      },
+      take: 200,
+    });
+    if (ilanlar.length === 0) return;
+
+    const zatenGonderilmis = await this.prisma.notification.findMany({
+      where: { type: 'listing.stale_30d', userId: { in: [...new Set(ilanlar.map(i => i.sellerId))] } },
+      select: { payload: true },
+    });
+    const gonderilmisIds = new Set(zatenGonderilmis.map(n => (n.payload as any)?.listingId));
+    const kalan = ilanlar.filter(i => !gonderilmisIds.has(i.id));
+    if (kalan.length === 0) return;
+
+    const saticilar = await this.prisma.user.findMany({
+      where: {
+        id: { in: [...new Set(kalan.map(i => i.sellerId))] },
+        deletedAt: null, status: 'ACTIVE', emailVerifiedAt: { not: null },
+      },
+      select: { id: true, email: true, displayName: true, notificationPrefs: true },
+    });
+    const sMap = new Map(saticilar.map(u => [u.id, u]));
+
+    let sent = 0;
+    for (const ilan of kalan) {
+      const u = sMap.get(ilan.sellerId);
+      if (!u) continue;
+      const prefs = (u.notificationPrefs as any) ?? {};
+      if (prefs.listingStatus === false) continue;
+
+      const gun = Math.floor((Date.now() - ilan.createdAt.getTime()) / (24 * 60 * 60 * 1000));
+
+      await this.prisma.notification.create({
+        data: {
+          userId: ilan.sellerId,
+          type: 'listing.stale_30d',
+          title: 'İlanını gözden geçir',
+          body: `"${ilan.title}" ${gun} gündür yayında.`,
+          payload: { listingId: ilan.id },
+        },
+      });
+
+      const ok = await this.mail
+        .sendStaleListingEmail(u.email, u.displayName, ilan.title, gun, buildListingSlug(ilan as any))
+        .then(() => true)
+        .catch(() => false);
+      if (ok) sent++;
+    }
+    if (sent > 0) this.logger.log(`Sent ${sent} stale-listing reminder(s)`);
+  }
+
+  /**
+   * Haftalık moderasyon özeti — pazartesi 09:00.
+   *
+   * Tek tek ilan mailleri "şu an ne var" sorusunu yanıtlıyor ama "bu hafta
+   * ne oldu" sorusunu yanıtlamıyor. Hacim büyüyünce tek tek maillerin yerini
+   * bu özet alacak; şimdilik ikisi birlikte duruyor.
+   */
+  @Cron('0 9 * * 1')
+  async sendWeeklyModerationSummary() {
+    const haftaOnce = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [bekleyen, onaylanan, reddedilen, sikayet, yeniUye, yoneticiler] = await Promise.all([
+      this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null } }),
+      this.prisma.listing.count({ where: { status: 'ACTIVE', deletedAt: null, updatedAt: { gte: haftaOnce } } }),
+      this.prisma.listing.count({ where: { status: 'REJECTED', updatedAt: { gte: haftaOnce } } }),
+      this.prisma.notification.count({ where: { type: 'report.received', createdAt: { gte: haftaOnce } } }),
+      this.prisma.user.count({ where: { createdAt: { gte: haftaOnce }, deletedAt: null } }),
+      this.prisma.user.findMany({
+        where: { role: { in: ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'] }, deletedAt: null, status: 'ACTIVE' },
+        select: { email: true, displayName: true },
+      }),
+    ]);
+
+    await Promise.all(
+      yoneticiler.map(y =>
+        this.mail
+          .sendModerationWeeklySummaryEmail(y.email, y.displayName, {
+            bekleyen, onaylanan, reddedilen, sikayet, yeniUye,
+          })
+          .catch(() => null),
+      ),
+    );
+    this.logger.log(`Weekly moderation summary sent to ${yoneticiler.length} moderator(s)`);
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
   async pruneAuditLogs() {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

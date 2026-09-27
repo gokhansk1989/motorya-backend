@@ -417,6 +417,16 @@ export class ListingsService {
       moderators.map(m => m.id),
       { title: 'İlan şikâyet edildi', body: listingTitle, url: '/' },
     ).catch(() => null);
+
+    // Mail de gitsin: kullanım şartlarında ve App Store incelemesinde
+    // şikâyetleri 24 saat içinde inceleyeceğimizi taahhüt ettik. Panel
+    // bildirimi ve push, moderatör o gün uygulamayı açmazsa o taahhüdü
+    // tutmaya yetmiyor - mail açılmayan tek kanal değil ama en kalıcısı.
+    await Promise.all(
+      moderators.map(m =>
+        this.mail.sendReportEmail(m.email, m.displayName, listingTitle, reason, listingId).catch(() => null),
+      ),
+    );
   }
 
   async getListings(query: ListingsQueryDto, viewerId?: string) {

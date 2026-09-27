@@ -143,6 +143,16 @@ export class AdminService {
           payload: { listingId: id, listingSlug },
         },
       }).catch(() => null);
+
+      // Satıcıyı takip edenlere haber ver.
+      //
+      // Takip özelliği vardı ama hiçbir bildirim üretmiyordu - kullanıcı
+      // takip ediyor, karşılığında hiçbir şey olmuyordu, yani özellik
+      // fiilen ölüydü. Haber ilan ONAYLANDIĞINDA gidiyor, verildiğinde
+      // değil: henüz moderasyondan geçmemiş bir ilanı duyurmak, reddedilen
+      // içeriği takipçilere göstermek demek olurdu.
+      this.takipcilereYeniIlanBildir(listing.seller.id, id, listing.title, listingSlug).catch(() => null);
+
       if (full) {
         this.search.indexListing({
           id: full.id,
@@ -332,6 +342,50 @@ export class AdminService {
   // Gercek ad-soyad yalnizca ADMIN ve SUPER_ADMIN'e doner. Moderatorun isi
   // ilan ve sikayet moderasyonu; uyelerin yasal adini gormesi gerekmiyor ve
   // bu ekran panele erisimi olan herkesin onunde duruyor.
+
+  /**
+   * Bir satıcının ilanı yayına girince onu takip edenlere bildirim + mail.
+   *
+   * Takipçi sayısı büyüyebileceği için mail tek tek değil toplu sorguyla
+   * hazırlanıyor; bildirim tercihinde "follows" kapalı olanlar eleniyor.
+   */
+  private async takipcilereYeniIlanBildir(
+    sellerId: string,
+    listingId: string,
+    listingTitle: string,
+    listingSlug: string,
+  ) {
+    const [satici, takipler] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: sellerId }, select: { displayName: true } }),
+      this.prisma.userFollow.findMany({ where: { followingId: sellerId }, select: { followerId: true } }),
+    ]);
+    if (!satici || takipler.length === 0) return;
+
+    const takipciIds = takipler.map(t => t.followerId);
+
+    await this.prisma.notification.createMany({
+      data: takipciIds.map(uid => ({
+        userId: uid,
+        type: 'follow.new_listing',
+        title: `🔔 ${satici.displayName} yeni ilan verdi`,
+        body: `"${listingTitle}" yayında.`,
+        payload: { listingId, listingSlug, sellerId },
+      })),
+    });
+
+    const takipciler = await this.prisma.user.findMany({
+      where: { id: { in: takipciIds }, deletedAt: null, status: 'ACTIVE', emailVerifiedAt: { not: null } },
+      select: { email: true, displayName: true, notificationPrefs: true },
+    });
+    for (const t of takipciler) {
+      const prefs = (t.notificationPrefs as any) ?? {};
+      if (prefs.follows === false) continue;
+      this.mail
+        .sendFollowedSellerListingEmail(t.email, t.displayName, satici.displayName, listingTitle, listingSlug)
+        .catch(() => null);
+    }
+  }
+
   async getUsers(page = 1, limit = 20, search?: string, rol?: string) {
     const gercekAdiGorebilir = rol === 'ADMIN' || rol === 'SUPER_ADMIN';
     const where: any = { deletedAt: null };

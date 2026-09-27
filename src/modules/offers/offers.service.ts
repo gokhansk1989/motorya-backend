@@ -16,6 +16,7 @@ import { WebPushService } from '../users/webpush.service';
 import { FcmService } from '../users/fcm.service';
 import { MessagesGateway } from '../messages/messages.gateway';
 import { MessagesService } from '../messages/messages.service';
+import { MailService } from '../mail/mail.service';
 
 // Teklif durumlarının kullanıcıya gösterilecek karşılıkları. Hata metninde
 // ham enum ("ACCEPTED") göstermek kullanıcıya bir şey anlatmıyordu.
@@ -39,6 +40,7 @@ export class OffersService {
     private fcm: FcmService,
     private chatGateway: MessagesGateway,
     private messages: MessagesService,
+    private mail: MailService,
   ) {}
 
   async createOffer(buyerId: string, dto: CreateOfferDto) {
@@ -111,7 +113,33 @@ export class OffersService {
     this.notifyConversation(buyerId, listing.sellerId, listing.id,
       `💰 "${listing.title}" için ${amount.toFixed(2)} ₺ teklif verdi.`).catch(() => null);
 
+    this.teklifMaili(listing.sellerId, (email, ad) =>
+      this.mail.sendOfferReceivedEmail(email, ad, listing.title, Number(amount), buildListingSlug(listing)),
+    ).catch(() => null);
+
     return offer;
+  }
+
+  /**
+   * Teklif olaylarında mail gönderir.
+   *
+   * Bildirim ve push zaten var ama ikisi de uygulamayı açan kullanıcıya
+   * ulaşıyor; teklifler 48 saatte kendiliğinden düştüğü için haberi olmayan
+   * satıcı alıcıyı sessizce kaybediyordu. Push'u kapatmış kullanıcıya mail de
+   * gitmiyor - "offers" tercihi ikisini birden yönetiyor.
+   */
+  private async teklifMaili(
+    userId: string,
+    gonder: (email: string, ad: string) => Promise<void>,
+  ) {
+    const u = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null, status: 'ACTIVE', emailVerifiedAt: { not: null } },
+      select: { email: true, displayName: true, notificationPrefs: true },
+    });
+    if (!u) return;
+    const prefs = (u.notificationPrefs as any) ?? {};
+    if (prefs.offers === false) return;
+    await gonder(u.email, u.displayName).catch(() => null);
   }
 
   private async notifyConversation(buyerId: string, sellerId: string, listingId: string, text: string) {
@@ -176,6 +204,13 @@ export class OffersService {
     }, 'offers').catch(() => null);
     this.chatGateway.notifyUser(offer.buyerId, 'offer:updated', { offerId, listingId: offer.listingId, status: newStatus });
 
+    this.teklifMaili(offer.buyerId, (email, ad) =>
+      this.mail.sendOfferAnsweredEmail(
+        email, ad, offer.listing.title, newStatus as 'ACCEPTED' | 'REJECTED',
+        Number(offer.amount), buildListingSlug(offer.listing),
+      ),
+    ).catch(() => null);
+
     return updated;
   }
 
@@ -229,6 +264,12 @@ export class OffersService {
       data: { type: 'offer', offerId, listingId: offer.listingId },
     }, 'offers').catch(() => null);
     this.chatGateway.notifyUser(offer.buyerId, 'offer:updated', { offerId, listingId: offer.listingId, status: 'COUNTER_OFFERED' });
+
+    this.teklifMaili(offer.buyerId, (email, ad) =>
+      this.mail.sendOfferAnsweredEmail(
+        email, ad, offer.listing.title, 'COUNTERED', Number(counter), buildListingSlug(offer.listing),
+      ),
+    ).catch(() => null);
 
     return updated;
   }

@@ -2,13 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 
-export type NotificationCategory = 'offers' | 'messages' | 'priceDrops' | 'listingStatus';
+export type NotificationCategory = 'offers' | 'messages' | 'priceDrops' | 'listingStatus' | 'follows';
 
 const DEFAULT_PREFS: Record<NotificationCategory, boolean> = {
   offers: true,
   messages: true,
   priceDrops: true,
   listingStatus: true,
+  follows: true,
 };
 
 @Injectable()

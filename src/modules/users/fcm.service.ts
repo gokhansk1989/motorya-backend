@@ -8,6 +8,7 @@ const DEFAULT_PREFS: Record<NotificationCategory, boolean> = {
   messages: true,
   priceDrops: true,
   listingStatus: true,
+  follows: true,
 };
 
 @Injectable()
