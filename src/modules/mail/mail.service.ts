@@ -242,6 +242,65 @@ export class MailService {
     `);
   }
 
+  /**
+   * Favorilenen bir ilanın fiyatı düştüğünde favorileyene gider.
+   *
+   * Favori listesi, kullanıcının "bunu almayı düşünüyorum" dediği yer;
+   * fiyatın düşmesi orada beklediği tek haber. Uygulama içi bildirim ve
+   * push zaten vardı, ama ikisi de uygulamayı açmayan kullanıcıya
+   * ulaşmıyordu - oysa fiyat düşüşü tam olarak geri getirme sebebi.
+   */
+  async sendFavoritePriceDropEmail(
+    email: string,
+    name: string,
+    listingTitle: string,
+    oldPrice: number,
+    newPrice: number,
+    listingSlug: string,
+  ) {
+    const link = `${this.appUrl}/ilan/${listingSlug}`;
+    const indirim = Math.round((1 - newPrice / oldPrice) * 100);
+    await this.send(email, `💰 Favorindeki ilanın fiyatı düştü: ${listingTitle}`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">Fiyat Düştü! 💰</h2>
+      <p>Merhaba ${name},</p>
+      <p>Favorilerindeki <strong>"${listingTitle}"</strong> ilanının fiyatı düştü:</p>
+      <p style="font-size:20px;margin:16px 0">
+        <span style="color:#888;text-decoration:line-through">${oldPrice.toLocaleString('tr-TR')} ₺</span>
+        &nbsp;→&nbsp;
+        <strong style="color:#dc2626">${newPrice.toLocaleString('tr-TR')} ₺</strong>
+        <span style="background:#fee2e2;color:#dc2626;font-size:13px;font-weight:700;padding:3px 8px;border-radius:5px;margin-left:8px">%${indirim} indirim</span>
+      </p>
+      <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
+      <p style="color:#888;font-size:13px">Bu bildirimleri profilindeki bildirim ayarlarından kapatabilirsin.</p>
+    `));
+  }
+
+  /**
+   * İlanı favoriye eklendiğinde satıcıya gider.
+   *
+   * Satıcı için "ilanım ilgi görüyor" sinyali; ilanı canlı tutmaya ve
+   * fiyatı gözden geçirmeye teşvik ediyor. Favoriyi KİMİN eklediği
+   * bilinçli olarak yazılmıyor - alıcının hangi ilanla ilgilendiği onun
+   * bilgisi, satıcıya isim vermek gereksiz bir ifşa olurdu.
+   */
+  async sendListingFavoritedEmail(
+    email: string,
+    name: string,
+    listingTitle: string,
+    toplamFavori: number,
+    listingSlug: string,
+  ) {
+    const link = `${this.appUrl}/ilan/${listingSlug}`;
+    await this.send(email, `⭐ İlanın favorilere eklendi: ${listingTitle}`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">İlanın İlgi Görüyor ⭐</h2>
+      <p>Merhaba ${name},</p>
+      <p><strong>"${listingTitle}"</strong> ilanın favorilere eklendi.</p>
+      <p style="font-size:15px">Bu ilan şu ana kadar <strong>${toplamFavori} kez</strong> favorilendi.</p>
+      <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
+      <p style="color:#888;font-size:13px">Bu bildirimleri profilindeki bildirim ayarlarından kapatabilirsin.</p>
+    `));
+  }
+
   private async send(to: string, subject: string, html: string) {
     const cfg = await this.getMailConfig();
     if (!cfg) {

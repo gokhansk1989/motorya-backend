@@ -170,6 +170,37 @@ export class TasksService {
   }
 
   /** Kayıttan 7 gün sonra, hiç ilan vermemiş üyelere. */
+
+  /**
+   * Pazarlama izni olan kullanıcıları süzer.
+   *
+   * Neden gerekli: "ilk ilan hatırlatması" ve "geri kazanım" mailleri
+   * işlemsel değil, pazarlama iletisi - kullanıcının başlattığı bir işin
+   * sonucu değiller, biz kendiliğimizden yazıyoruz. KVKK bunlar için açık
+   * rıza arıyor ve rızayı kayıt formunda zaten topluyoruz, ama bu görevler
+   * o kaydı hiç sorgulamıyordu: izin vermemiş kullanıcılara da gidiyorlardı.
+   *
+   * İzin UserConsent tablosunda sürüm sürüm tutuluyor ve kullanıcı sonradan
+   * fikir değiştirebiliyor, o yüzden "bir yerde accepted=true var mı" diye
+   * bakmak yetmez - kişinin EN SON MARKETING kaydına bakmak gerekir.
+   * Prisma bunu tek sorguda süzemediği için adaylar çekildikten sonra
+   * kodda eleniyor; aday sayısı 200 ile sınırlı olduğu için maliyeti yok.
+   */
+  private async pazarlamaIzniOlanlar<T extends { id: string }>(adaylar: T[]): Promise<T[]> {
+    if (adaylar.length === 0) return [];
+    const kayitlar = await this.prisma.userConsent.findMany({
+      where: { userId: { in: adaylar.map(a => a.id) }, type: 'MARKETING' },
+      orderBy: { createdAt: 'desc' },
+      select: { userId: true, accepted: true },
+    });
+    // İlk görülen kayıt en yenisi (desc sıralı); sonrakiler eskisi.
+    const sonDurum = new Map<string, boolean>();
+    for (const k of kayitlar) {
+      if (!sonDurum.has(k.userId)) sonDurum.set(k.userId, k.accepted);
+    }
+    return adaylar.filter(a => sonDurum.get(a.id) === true);
+  }
+
   private async sendFirstListingReminders() {
     const now = Date.now();
     const from = new Date(now - 8 * 24 * 60 * 60 * 1000);
@@ -188,12 +219,13 @@ export class TasksService {
       take: 200,
     });
 
-    if (candidates.length === 0) return;
+    const alicilar = await this.pazarlamaIzniOlanlar(candidates);
+    if (alicilar.length === 0) return;
 
     // Bildirimi mailden ÖNCE yazıyoruz: mail gönderimi yarıda kalsa bile
     // aynı kullanıcıya ikinci kez yazılmasın (spam riski > kaçan mail riski).
     await this.prisma.notification.createMany({
-      data: candidates.map(u => ({
+      data: alicilar.map(u => ({
         userId: u.id,
         type: 'lifecycle.first_listing',
         title: 'İlk ilanını vermeye ne dersin?',
@@ -203,14 +235,14 @@ export class TasksService {
     });
 
     let sent = 0;
-    for (const u of candidates) {
+    for (const u of alicilar) {
       const ok = await this.mail
         .sendFirstListingReminderEmail(u.email, u.displayName)
         .then(() => true)
         .catch(() => false);
       if (ok) sent++;
     }
-    this.logger.log(`Sent ${sent}/${candidates.length} first-listing reminder(s)`);
+    this.logger.log(`Sent ${sent}/${alicilar.length} first-listing reminder(s)`);
   }
 
   /** Kayıttan 30 gün sonra, ilgi göstermiş ama hâlâ ilan vermemiş üyelere. */
@@ -241,10 +273,11 @@ export class TasksService {
       take: 200,
     });
 
-    if (candidates.length === 0) return;
+    const alicilar = await this.pazarlamaIzniOlanlar(candidates);
+    if (alicilar.length === 0) return;
 
     await this.prisma.notification.createMany({
-      data: candidates.map(u => ({
+      data: alicilar.map(u => ({
         userId: u.id,
         type: 'lifecycle.reengagement',
         title: 'Senin için yenilikler var',
@@ -254,7 +287,7 @@ export class TasksService {
     });
 
     let sent = 0;
-    for (const u of candidates) {
+    for (const u of alicilar) {
       const ok = await this.mail
         .sendReengagementEmail(u.email, u.displayName, {
           favorites: u._count.favorites,
@@ -264,7 +297,7 @@ export class TasksService {
         .catch(() => false);
       if (ok) sent++;
     }
-    this.logger.log(`Sent ${sent}/${candidates.length} re-engagement mail(s)`);
+    this.logger.log(`Sent ${sent}/${alicilar.length} re-engagement mail(s)`);
   }
 
   // Günlük: 30 günden eski audit log kayıtlarını sil (saklama süresi)

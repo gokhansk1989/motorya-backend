@@ -369,13 +369,20 @@ export class ListingsService {
       })),
     });
 
-    if (pendingCount === 1) {
-      await Promise.all(
-        moderators.map(m =>
-          this.mail.sendModerationQueueEmail(m.email, m.displayName, title).catch(() => null),
-        ),
-      );
-    }
+    // Her yeni ilan için mail. Önceden koşul `pendingCount === 1` idi: yalnızca
+    // kuyruk boşken haber veriliyordu. Amaç moderatörü boğmamaktı ama sonuç
+    // tersi oldu - kuyrukta bir ilan beklediği sürece sonraki ilanlar sessizce
+    // birikiyordu. 26 Eylül'de dakikalar içinde açılan 5 ilandan yalnızca
+    // ilki mail çıkardı; kalan dördünden kimsenin haberi olmadı.
+    //
+    // Şu anki hacimde (günde birkaç ilan) her ilana mail doğru davranış.
+    // Günde onlarca ilana çıkınca bunu saatlik/günlük özete çevirmek gerekir;
+    // o zaman da "sessiz kalmak" değil, "tek mailde toplamak" yönüne gidilmeli.
+    await Promise.all(
+      moderators.map(m =>
+        this.mail.sendModerationQueueEmail(m.email, m.displayName, title).catch(() => null),
+      ),
+    );
   }
 
   /**
@@ -881,11 +888,64 @@ export class ListingsService {
       return { favorited: false };
     }
 
-    await this.prisma.$transaction([
+    const [, guncel] = await this.prisma.$transaction([
       this.prisma.favorite.create({ data: { userId, listingId } }),
       this.prisma.listing.update({ where: { id: listingId }, data: { favoriteCount: { increment: 1 } } }),
     ]);
+
+    // Satıcıya haber ver: ilanı ilgi görüyor.
+    //
+    // Kendi ilanını favorileyen satıcıya mail atmıyoruz - kendi
+    // hareketinin bildirimini almak saçma olurdu.
+    if (listing.sellerId !== userId) {
+      this.saticiyaFavoriBildir(listing.sellerId, listingId, listing.title, guncel.favoriteCount).catch(() => null);
+    }
+
     return { favorited: true };
+  }
+
+  /**
+   * İlan favorilendiğinde satıcıya bildirim + mail.
+   *
+   * Favoriyi KİMİN eklediği bilinçli olarak yazılmıyor: alıcının hangi
+   * ilanla ilgilendiği onun bilgisi, satıcıya isim vermek gereksiz bir
+   * ifşa olurdu. Satıcıya giden tek sayı toplam favori adedi.
+   */
+  private async saticiyaFavoriBildir(
+    sellerId: string,
+    listingId: string,
+    listingTitle: string,
+    toplamFavori: number,
+  ) {
+    const [satici, ilan] = await Promise.all([
+      this.prisma.user.findFirst({
+        where: { id: sellerId, deletedAt: null, status: 'ACTIVE', emailVerifiedAt: { not: null } },
+        select: { email: true, displayName: true, notificationPrefs: true },
+      }),
+      this.prisma.listing.findFirst({
+        where: { id: listingId },
+        include: { category: { include: { parent: { select: { slug: true, name: true } } } } },
+      }),
+    ]);
+
+    await this.prisma.notification.create({
+      data: {
+        userId: sellerId,
+        type: 'listing.favorited',
+        title: '⭐ İlanın favorilere eklendi',
+        body: `"${listingTitle}" ilanın ${toplamFavori} kez favorilendi.`,
+        payload: { listingId, favoriteCount: toplamFavori },
+      },
+    });
+
+    if (!satici) return;
+    const prefs = (satici.notificationPrefs as any) ?? {};
+    if (prefs.listingStatus === false) return;
+
+    const slugUrl = ilan ? buildListingSlug(ilan) : listingId;
+    this.mail
+      .sendListingFavoritedEmail(satici.email, satici.displayName, listingTitle, toplamFavori, slugUrl)
+      .catch(() => null);
   }
 
   async getMyFavorites(userId: string) {
@@ -988,6 +1048,26 @@ export class ListingsService {
       { title: pushPayload.title, body: pushPayload.body, data: { type: 'listing', listingId } },
       type === 'price_drop' ? 'priceDrops' : 'listingStatus',
     ).catch(() => null);
+
+    // Fiyat düşüşünde ayrıca mail. Bildirim ve push yalnızca uygulamayı/siteyi
+    // açan kullanıcıya ulaşıyor; oysa favorilediği ürünün ucuzlaması tam da
+    // geri getirmesi gereken haber. Satıldı bildiriminde mail atmıyoruz -
+    // yapılacak bir şey yok, sadece rahatsız ederdi.
+    if (type === 'price_drop') {
+      const alicilar = await this.prisma.user.findMany({
+        where: { id: { in: userIds }, deletedAt: null, status: 'ACTIVE', emailVerifiedAt: { not: null } },
+        select: { email: true, displayName: true, notificationPrefs: true },
+      });
+      for (const u of alicilar) {
+        // Push ile aynı tercihe bağlı: kullanıcı fiyat düşüşü bildirimini
+        // kapattıysa mail de gitmemeli, yoksa kapatma anlamsız olur.
+        const prefs = (u.notificationPrefs as any) ?? {};
+        if (prefs.priceDrops === false) continue;
+        this.mail
+          .sendFavoritePriceDropEmail(u.email, u.displayName, listingTitle, meta.oldPrice, meta.newPrice, slugUrl)
+          .catch(() => null);
+      }
+    }
   }
 
   async reindexAll() {
