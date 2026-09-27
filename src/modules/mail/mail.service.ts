@@ -469,15 +469,23 @@ export class MailService {
     `));
   }
 
-  /** Satış sonrası: karşı tarafı değerlendir. */
+  /**
+   * Satış sonrası: karşı tarafı değerlendir.
+   *
+   * Bağlantı ilan sayfasına değil tekliflerim'e gidiyor - değerlendirme
+   * formu orada. İlan sayfasına göndermek kullanıcıyı "değerlendir" deyip
+   * değerlendirecek bir şey bulamayacağı yere bırakırdı.
+   */
   async sendReviewInviteEmail(email: string, name: string, listingTitle: string, rol: 'buyer' | 'seller', slug: string) {
     const kimi = rol === 'buyer' ? 'satıcıyı' : 'alıcıyı';
+    const hedef = rol === 'seller' ? '/tekliflerim?tab=received' : '/tekliflerim?tab=sent';
     await this.send(email, `⭐ Alışverişin nasıl geçti? ${listingTitle}`, this.wrap(`
       <h2 style="color:#f97316;margin:0 0 16px">Alışverişin Nasıl Geçti? ⭐</h2>
       <p>Merhaba ${name},</p>
       <p><strong>"${listingTitle}"</strong> alışverişin tamamlandı. Birkaç saniyeni ayırıp ${kimi} değerlendirir misin?</p>
       <p style="color:#555">İkinci el alışverişte insanları karar verdiren tek şey karşı tarafın geçmişi. Senin bıraktığın puan, bir sonraki alıcının güvenle alışveriş yapmasını sağlıyor.</p>
-      <a href="${this.appUrl}/ilan/${slug}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Değerlendir</a>
+      <a href="${this.appUrl}${hedef}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Değerlendir</a>
+      <p style="color:#888;font-size:13px"><a href="${this.appUrl}/ilan/${slug}" style="color:#f97316">İlanı aç</a></p>
     `));
   }
 
