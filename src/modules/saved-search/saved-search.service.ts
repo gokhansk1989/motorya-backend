@@ -119,7 +119,30 @@ export class SavedSearchService {
       select: { id: true, email: true, displayName: true },
     });
 
+    // Günlük sınır: kişi başına en fazla 3 anlık eşleşme maili.
+    //
+    // Alarm kuran kullanıcı ilk eşleşmeleri anında bilmek istiyor - gecikme
+    // alarmın varlık sebebini yok eder. Ama geniş bir alarm (örn. sadece
+    // "kask") günde onlarca ilan yakalayabiliyor ve her biri ayrı mail
+    // demek, bir günde gelen kutusunu doldurmak demek. İlk üçü anlık gidiyor,
+    // gerisi pazar günkü haftalık özette toplanıyor: acil olan kaçmıyor,
+    // gürültü de birikmiyor.
+    const bugununBasi = new Date();
+    bugununBasi.setHours(0, 0, 0, 0);
+
+    const bugunGonderilen = await this.prisma.notification.groupBy({
+      by: ['userId'],
+      where: {
+        userId: { in: userIds },
+        type: 'saved_search.match',
+        createdAt: { gte: bugununBasi },
+      },
+      _count: { userId: true },
+    });
+    const sayac = new Map(bugunGonderilen.map((g) => [g.userId, g._count.userId]));
+
     for (const user of users) {
+      if ((sayac.get(user.id) ?? 0) >= 3) continue;
       const userMatches = matches.filter((s) => s.userId === user.id);
       const label = userMatches.map((s) => s.label).join(', ');
       this.mail.sendSavedSearchMatchEmail(user.email, user.displayName, label, listing.title, listingSlug).catch(() => null);

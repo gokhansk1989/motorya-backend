@@ -567,6 +567,144 @@ export class TasksService {
     this.logger.log(`Weekly moderation summary sent to ${yoneticiler.length} moderator(s)`);
   }
 
+  /**
+   * Kayıttan 2 gün sonra "nasıl ilan verilir" rehberi — her gün 10:00.
+   *
+   * Kayıt olup hiç ilan vermeyenler en büyük kayıp havuzu ve bu kayıp ilk
+   * günlerde oluyor: kişi kaydoluyor, ne yapacağını bulamıyor, bir daha
+   * dönmüyor. Elimizdeki tek hatırlatma 7. gündeydi, yani çoğu kullanıcı
+   * için çoktan geç kalmış oluyordu.
+   *
+   * Pazarlama izni şart (bkz. pazarlamaIzniOlanlar) ve kişi başına tek
+   * mail - 7. gündeki hatırlatma ayrı bir bildirim tipi olduğu için ikisi
+   * çakışmıyor, sırayla geliyorlar.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_10AM)
+  async sendWelcomeGuides() {
+    const now = Date.now();
+    const from = new Date(now - 3 * 24 * 60 * 60 * 1000);
+    const to = new Date(now - 2 * 24 * 60 * 60 * 1000);
+
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        status: 'ACTIVE',
+        emailVerifiedAt: { not: null },
+        createdAt: { gte: from, lt: to },
+        listings: { none: {} },
+        notifications: { none: { type: 'lifecycle.welcome_guide' } },
+      },
+      select: { id: true, email: true, displayName: true },
+      take: 200,
+    });
+
+    const alicilar = await this.pazarlamaIzniOlanlar(candidates);
+    if (alicilar.length === 0) return;
+
+    // Kaydı mailden önce yaz: gönderim yarıda kalsa bile aynı kişiye ikinci
+    // kez gitmesin (spam riski > kaçan mail riski).
+    await this.prisma.notification.createMany({
+      data: alicilar.map(u => ({
+        userId: u.id,
+        type: 'lifecycle.welcome_guide',
+        title: 'İlk ilanın 2 dakika sürüyor',
+        body: 'Kullanmadığın ekipmanı nasıl satacağını anlattık.',
+        payload: {},
+      })),
+    });
+
+    let sent = 0;
+    for (const u of alicilar) {
+      const ok = await this.mail
+        .sendWelcomeGuideEmail(u.email, u.displayName)
+        .then(() => true)
+        .catch(() => false);
+      if (ok) sent++;
+    }
+    this.logger.log(`Sent ${sent}/${alicilar.length} welcome guide(s)`);
+  }
+
+  /**
+   * Haftalık kayıtlı arama özeti — pazar 10:00.
+   *
+   * Anlık eşleşme maili kişi başına günde 3 ile sınırlı (bkz.
+   * saved-search.service). Bu özet o sınırın üstünde kalanları topluyor:
+   * kullanıcı hiçbir eşleşmeyi kaçırmıyor ama gelen kutusu da dolmuyor.
+   *
+   * Hiç eşleşme olmayan haftalarda mail gitmiyor - "bu hafta 0 ilan"
+   * demek için mail atmak, alarmı sildirmenin en hızlı yolu olurdu.
+   */
+  @Cron('0 10 * * 0')
+  async sendSavedSearchWeeklySummaries() {
+    const haftaOnce = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const eslesmeler = await this.prisma.notification.findMany({
+      where: { type: 'saved_search.match', createdAt: { gte: haftaOnce } },
+      select: { userId: true, payload: true },
+    });
+    if (eslesmeler.length === 0) return;
+
+    const kisiBasi = new Map<string, string[]>();
+    for (const e of eslesmeler) {
+      const listingId = (e.payload as any)?.listingId;
+      if (!listingId) continue;
+      const mevcut = kisiBasi.get(e.userId) ?? [];
+      if (!mevcut.includes(listingId)) mevcut.push(listingId);
+      kisiBasi.set(e.userId, mevcut);
+    }
+    if (kisiBasi.size === 0) return;
+
+    const kullanicilar = await this.prisma.user.findMany({
+      where: {
+        id: { in: [...kisiBasi.keys()] },
+        deletedAt: null,
+        status: 'ACTIVE',
+        emailVerifiedAt: { not: null },
+      },
+      select: { id: true, email: true, displayName: true },
+    });
+
+    let sent = 0;
+    for (const u of kullanicilar) {
+      const ids = kisiBasi.get(u.id) ?? [];
+      if (ids.length === 0) continue;
+
+      // Yalnızca hâlâ yayında olanları göster: hafta içinde satılmış ya da
+      // kaldırılmış ilanı özete koymak kullanıcıyı boşuna tıklatır.
+      const ilanlar = await this.prisma.listing.findMany({
+        where: { id: { in: ids }, status: 'ACTIVE', deletedAt: null },
+        select: {
+          id: true, title: true, price: true, city: true,
+          category: { select: { slug: true, name: true, parent: { select: { slug: true, name: true } } } },
+          brand: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      });
+      if (ilanlar.length === 0) continue;
+
+      const toplam = await this.prisma.listing.count({
+        where: { id: { in: ids }, status: 'ACTIVE', deletedAt: null },
+      });
+
+      const ok = await this.mail
+        .sendSavedSearchWeeklyEmail(
+          u.email,
+          u.displayName,
+          toplam,
+          ilanlar.map(i => ({
+            title: i.title,
+            price: Number(i.price),
+            slug: buildListingSlug(i as any),
+          })),
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (ok) sent++;
+    }
+    if (sent > 0) this.logger.log(`Sent ${sent} saved-search weekly summary(ies)`);
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
   async pruneAuditLogs() {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
