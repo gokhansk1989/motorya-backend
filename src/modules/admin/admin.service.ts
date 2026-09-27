@@ -585,6 +585,62 @@ export class AdminService {
       },
     });
 
+    // Şikâyetçiye sonucu bildir.
+    //
+    // App Store 1.2 yalnızca şikâyet mekanizması istemiyor, şikâyet edene
+    // SONUCUN bildirilmesini de istiyor. Şikâyet moderatöre ulaşıyordu ama
+    // şikâyetçi bir daha hiçbir şey duymuyordu - taahhüdün yarısı eksikti.
+    //
+    // OPEN'a geri alınması bir sonuç değil, o yüzden yalnızca kapanış
+    // durumlarında mail çıkıyor.
+    if (status !== 'OPEN') {
+      this.sikayetcileBildir(report.reporterId, report.listingId, status).catch(() => null);
+    }
+
     return updated;
+  }
+
+  /**
+   * Şikâyet sonucunu şikâyetçiye ilet.
+   *
+   * ACTIONED = kurallara aykırı bulundu ve işlem yapıldı.
+   * REVIEWED / DISMISSED = incelendi, aykırılık bulunmadı.
+   */
+  private async sikayetcileBildir(
+    reporterId: string,
+    listingId: string | null,
+    status: ReportStatus,
+  ) {
+    const [sikayetci, ilan] = await Promise.all([
+      this.prisma.user.findFirst({
+        where: { id: reporterId, deletedAt: null, status: 'ACTIVE', emailVerifiedAt: { not: null } },
+        select: { email: true, displayName: true },
+      }),
+      listingId
+        ? this.prisma.listing.findUnique({ where: { id: listingId }, select: { title: true } })
+        : Promise.resolve(null),
+    ]);
+    if (!sikayetci) return;
+
+    const baslik = ilan?.title ?? 'bildirdiğin içerik';
+    const islemYapildi = status === 'ACTIONED';
+
+    await this.prisma.notification.create({
+      data: {
+        userId: reporterId,
+        type: 'report.resolved',
+        title: islemYapildi ? 'Şikâyetin sonuçlandı' : 'Şikâyetin incelendi',
+        body: islemYapildi
+          ? `"${baslik}" için gerekli işlem yapıldı.`
+          : `"${baslik}" incelendi, kurallara aykırı bir durum bulunmadı.`,
+        payload: { listingId },
+      },
+    });
+
+    // Bildirim tercihine bakmıyoruz: bu bir pazarlama ya da etkileşim maili
+    // değil, kullanıcının kendi başlattığı bir işlemin sonucu.
+    this.mail
+      .sendReportResolvedEmail(sikayetci.email, sikayetci.displayName, baslik, islemYapildi)
+      .catch(() => null);
   }
 }

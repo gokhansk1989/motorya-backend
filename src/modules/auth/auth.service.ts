@@ -235,10 +235,55 @@ export class AuthService {
   private async issueDeviceSession(userId: string, platform: 'IOS' | 'ANDROID' | 'WEB', deviceModel?: string, appVersion?: string) {
     const refreshToken = generateRefreshToken();
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+
+    // Her giriş yeni bir Device satırı yazıyor, yani "kayıt var mı" sorusu
+    // tek başına yeni cihazı ayırt etmiyor. Aynı platform + model son 30
+    // günde hiç görülmediyse bunu gerçekten yeni bir cihaz sayıyoruz -
+    // aksi halde kullanıcı her girişte güvenlik maili alır ve uyarı
+    // gürültüye dönüşüp asıl işini göremez.
+    const otuzGunOnce = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const tanidik = await this.prisma.device.findFirst({
+      where: { userId, platform, model: deviceModel ?? null, createdAt: { gte: otuzGunOnce } },
+      select: { id: true },
+    });
+
     const device = await this.prisma.device.create({
       data: { userId, platform, model: deviceModel, appVersion, refreshTokenHash },
     });
+
+    if (!tanidik) {
+      this.yeniCihazUyarisi(userId, platform, deviceModel).catch(() => null);
+    }
+
     return { deviceId: device.id, refreshToken };
+  }
+
+  /**
+   * Tanınmayan bir cihazdan giriş yapıldığında güvenlik maili.
+   *
+   * Hesap ele geçirilmesinde kullanıcının durumu fark etmesini sağlayan tek
+   * şey bu. Bildirim tercihine bakılmıyor: güvenlik uyarısı kapatılabilir
+   * bir tercih değil.
+   *
+   * Yalnızca mobil girişleri kapsıyor - web girişinde Device kaydı hiç
+   * tutulmuyor (cookie/JWT yeterli görülmüş), dolayısıyla webde "yeni
+   * cihaz" diye bir kavram yok.
+   */
+  private async yeniCihazUyarisi(userId: string, platform: string, deviceModel?: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { email: true, displayName: true },
+    });
+    if (!user) return;
+    const cihaz = [deviceModel, platform === 'IOS' ? 'iOS' : platform === 'ANDROID' ? 'Android' : null]
+      .filter(Boolean)
+      .join(' · ');
+    await this.mail
+      .sendSecurityAlertEmail(user.email, user.displayName, 'new_device', {
+        cihaz: cihaz || undefined,
+        tarih: new Date(),
+      })
+      .catch(() => null);
   }
 
   async refreshAccessToken(deviceId: string, refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {

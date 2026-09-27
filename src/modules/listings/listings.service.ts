@@ -1212,11 +1212,42 @@ export class ListingsService {
           },
         ],
       }).catch(() => null);
+
+      // Mail de gönder: değerlendirme daveti yalnızca uygulama içi bildirim
+      // olarak duruyordu ve kimse görmüyordu - ratingAvg/ratingCount alanları
+      // var ama onları dolduracak bir akış fiilen yoktu. İkinci el alışverişte
+      // karar verdiren tek şey karşı tarafın geçmişi, o yüzden bu döngünün
+      // kapanması güven puanının varlık sebebi.
+      this.degerlendirmeDavetiMaili(buyerId, userId, listingId, listing.title, slug).catch(() => null);
     }
 
     this.audit.log({ actorId: userId, action: 'listing.status_change', entity: 'Listing', entityId: listingId, meta: { from: listing.status, to: 'SOLD', buyerId: buyerId ?? null } });
 
     return updated;
+  }
+
+  /** Satış kapandığında iki tarafa da değerlendirme daveti maili. */
+  private async degerlendirmeDavetiMaili(
+    buyerId: string,
+    sellerId: string,
+    listingId: string,
+    listingTitle: string,
+    slug: string,
+  ) {
+    const taraflar = await this.prisma.user.findMany({
+      where: {
+        id: { in: [buyerId, sellerId] },
+        deletedAt: null,
+        status: 'ACTIVE',
+        emailVerifiedAt: { not: null },
+      },
+      select: { id: true, email: true, displayName: true },
+    });
+    for (const t of taraflar) {
+      this.mail
+        .sendReviewInviteEmail(t.email, t.displayName, listingTitle, t.id === buyerId ? 'buyer' : 'seller', slug)
+        .catch(() => null);
+    }
   }
 
   async reserveListing(userId: string, listingId: string) {

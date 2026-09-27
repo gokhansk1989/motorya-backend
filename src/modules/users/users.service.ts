@@ -12,6 +12,7 @@ import { SearchService } from '../search/search.service';
 import { SocialService } from '../social/social.service';
 import { UpdateProfileDto, ChangePasswordDto } from './dto/users.dto';
 import { AuditService } from '../audit/audit.service';
+import { MailService } from '../mail/mail.service';
 
 const DEFAULT_NOTIFICATION_PREFS = {
   offers: true,
@@ -27,6 +28,7 @@ export class UsersService {
     private search: SearchService,
     private social: SocialService,
     private audit: AuditService,
+    private mail: MailService,
   ) {}
 
   async getProfile(userId: string) {
@@ -278,6 +280,18 @@ export class UsersService {
     const hash = await bcrypt.hash(dto.newPassword, 10);
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } });
     this.audit.log({ actorId: userId, action: 'user.password_change', entity: 'User', entityId: userId, ip, userAgent });
+
+    // Güvenlik uyarısı. Hesap ele geçirilmesinde kullanıcının durumu fark
+    // etmesini sağlayan tek şey bu mail; bildirim tercihine bakılmıyor,
+    // güvenlik uyarısı kapatılabilir bir tercih değil.
+    this.mail
+      .sendSecurityAlertEmail(user.email, user.displayName, 'password_changed', {
+        ip,
+        cihaz: userAgent,
+        tarih: new Date(),
+      })
+      .catch(() => null);
+
     return { success: true };
   }
 

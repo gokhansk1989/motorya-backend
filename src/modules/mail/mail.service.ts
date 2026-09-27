@@ -435,6 +435,126 @@ export class MailService {
     `));
   }
 
+  /**
+   * Şikâyetçiye: bildirdiğin içerik incelendi.
+   *
+   * App Store 1.2 maddesi yalnızca şikâyet mekanizması istemiyor; şikâyeti
+   * edene SONUCUN bildirilmesini de istiyor. Bizde şikâyet moderatöre
+   * ulaşıyordu ama şikâyetçi bir daha hiçbir şey duymuyordu - taahhüdün
+   * yarısı eksikti.
+   *
+   * Sonucun ayrıntısı bilinçli olarak verilmiyor: hangi yaptırımın
+   * uygulandığı (uyarı, içerik kaldırma, hesap kapatma) şikâyet edilen
+   * kişinin bilgisi. Şikâyetçinin bilmesi gereken tek şey incelendiği ve
+   * işlem yapılıp yapılmadığı.
+   */
+  async sendReportResolvedEmail(
+    email: string,
+    name: string,
+    listingTitle: string,
+    islemYapildi: boolean,
+  ) {
+    const baslik = islemYapildi ? 'Şikâyetin sonuçlandı' : 'Şikâyetin incelendi';
+    const govde = islemYapildi
+      ? `<p>Bildirdiğin <strong>"${listingTitle}"</strong> içeriği incelendi ve kurallarımıza aykırı bulunarak <strong>gerekli işlem yapıldı</strong>.</p>
+         <p style="color:#555">Uygulanan yaptırımın ayrıntısını paylaşmıyoruz; bu, ilgili kullanıcının kişisel bilgisi.</p>`
+      : `<p>Bildirdiğin <strong>"${listingTitle}"</strong> içeriği incelendi. Yaptığımız değerlendirmede kurallarımıza aykırı bir durum tespit edilmedi, bu yüzden içerik yayında kalıyor.</p>
+         <p style="color:#555">Katılmıyorsan ya da gözden kaçtığını düşündüğün bir şey varsa bize yazabilirsin.</p>`;
+    await this.send(email, `${baslik} — Motorya`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">${baslik}</h2>
+      <p>Merhaba ${name},</p>
+      ${govde}
+      <p style="color:#555">Bildirdiğin için teşekkürler - topluluğu güvenli tutan şey bu bildirimler.</p>
+      <a href="${this.appUrl}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Motorya'ya Dön</a>
+    `));
+  }
+
+  /** Satış sonrası: karşı tarafı değerlendir. */
+  async sendReviewInviteEmail(email: string, name: string, listingTitle: string, rol: 'buyer' | 'seller', slug: string) {
+    const kimi = rol === 'buyer' ? 'satıcıyı' : 'alıcıyı';
+    await this.send(email, `⭐ Alışverişin nasıl geçti? ${listingTitle}`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">Alışverişin Nasıl Geçti? ⭐</h2>
+      <p>Merhaba ${name},</p>
+      <p><strong>"${listingTitle}"</strong> alışverişin tamamlandı. Birkaç saniyeni ayırıp ${kimi} değerlendirir misin?</p>
+      <p style="color:#555">İkinci el alışverişte insanları karar verdiren tek şey karşı tarafın geçmişi. Senin bıraktığın puan, bir sonraki alıcının güvenle alışveriş yapmasını sağlıyor.</p>
+      <a href="${this.appUrl}/ilan/${slug}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Değerlendir</a>
+    `));
+  }
+
+  /** Kayıttan 2 gün sonra: nasıl ilan verilir. */
+  async sendWelcomeGuideEmail(email: string, name: string) {
+    await this.send(email, `${name}, ilk ilanını 2 dakikada verebilirsin`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">İlk İlanın 2 Dakika Sürüyor</h2>
+      <p>Merhaba ${name},</p>
+      <p>Motorya'ya katıldın ama henüz ilan vermedin. Garajında duran, artık kullanmadığın bir kask ya da mont varsa birilerinin tam da onu arıyor olma ihtimali yüksek.</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:8px 0;vertical-align:top;width:30px"><strong style="color:#f97316">1</strong></td><td style="padding:8px 0">Ürünün fotoğrafını çek — iyi ışıkta, 3-4 kare yeterli.</td></tr>
+        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#f97316">2</strong></td><td style="padding:8px 0">Kategori, marka ve bedeni seç. Bu üçü aramalarda bulunmanı sağlıyor.</td></tr>
+        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#f97316">3</strong></td><td style="padding:8px 0">Fiyatı yaz ve yayınla. Komisyon yok, ilan vermek tamamen ücretsiz.</td></tr>
+      </table>
+      <a href="${this.appUrl}/ilan-ver" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlan Ver</a>
+      <p style="color:#888;font-size:13px">Satmak istemiyorsan da sorun değil - alarm kurup aradığın ürün çıkınca haber alabilirsin.</p>
+    `));
+  }
+
+  /** Haftalık kayıtlı arama özeti. */
+  async sendSavedSearchWeeklyEmail(
+    email: string,
+    name: string,
+    toplam: number,
+    ornekler: { title: string; price: number; slug: string }[],
+  ) {
+    const satirlar = ornekler.map(o => `
+      <tr>
+        <td style="padding:10px 0;border-bottom:1px solid #eee">
+          <a href="${this.appUrl}/ilan/${o.slug}" style="color:#1c1917;text-decoration:none;font-weight:600">${o.title}</a>
+        </td>
+        <td style="padding:10px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;font-weight:700;color:#f97316">${o.price.toLocaleString('tr-TR')} ₺</td>
+      </tr>`).join('');
+    await this.send(email, `🔍 Aramalarına uyan ${toplam} yeni ilan`, this.wrap(`
+      <h2 style="color:#f97316;margin:0 0 16px">Bu Hafta Senin İçin 🔍</h2>
+      <p>Merhaba ${name},</p>
+      <p>Kayıtlı aramalarına uyan <strong>${toplam} yeni ilan</strong> yayınlandı${ornekler.length < toplam ? ` — işte birkaçı:` : ':'}</p>
+      <table style="width:100%;border-collapse:collapse;margin:14px 0">${satirlar}</table>
+      <a href="${this.appUrl}/alarmlarim" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Tüm Alarmlarım</a>
+      <p style="color:#888;font-size:13px">Bu özeti almak istemiyorsan alarmlarını <a href="${this.appUrl}/alarmlarim" style="color:#f97316">buradan</a> yönetebilirsin.</p>
+    `));
+  }
+
+  /**
+   * Güvenlik maili: parola değişti ya da yeni cihazdan giriş yapıldı.
+   *
+   * Hesap ele geçirilmesinde kullanıcının durumu fark etmesini sağlayan tek
+   * şey bu mail. Bildirim tercihlerine BAKILMIYOR - güvenlik uyarısı
+   * kapatılabilir bir tercih değil.
+   */
+  async sendSecurityAlertEmail(
+    email: string,
+    name: string,
+    olay: 'password_changed' | 'new_device',
+    detay: { ip?: string; cihaz?: string; tarih: Date },
+  ) {
+    const baslik = olay === 'password_changed' ? 'Parolan değiştirildi' : 'Yeni bir cihazdan giriş yapıldı';
+    const aciklama = olay === 'password_changed'
+      ? 'Hesabının parolası az önce değiştirildi.'
+      : 'Hesabına daha önce kullanılmamış bir cihazdan giriş yapıldı.';
+    const zaman = detay.tarih.toLocaleString('tr-TR', { dateStyle: 'long', timeStyle: 'short' });
+    await this.send(email, `🔐 ${baslik} — Motorya`, this.wrap(`
+      <h2 style="color:#dc2626;margin:0 0 16px">🔐 ${baslik}</h2>
+      <p>Merhaba ${name},</p>
+      <p>${aciklama}</p>
+      <table style="width:100%;border-collapse:collapse;background:#f8f8f7;border-radius:8px;margin:14px 0">
+        <tr><td style="padding:10px 14px;color:#555">Tarih</td><td style="padding:10px 14px;text-align:right;font-weight:600">${zaman}</td></tr>
+        ${detay.cihaz ? `<tr><td style="padding:10px 14px;color:#555">Cihaz</td><td style="padding:10px 14px;text-align:right;font-weight:600">${detay.cihaz}</td></tr>` : ''}
+        ${detay.ip ? `<tr><td style="padding:10px 14px;color:#555">IP adresi</td><td style="padding:10px 14px;text-align:right;font-weight:600">${detay.ip}</td></tr>` : ''}
+      </table>
+      <p><strong>Bunu sen yaptıysan</strong> yapman gereken bir şey yok.</p>
+      <p><strong>Sen yapmadıysan</strong> hemen parolanı değiştir ve bize yaz - hesabın risk altında olabilir.</p>
+      <a href="${this.appUrl}/profilim" style="display:inline-block;background:#dc2626;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Hesap Güvenliği</a>
+      <p style="color:#888;font-size:13px">Bu bir güvenlik uyarısıdır; bildirim ayarlarından kapatılamaz.</p>
+    `));
+  }
+
   private async send(to: string, subject: string, html: string) {
     const cfg = await this.getMailConfig();
     if (!cfg) {

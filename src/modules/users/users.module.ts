@@ -6,9 +6,10 @@ import { FcmService } from './fcm.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SearchModule } from '../search/search.module';
 import { SocialModule } from '../social/social.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
-  imports: [PrismaModule, SearchModule, SocialModule],
+  imports: [PrismaModule, SearchModule, SocialModule, MailModule],
   providers: [UsersService, WebPushService, FcmService],
   controllers: [UsersController],
   exports: [UsersService, WebPushService, FcmService],
