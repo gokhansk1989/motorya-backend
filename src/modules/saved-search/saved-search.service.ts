@@ -94,7 +94,7 @@ export class SavedSearchService {
         type: 'saved_search.match',
         title: '🔍 Aradığın ilan yayınlandı',
         body: `"${s.label}" aramana uyan yeni bir ilan var: ${listing.title}`,
-        payload: { listingId: listing.id, savedSearchId: s.id },
+        payload: { listingId: listing.id, listingSlug: buildListingSlug(listing), savedSearchId: s.id },
       })),
     });
 

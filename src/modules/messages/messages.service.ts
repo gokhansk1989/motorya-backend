@@ -191,7 +191,11 @@ export class MessagesService {
       this.webPush.sendToUser(otherParticipant.userId, {
         title: `${message.sender.displayName} mesaj gönderdi`,
         body: 'Yeni bir mesajınız var.',
-        url: `/mesajlarim?c=${conversationId}`,
+        // Parametre adı sayfanın okuduğuyla aynı olmalı: mesajlarim sayfası
+        // `conv` okuyor. `c` gönderildiği sürece bildirime basınca mesajlar
+        // listesi açılıyor ama ilgili konuşma seçilmiyordu - kullanıcı hangi
+        // mesaj için uyarıldığını kendisi aramak zorunda kalıyordu.
+        url: `/mesajlarim?conv=${conversationId}`,
       }, 'messages').catch(() => null);
       this.fcm.sendToUser(otherParticipant.userId, {
         title: `${message.sender.displayName} mesaj gönderdi`,
