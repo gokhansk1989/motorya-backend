@@ -60,9 +60,26 @@ export class MessagesService {
   }
 
   // Kullanıcının tüm konuşmaları (son mesaj + okunmamış sayısı ile)
+  /**
+   * Kullanıcının konuşma listesi.
+   *
+   * Hiç mesaj içermeyen konuşmalar listelenmiyor. Konuşma kaydı, karşı
+   * tarafa yazmadan önce - profil veya ilan sayfasındaki "Mesaj Gönder"e
+   * basıldığı anda - oluşuyor. Kullanıcı vazgeçip yazmazsa geriye boş bir
+   * kayıt kalıyor ve bunlar listede "Yeni konuşma" satırları olarak
+   * birikiyordu; ne kendisi ne karşı taraf için bir anlamı vardı.
+   *
+   * Konuşma, ilk mesaj yazıldığı anda kendiliğinden listeye giriyor.
+   * Henüz boş olan bir konuşma doğrudan açıldığında (örn. "Mesaj Gönder"
+   * sonrası) başlık bilgisi getMessages'ın döndürdüğü `conversation`
+   * alanından geliyor - bkz. aşağısı.
+   */
   async getConversations(userId: string) {
     const conversations = await this.prisma.conversation.findMany({
-      where: { participants: { some: { userId } } },
+      where: {
+        participants: { some: { userId } },
+        messages: { some: { deletedAt: null } },
+      },
       orderBy: { updatedAt: 'desc' },
       include: {
         listing: { select: { id: true, title: true, images: { take: 1, orderBy: { sortOrder: 'asc' } } } },
@@ -141,7 +158,34 @@ export class MessagesService {
       data: { lastReadAt: new Date() },
     });
 
-    return { messages: decrypted, nextCursor: messages.length === limit ? messages[messages.length - 1].id : null };
+    // Konuşmanın kendi bilgisi de dönüyor.
+    //
+    // Gerekçe: mesajsız konuşmalar artık listede görünmüyor, ama "Mesaj
+    // Gönder" sonrası kullanıcı tam da böyle bir konuşmaya giriyor. İstemci
+    // başlığı (kiminle konuştuğu, hangi ilan) listeden bulamadığı için
+    // ekranın tepesi boş kalıyordu; artık buradan dolduruyor.
+    const katilimcilar = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId },
+      include: { user: { select: { id: true, displayName: true, avatarUrl: true } } },
+    });
+    const karsiTaraf = katilimcilar.find(k => k.userId !== userId);
+    const ilan = participant.conversation.listingId
+      ? await this.prisma.listing.findUnique({
+          where: { id: participant.conversation.listingId },
+          select: { id: true, title: true, images: { take: 1, orderBy: { sortOrder: 'asc' } } },
+        })
+      : null;
+
+    return {
+      messages: decrypted,
+      nextCursor: messages.length === limit ? messages[messages.length - 1].id : null,
+      conversation: {
+        id: conversationId,
+        listing: ilan,
+        otherUser: karsiTaraf?.user ?? null,
+        otherReadAt: karsiTaraf?.lastReadAt ?? null,
+      },
+    };
   }
 
   // Mesaj gönder
