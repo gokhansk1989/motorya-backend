@@ -563,7 +563,36 @@ export class MailService {
     `));
   }
 
+  /**
+   * Gerçek olmayan alan adlarına mail denenmez.
+   *
+   * RFC 2606, example.com / example.net / .test / .invalid gibi adları
+   * belge ve test amacıyla AYIRMIŞTIR - bu adreslere posta teslim edilemez
+   * ve Resend bunları doğrudan reddeder.
+   *
+   * Neden gerekli: üretim veritabanında seed döneminden kalma
+   * selin@example.com gibi hesaplar duruyor ve gerçek konuşmalara
+   * katılmışlar. Okunmamış mesaj hatırlatması her gün onlara mail atmaya
+   * çalışıyor, Resend her seferinde hata döndürüyor ve hata günlüğü bu
+   * kayıtlarla doluyordu - günde dört satır, hiçbiri eyleme dönüşebilir
+   * değil. Hesaplar ne zaman temizlenirse temizlensin, gelecekte başka test
+   * verisi de girebileceği için kontrol kalıcı olarak burada duruyor.
+   */
+  private gonderilemezAdres(to: string): boolean {
+    const alan = to.split('@')[1]?.toLowerCase() ?? '';
+    if (!alan) return true;
+    const ayrilmis = ['example.com', 'example.net', 'example.org', 'example.edu'];
+    const ayrilmisSonEk = ['.test', '.invalid', '.localhost', '.example'];
+    return ayrilmis.includes(alan) || ayrilmisSonEk.some(s => alan.endsWith(s));
+  }
+
   private async send(to: string, subject: string, html: string) {
+    if (this.gonderilemezAdres(to)) {
+      // Hata günlüğüne yazmıyoruz: bu bir arıza değil, beklenen bir durum.
+      this.logger.debug(`Test alan adı, mail atlandı (${to})`);
+      return;
+    }
+
     const cfg = await this.getMailConfig();
     if (!cfg) {
       this.logger.warn('Resend yapılandırılmamış, mail atlanıyor');
