@@ -187,6 +187,23 @@ export class TasksService {
    * Prisma bunu tek sorguda süzemediği için adaylar çekildikten sonra
    * kodda eleniyor; aday sayısı 200 ile sınırlı olduğu için maliyeti yok.
    */
+  /**
+   * Yaşam döngüsü mailleri arasında en az bu kadar gün olmalı.
+   *
+   * Pencere "kayıttan tam 7 gün sonra" iken bu sorun yoktu: her mail kendi
+   * dar aralığında tetikleniyordu. Pencere "en az 7 gün" olunca 100 günlük
+   * bir kullanıcı üç şartı da aynı anda sağlar hale geldi ve aynı sabah üç
+   * ayrı mail alırdı. Aralık, sıralamayı da kendiliğinden kuruyor: önce
+   * hoş geldin, birkaç gün sonra ilk ilan, sonra geri kazanım.
+   */
+  private static readonly LIFECYCLE_ARA_GUN = 5;
+
+  /** Son LIFECYCLE_ARA_GUN gün içinde yaşam döngüsü maili almamış olma koşulu. */
+  private lifecycleNefesPayi() {
+    const esik = new Date(Date.now() - TasksService.LIFECYCLE_ARA_GUN * 24 * 60 * 60 * 1000);
+    return { none: { type: { startsWith: 'lifecycle.' }, createdAt: { gte: esik } } };
+  }
+
   private async pazarlamaIzniOlanlar<T extends { id: string }>(adaylar: T[]): Promise<T[]> {
     if (adaylar.length === 0) return [];
     const kayitlar = await this.prisma.userConsent.findMany({
@@ -203,18 +220,20 @@ export class TasksService {
   }
 
   private async sendFirstListingReminders() {
-    const now = Date.now();
-    const from = new Date(now - 8 * 24 * 60 * 60 * 1000);
-    const to = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    // Alt sınırlı koşul; gerekçesi sendWelcomeGuides'ta açıklandı.
+    const esik = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     const candidates = await this.prisma.user.findMany({
       where: {
         deletedAt: null,
         status: 'ACTIVE',
         emailVerifiedAt: { not: null },
-        createdAt: { gte: from, lt: to },
+        createdAt: { lt: esik },
         listings: { none: {} },
-        notifications: { none: { type: 'lifecycle.first_listing' } },
+        AND: [
+          { notifications: { none: { type: 'lifecycle.first_listing' } } },
+          { notifications: this.lifecycleNefesPayi() },
+        ],
       },
       select: { id: true, email: true, displayName: true },
       take: 200,
@@ -248,18 +267,20 @@ export class TasksService {
 
   /** Kayıttan 30 gün sonra, ilgi göstermiş ama hâlâ ilan vermemiş üyelere. */
   private async sendReengagementReminders() {
-    const now = Date.now();
-    const from = new Date(now - 31 * 24 * 60 * 60 * 1000);
-    const to = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    // Alt sınırlı koşul; gerekçesi sendWelcomeGuides'ta açıklandı.
+    const esik = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     const candidates = await this.prisma.user.findMany({
       where: {
         deletedAt: null,
         status: 'ACTIVE',
         emailVerifiedAt: { not: null },
-        createdAt: { gte: from, lt: to },
+        createdAt: { lt: esik },
         listings: { none: {} },
-        notifications: { none: { type: 'lifecycle.reengagement' } },
+        AND: [
+          { notifications: { none: { type: 'lifecycle.reengagement' } } },
+          { notifications: this.lifecycleNefesPayi() },
+        ],
         // İlgi sinyali şart — hiçbiri yoksa mail atmıyoruz.
         OR: [
           { favorites: { some: {} } },
@@ -579,20 +600,37 @@ export class TasksService {
    * mail - 7. gündeki hatırlatma ayrı bir bildirim tipi olduğu için ikisi
    * çakışmıyor, sırayla geliyorlar.
    */
-  @Cron(CronExpression.EVERY_DAY_AT_10AM)
+  // 09:30 — ilk ilan hatırlatmasından (10:00) yarım saat önce.
+  //
+  // İkisi de 10:00'da olsaydı aynı dakikada çalışır, nefes payı kontrolü
+  // ikisinde de "son 5 günde mail yok" görür ve aynı kullanıcı aynı sabah
+  // iki mail alırdı. Araya zaman koymak sıralamayı garantiliyor: önce hoş
+  // geldin gider, yarım saat sonra çalışan görev onu görüp o kullanıcıyı
+  // atlar.
+  @Cron('30 9 * * *')
   async sendWelcomeGuides() {
-    const now = Date.now();
-    const from = new Date(now - 3 * 24 * 60 * 60 * 1000);
-    const to = new Date(now - 2 * 24 * 60 * 60 * 1000);
+    // "Kayıttan EN AZ 2 gün geçmiş", "tam 2-3 gün arası" değil.
+    //
+    // Dar pencere, mailler devreye girmeden önce kaydolmuş herkesi kalıcı
+    // olarak dışarıda bırakıyordu: 17 Eylül'de bu görevler eklendiğinde
+    // Haziran ve Temmuz kullanıcıları çoktan aralığın dışına düşmüştü ve
+    // onlara hiçbir zaman davet gitmeyecekti. Alt sınırlı koşul geçmişe
+    // dönük herkesi bir kez yakalar, sonra "daha önce almamış olma" şartı
+    // susturur. Patlamaya karşı koruma iki yerde: `take: 200` ve maillerin
+    // arasındaki nefes payı.
+    const esik = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
 
     const candidates = await this.prisma.user.findMany({
       where: {
         deletedAt: null,
         status: 'ACTIVE',
         emailVerifiedAt: { not: null },
-        createdAt: { gte: from, lt: to },
+        createdAt: { lt: esik },
         listings: { none: {} },
-        notifications: { none: { type: 'lifecycle.welcome_guide' } },
+        AND: [
+          { notifications: { none: { type: 'lifecycle.welcome_guide' } } },
+          { notifications: this.lifecycleNefesPayi() },
+        ],
       },
       select: { id: true, email: true, displayName: true },
       take: 200,
