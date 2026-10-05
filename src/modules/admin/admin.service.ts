@@ -450,10 +450,19 @@ export class AdminService {
       }
     }));
 
-    // Son giriş zamanı denetim kaydından türetiliyor — User'a ayrı bir kolon
-    // eklemeye gerek yok ve geçmiş girişler de kendiliğinden geliyor.
-    // AuditLog'da @@index([actorId, createdAt]) var, sayfadaki 20 kullanıcı
-    // için tek groupBy yetiyor.
+    // Son giriş zamanı iki kaynaktan: önce User.lastLoginAt, yoksa denetim
+    // kaydı.
+    //
+    // Denetim kaydı tek başına yetmiyordu: AuditLog her gün budanıyor ve 30
+    // günden eski kayıtlar siliniyor. Dolayısıyla 30 gündür girmemiş bir
+    // kullanıcı panelde "hiç giriş yok" olarak görünüyordu - ölçümde 20
+    // kullanıcının 15'i bu durumdaydı. Şüpheli bir hesabı incelerken en
+    // yanıltıcı sonuç buydu: "hiç girmemiş" ile "uzun süredir girmemiş"
+    // birbirinden ayırt edilemiyordu.
+    //
+    // Kalıcı kolon artık her girişte damgalanıyor. Denetim kaydı yedek
+    // olarak duruyor: kolon eklenmeden önce giriş yapmış kullanıcılar için
+    // hâlâ 30 günlük pencere içinde bilgi verebiliyor.
     const loginRows = items.length
       ? await this.prisma.auditLog.groupBy({
           by: ['actorId'],
@@ -470,7 +479,7 @@ export class AdminService {
     }
 
     return {
-      items: enriched.map((u) => ({ ...u, lastLoginAt: lastLoginByUser.get(u.id) ?? null })),
+      items: enriched.map((u) => ({ ...u, lastLoginAt: u.lastLoginAt ?? lastLoginByUser.get(u.id) ?? null })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit), byStatus },
     };
   }
