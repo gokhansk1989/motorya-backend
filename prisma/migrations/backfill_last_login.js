@@ -16,7 +16,7 @@ const prisma = new PrismaClient();
 async function main() {
   const kayitlar = await prisma.auditLog.groupBy({
     by: ['actorId'],
-    where: { action: 'auth.login_success', actorId: { not: null } },
+    where: { action: 'auth.login_success' },
     _max: { createdAt: true },
   });
 
