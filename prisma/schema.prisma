@@ -65,6 +65,12 @@ model User {
   // Detaylı KYC inceleme akışı ise VerificationRequest tablosunda.
   phoneVerifiedAt    DateTime?
   emailVerifiedAt    DateTime?
+  // Son başarılı giriş. Web, mobil web ve mobil uygulama aynı /auth/login
+  // ucundan geçtiği için tek yerde damgalanıyor; Google ile giriş ayrı
+  // akış olduğundan orada da ayrıca yazılıyor. Yönetim panelindeki "Son
+  // giriş" sütunu bu alanı okuyor - alan yokken sütun her kullanıcı için
+  // "hiç giriş yok" gösteriyordu, yani her gün giren biri için bile.
+  lastLoginAt        DateTime?
   identityVerifiedAt DateTime?
   ibanVerifiedAt     DateTime?
 

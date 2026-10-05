@@ -200,6 +200,14 @@ export class AuthService {
 
     this.audit.log({ actorId: user.id, action: 'auth.login_success', entity: 'User', entityId: user.id, meta: { method: 'password' }, ip, userAgent });
 
+    // Son giriş damgası. Web, mobil web ve mobil uygulama bu aynı uçtan
+    // geçiyor (platform yalnızca Device kaydını ayırıyor), dolayısıyla tek
+    // yazma üç platformu da kapsıyor. Beklemiyoruz: damganın gecikmesi
+    // girişi geciktirmemeli.
+    this.prisma.user
+      .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+      .catch(() => null);
+
     // Her cihazdan giriş: 2 saatlik access token + Device kaydı üzerinden refresh token.
     // dto.platform yoksa web varsayilir (WEB); model/appVersion yalnizca mobil icin dolu.
     const platform: 'IOS' | 'ANDROID' | 'WEB' = dto.platform ?? 'WEB';
@@ -368,6 +376,12 @@ export class AuthService {
       actorId: user.id, action: 'auth.login_success', entity: 'User', entityId: user.id,
       meta: { method: 'google' },
     });
+
+    // Google girişi parola akışından ayrı ilerliyor; damga burada da yazılmazsa
+    // yalnızca Google ile giren kullanıcılar panelde "hiç giriş yok" kalırdı.
+    this.prisma.user
+      .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+      .catch(() => null);
 
     const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, 'WEB');
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });

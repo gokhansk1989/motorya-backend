@@ -429,6 +429,7 @@ export class AdminService {
           ratingCount: true,
           salesCount: true,
           createdAt: true,
+          lastLoginAt: true,
         },
       }),
       this.prisma.user.count({ where }),
