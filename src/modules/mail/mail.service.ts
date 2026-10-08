@@ -30,9 +30,9 @@ export class MailService {
     const link = `${this.appUrl}/email-dogrula?token=${token}`;
     await this.send(email, 'E-posta adresinizi doğrulayın — Motorya', `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#f97316">Motorya'ya Hoş Geldin, ${name}!</h2>
+        <h2 style="color:#D83E13">Motorya'ya Hoş Geldin, ${name}!</h2>
         <p>Hesabını aktifleştirmek için aşağıdaki butona tıkla. Link <strong>24 saat</strong> geçerlidir.</p>
-        <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">E-postamı Doğrula</a>
+        <a href="${link}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">E-postamı Doğrula</a>
         <p style="color:#888;font-size:13px">Bu linke tıklamadıysan bu maili görmezden gelebilirsin.</p>
       </div>
     `);
@@ -51,8 +51,8 @@ export class MailService {
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;background:#ffffff;border-radius:12px;border:1px solid #e4e6ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
             <tr><td style="padding:28px 32px 0;">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-                <td style="width:40px;"><div style="width:40px;height:40px;border-radius:10px;background:#f97316;color:#ffffff;text-align:center;line-height:40px;font-size:20px;font-weight:800;">M</div></td>
-                <td style="padding-left:10px;font-size:19px;font-weight:800;color:#f97316;">MOTORYA</td>
+                <td style="width:40px;"><div style="width:40px;height:40px;border-radius:10px;background:#D83E13;color:#ffffff;text-align:center;line-height:40px;font-size:20px;font-weight:800;">M</div></td>
+                <td style="padding-left:10px;font-size:19px;font-weight:800;color:#D83E13;">MOTORYA</td>
               </tr></table>
             </td></tr>
             ${bodyHtml}
@@ -82,19 +82,19 @@ export class MailService {
       <tr><td style="padding:22px 32px 0;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#fff7ed;border-radius:10px;">
           <tr><td style="padding:16px 18px;font-size:14px;color:#464b57;line-height:1.7;">
-            <span style="color:#f97316;font-weight:700;">·</span> İlan vermek tamamen ücretsiz, komisyon yok<br>
-            <span style="color:#f97316;font-weight:700;">·</span> Birkaç fotoğraf ve fiyat yeter, 2 dakika sürer<br>
-            <span style="color:#f97316;font-weight:700;">·</span> Alıcılar seni doğrudan uygulamadan bulur
+            <span style="color:#D83E13;font-weight:700;">·</span> İlan vermek tamamen ücretsiz, komisyon yok<br>
+            <span style="color:#D83E13;font-weight:700;">·</span> Birkaç fotoğraf ve fiyat yeter, 2 dakika sürer<br>
+            <span style="color:#D83E13;font-weight:700;">·</span> Alıcılar seni doğrudan uygulamadan bulur
           </td></tr>
         </table>
       </td></tr>
       <tr><td style="padding:24px 32px 0;" align="center">
-        <a href="${this.appUrl}/ilan-ver" style="display:inline-block;background:#f97316;color:#ffffff;padding:14px 34px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;">İlk İlanımı Ver</a>
+        <a href="${this.appUrl}/ilan-ver" style="display:inline-block;background:#D83E13;color:#ffffff;padding:14px 34px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;">İlk İlanımı Ver</a>
       </td></tr>
       <tr><td style="padding:20px 32px 0;">
         <div style="font-size:13.5px;color:#767c89;line-height:1.6;text-align:center;">
           Ne satacağına karar veremedin mi?
-          <a href="${this.appUrl}/ara" style="color:#f97316;">Nelerin satıldığına göz at</a>
+          <a href="${this.appUrl}/ara" style="color:#D83E13;">Nelerin satıldığına göz at</a>
         </div>
       </td></tr>
     `));
@@ -123,13 +123,13 @@ export class MailService {
         <div style="font-size:15px;color:#464b57;line-height:1.65;padding-top:12px;">${lead}</div>
       </td></tr>
       <tr><td style="padding:24px 32px 0;" align="center">
-        <a href="${cta.href}" style="display:inline-block;background:#f97316;color:#ffffff;padding:14px 34px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;">${cta.label}</a>
+        <a href="${cta.href}" style="display:inline-block;background:#D83E13;color:#ffffff;padding:14px 34px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;">${cta.label}</a>
       </td></tr>
       <tr><td style="padding:22px 32px 0;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#fff7ed;border-radius:10px;">
           <tr><td style="padding:16px 18px;font-size:14px;color:#464b57;line-height:1.65;">
             Bu arada — sende de satılacak bir ekipman varsa ilan vermek ücretsiz.
-            <a href="${this.appUrl}/ilan-ver" style="color:#f97316;font-weight:600;">İlan ver</a>
+            <a href="${this.appUrl}/ilan-ver" style="color:#D83E13;font-weight:600;">İlan ver</a>
           </td></tr>
         </table>
       </td></tr>
@@ -139,11 +139,11 @@ export class MailService {
   async sendListingPendingEmail(email: string, name: string, listingTitle: string) {
     await this.send(email, `İlanın incelemeye alındı: ${listingTitle}`, `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#f97316">İlanın İncelemeye Alındı ⏳</h2>
+        <h2 style="color:#D83E13">İlanın İncelemeye Alındı ⏳</h2>
         <p>Merhaba ${name},</p>
         <p><strong>"${listingTitle}"</strong> ilanın alındı ve ekibimiz tarafından inceleniyor.</p>
         <p>İnceleme genellikle birkaç saat içinde tamamlanır. Onaylandığında sana haber vereceğiz.</p>
-        <a href="${this.appUrl}/ilanlarim" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanlarıma Git</a>
+        <a href="${this.appUrl}/ilanlarim" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanlarıma Git</a>
       </div>
     `);
   }
@@ -152,11 +152,11 @@ export class MailService {
   async sendModerationQueueEmail(email: string, name: string, listingTitle: string) {
     await this.send(email, `Onay bekleyen ilan: ${listingTitle}`, `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#f97316">Onay Bekleyen İlan 📋</h2>
+        <h2 style="color:#D83E13">Onay Bekleyen İlan 📋</h2>
         <p>Merhaba ${name},</p>
         <p><strong>"${listingTitle}"</strong> moderasyon kuyruğuna düştü ve incelemenizi bekliyor.</p>
         <p style="color:#767c89;font-size:14px">Satıcı, ilanı onaylanana kadar yayında göremiyor — hızlı inceleme kullanıcı deneyimi için önemli.</p>
-        <a href="${this.adminUrl}/listings" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Moderasyon Paneline Git</a>
+        <a href="${this.adminUrl}/listings" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Moderasyon Paneline Git</a>
       </div>
     `);
   }
@@ -165,10 +165,10 @@ export class MailService {
     const link = `${this.appUrl}/ilan/${listingId}`;
     await this.send(email, `İlanın onaylandı: ${listingTitle}`, `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#f97316">İlanın Yayında! 🎉</h2>
+        <h2 style="color:#D83E13">İlanın Yayında! 🎉</h2>
         <p>Merhaba ${name},</p>
         <p><strong>"${listingTitle}"</strong> ilanın incelendi ve yayına alındı.</p>
-        <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
+        <a href="${link}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
       </div>
     `);
   }
@@ -181,7 +181,7 @@ export class MailService {
         <p><strong>"${listingTitle}"</strong> ilanın incelendi ancak yayınlanamadı.</p>
         ${reason ? `<p><strong>Sebep:</strong> ${reason}</p>` : ''}
         <p>İlanı düzenleyip tekrar gönderebilirsin.</p>
-        <a href="${this.appUrl}/ilanlarim" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanlarıma Git</a>
+        <a href="${this.appUrl}/ilanlarim" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanlarıma Git</a>
       </div>
     `);
   }
@@ -190,10 +190,10 @@ export class MailService {
     const link = `${this.appUrl}/sifre-sifirla?token=${token}`;
     await this.send(email, 'Şifre sıfırlama isteği — Motorya', `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#f97316">Şifreni Sıfırla</h2>
+        <h2 style="color:#D83E13">Şifreni Sıfırla</h2>
         <p>Merhaba ${name},</p>
         <p>Şifre sıfırlama isteği aldık. Aşağıdaki butona tıklayarak yeni şifreni belirleyebilirsin. Link <strong>1 saat</strong> geçerlidir.</p>
-        <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Şifremi Sıfırla</a>
+        <a href="${link}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Şifremi Sıfırla</a>
         <p style="color:#888;font-size:13px">Bu isteği sen yapmadıysan bu maili görmezden gelebilirsin.</p>
       </div>
     `);
@@ -205,10 +205,10 @@ export class MailService {
     };
     await this.send(email, 'Motorya Admin Paneline Hoş Geldiniz', `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#f97316">Admin Paneline Erişim Açıldı</h2>
+        <h2 style="color:#D83E13">Admin Paneline Erişim Açıldı</h2>
         <p>Merhaba ${name},</p>
         <p>Motorya platformunda sana <strong>${roleLabel[role] ?? role}</strong> yetkisi verildi. Aşağıdaki linkten yönetim paneline erişebilirsin.</p>
-        <a href="${adminUrl}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Admin Panelini Aç</a>
+        <a href="${adminUrl}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Admin Panelini Aç</a>
         <p style="color:#888;font-size:13px">Giriş yaparken e-posta adresin ve hesap şifreni kullan. Her girişte e-posta ile doğrulama kodu gönderilecektir.</p>
         <p style="color:#888;font-size:13px">Bu yetkiyi sen talep etmediysen lütfen destek ekibiyle iletişime geç.</p>
       </div>
@@ -218,10 +218,10 @@ export class MailService {
   async sendAdminMfaEmail(email: string, name: string, otp: string) {
     await this.send(email, `${otp} — Motorya Admin Giriş Kodu`, `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#f97316">Admin Giriş Doğrulama</h2>
+        <h2 style="color:#D83E13">Admin Giriş Doğrulama</h2>
         <p>Merhaba ${name},</p>
         <p>Motorya Admin Paneli'ne giriş için doğrulama kodun:</p>
-        <div style="font-size:36px;font-weight:800;letter-spacing:10px;color:#f97316;text-align:center;padding:24px;background:#fff7ed;border-radius:12px;margin:20px 0">${otp}</div>
+        <div style="font-size:36px;font-weight:800;letter-spacing:10px;color:#D83E13;text-align:center;padding:24px;background:#fff7ed;border-radius:12px;margin:20px 0">${otp}</div>
         <p style="color:#888;font-size:13px">Bu kod <strong>10 dakika</strong> geçerlidir. Kodu kimseyle paylaşma.</p>
         <p style="color:#888;font-size:13px">Bu giriş isteğini sen yapmadıysan şifreni hemen değiştir.</p>
       </div>
@@ -232,12 +232,12 @@ export class MailService {
     const link = `${this.appUrl}/ilan/${listingId}`;
     await this.send(email, `🔍 Aradığın ilan yayınlandı`, `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#f97316">Aradığın İlan Yayınlandı! 🔍</h2>
+        <h2 style="color:#D83E13">Aradığın İlan Yayınlandı! 🔍</h2>
         <p>Merhaba ${name},</p>
         <p><strong>"${label}"</strong> aramanla eşleşen yeni bir ilan yayınlandı:</p>
         <p style="font-size:18px;font-weight:600">${listingTitle}</p>
-        <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
-        <p style="color:#888;font-size:13px">Bu bildirimi almak istemiyorsan kayıtlı aramalarını <a href="${this.appUrl}/fiyat-alarm" style="color:#f97316">buradan</a> yönetebilirsin.</p>
+        <a href="${link}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
+        <p style="color:#888;font-size:13px">Bu bildirimi almak istemiyorsan kayıtlı aramalarını <a href="${this.appUrl}/fiyat-alarm" style="color:#D83E13">buradan</a> yönetebilirsin.</p>
       </div>
     `);
   }
@@ -261,7 +261,7 @@ export class MailService {
     const link = `${this.appUrl}/ilan/${listingSlug}`;
     const indirim = Math.round((1 - newPrice / oldPrice) * 100);
     await this.send(email, `💰 Favorindeki ilanın fiyatı düştü: ${listingTitle}`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">Fiyat Düştü! 💰</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">Fiyat Düştü! 💰</h2>
       <p>Merhaba ${name},</p>
       <p>Favorilerindeki <strong>"${listingTitle}"</strong> ilanının fiyatı düştü:</p>
       <p style="font-size:20px;margin:16px 0">
@@ -270,7 +270,7 @@ export class MailService {
         <strong style="color:#dc2626">${newPrice.toLocaleString('tr-TR')} ₺</strong>
         <span style="background:#fee2e2;color:#dc2626;font-size:13px;font-weight:700;padding:3px 8px;border-radius:5px;margin-left:8px">%${indirim} indirim</span>
       </p>
-      <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
+      <a href="${link}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
       <p style="color:#888;font-size:13px">Bu bildirimleri profilindeki bildirim ayarlarından kapatabilirsin.</p>
     `));
   }
@@ -292,11 +292,11 @@ export class MailService {
   ) {
     const link = `${this.appUrl}/ilan/${listingSlug}`;
     await this.send(email, `⭐ İlanın favorilere eklendi: ${listingTitle}`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">İlanın İlgi Görüyor ⭐</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">İlanın İlgi Görüyor ⭐</h2>
       <p>Merhaba ${name},</p>
       <p><strong>"${listingTitle}"</strong> ilanın favorilere eklendi.</p>
       <p style="font-size:15px">Bu ilan şu ana kadar <strong>${toplamFavori} kez</strong> favorilendi.</p>
-      <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
+      <a href="${link}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
       <p style="color:#888;font-size:13px">Bu bildirimleri profilindeki bildirim ayarlarından kapatabilirsin.</p>
     `));
   }
@@ -317,11 +317,11 @@ export class MailService {
   async sendUnreadMessagesEmail(email: string, name: string, okunmamis: number, gonderen: string) {
     const link = `${this.appUrl}/mesajlarim`;
     await this.send(email, `💬 ${gonderen} sana mesaj gönderdi`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">Okunmamış Mesajın Var 💬</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">Okunmamış Mesajın Var 💬</h2>
       <p>Merhaba ${name},</p>
       <p><strong>${gonderen}</strong> sana mesaj gönderdi${okunmamis > 1 ? ` (toplam ${okunmamis} okunmamış mesajın var)` : ''}.</p>
       <p style="color:#555">Alıcılar genellikle ilk yanıt veren satıcıyla devam ediyor - hızlı dönmek satışı kapatıyor.</p>
-      <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Mesajları Oku</a>
+      <a href="${link}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Mesajları Oku</a>
       <p style="color:#888;font-size:13px">Bu bildirimleri profilindeki bildirim ayarlarından kapatabilirsin.</p>
     `));
   }
@@ -330,13 +330,13 @@ export class MailService {
   async sendOfferReceivedEmail(email: string, name: string, listingTitle: string, tutar: number, slug: string) {
     const link = `${this.appUrl}/tekliflerim`;
     await this.send(email, `💸 İlanına teklif geldi: ${listingTitle}`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">Yeni Teklif 💸</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">Yeni Teklif 💸</h2>
       <p>Merhaba ${name},</p>
       <p><strong>"${listingTitle}"</strong> ilanına teklif geldi:</p>
       <p style="font-size:22px;font-weight:700;color:#16a34a;margin:12px 0">${tutar.toLocaleString('tr-TR')} ₺</p>
       <p style="color:#555">Teklif <strong>48 saat</strong> içinde yanıtlanmazsa kendiliğinden düşer.</p>
-      <a href="${link}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Teklifi Görüntüle</a>
-      <p style="color:#888;font-size:13px"><a href="${this.appUrl}/ilan/${slug}" style="color:#f97316">İlanı aç</a></p>
+      <a href="${link}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Teklifi Görüntüle</a>
+      <p style="color:#888;font-size:13px"><a href="${this.appUrl}/ilan/${slug}" style="color:#D83E13">İlanı aç</a></p>
     `));
   }
 
@@ -358,33 +358,33 @@ export class MailService {
         ? `<p><strong>"${listingTitle}"</strong> ilanı için satıcı <strong>${tutar.toLocaleString('tr-TR')} ₺</strong> karşı teklif verdi.</p>`
         : `<p><strong>"${listingTitle}"</strong> ilanı için verdiğin teklif kabul edilmedi. Benzer ilanlara göz atabilirsin.</p>`;
     await this.send(email, `${baslik}: ${listingTitle}`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">${baslik}</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">${baslik}</h2>
       <p>Merhaba ${name},</p>
       ${govde}
-      <a href="${this.appUrl}/tekliflerim" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Tekliflerim</a>
-      <p style="color:#888;font-size:13px"><a href="${this.appUrl}/ilan/${slug}" style="color:#f97316">İlanı aç</a></p>
+      <a href="${this.appUrl}/tekliflerim" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Tekliflerim</a>
+      <p style="color:#888;font-size:13px"><a href="${this.appUrl}/ilan/${slug}" style="color:#D83E13">İlanı aç</a></p>
     `));
   }
 
   /** Satıcıya: yanıtlanmamış teklif yarın düşecek. */
   async sendOfferExpiringEmail(email: string, name: string, listingTitle: string, tutar: number) {
     await this.send(email, `⏳ Teklif yarın düşüyor: ${listingTitle}`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">Yanıt Bekleyen Teklif ⏳</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">Yanıt Bekleyen Teklif ⏳</h2>
       <p>Merhaba ${name},</p>
       <p><strong>"${listingTitle}"</strong> ilanına gelen <strong>${tutar.toLocaleString('tr-TR')} ₺</strong> teklif <strong>24 saat içinde</strong> kendiliğinden düşecek.</p>
       <p style="color:#555">Kabul, ret ya da karşı teklif - hangisi olursa olsun yanıtlamak alıcıyı elde tutuyor.</p>
-      <a href="${this.appUrl}/tekliflerim" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Teklifi Yanıtla</a>
+      <a href="${this.appUrl}/tekliflerim" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Teklifi Yanıtla</a>
     `));
   }
 
   /** Takipçiye: takip ettiğin satıcı yeni ilan verdi. */
   async sendFollowedSellerListingEmail(email: string, name: string, saticiAdi: string, listingTitle: string, slug: string) {
     await this.send(email, `🔔 ${saticiAdi} yeni ilan verdi`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">Takip Ettiğin Satıcıdan Yeni İlan 🔔</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">Takip Ettiğin Satıcıdan Yeni İlan 🔔</h2>
       <p>Merhaba ${name},</p>
       <p>Takip ettiğin <strong>${saticiAdi}</strong> yeni bir ilan yayınladı:</p>
       <p style="font-size:18px;font-weight:600;margin:12px 0">${listingTitle}</p>
-      <a href="${this.appUrl}/ilan/${slug}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
+      <a href="${this.appUrl}/ilan/${slug}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Görüntüle</a>
       <p style="color:#888;font-size:13px">Takibi bırakmak istersen satıcının profilinden yapabilirsin.</p>
     `));
   }
@@ -392,11 +392,11 @@ export class MailService {
   /** Satıcıya: ilanın uzun süredir yayında, gözden geçir. */
   async sendStaleListingEmail(email: string, name: string, listingTitle: string, gun: number, slug: string) {
     await this.send(email, `İlanın ${gun} gündür yayında: ${listingTitle}`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">İlanını Gözden Geçir</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">İlanını Gözden Geçir</h2>
       <p>Merhaba ${name},</p>
       <p><strong>"${listingTitle}"</strong> ilanın ${gun} gündür yayında ve henüz satılmadı.</p>
       <p style="color:#555">Fiyatı güncellemek ilanı arama sonuçlarında öne çıkarıyor ve favorileyenlere "fiyat düştü" bildirimi gönderiyor. Satıldıysa ilanı kapatmayı unutma.</p>
-      <a href="${this.appUrl}/ilan/${slug}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Düzenle</a>
+      <a href="${this.appUrl}/ilan/${slug}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanı Düzenle</a>
     `));
   }
 
@@ -421,7 +421,7 @@ export class MailService {
     const satir = (etiket: string, deger: number, renk = '#1c1917') =>
       `<tr><td style="padding:7px 0;color:#555">${etiket}</td><td style="padding:7px 0;text-align:right;font-weight:700;color:${renk}">${deger}</td></tr>`;
     await this.send(email, `📊 Haftalık moderasyon özeti — Motorya`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">Haftalık Özet 📊</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">Haftalık Özet 📊</h2>
       <p>Merhaba ${name},</p>
       <p>Son 7 günde Motorya'da olanlar:</p>
       <table style="width:100%;border-collapse:collapse;margin:14px 0">
@@ -431,7 +431,7 @@ export class MailService {
         ${satir('Şikâyet', o.sikayet, o.sikayet > 0 ? '#dc2626' : '#1c1917')}
         ${satir('Yeni üye', o.yeniUye)}
       </table>
-      <a href="${this.adminUrl}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Yönetim Paneli</a>
+      <a href="${this.adminUrl}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Yönetim Paneli</a>
     `));
   }
 
@@ -461,11 +461,11 @@ export class MailService {
       : `<p>Bildirdiğin <strong>"${listingTitle}"</strong> içeriği incelendi. Yaptığımız değerlendirmede kurallarımıza aykırı bir durum tespit edilmedi, bu yüzden içerik yayında kalıyor.</p>
          <p style="color:#555">Katılmıyorsan ya da gözden kaçtığını düşündüğün bir şey varsa bize yazabilirsin.</p>`;
     await this.send(email, `${baslik} — Motorya`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">${baslik}</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">${baslik}</h2>
       <p>Merhaba ${name},</p>
       ${govde}
       <p style="color:#555">Bildirdiğin için teşekkürler - topluluğu güvenli tutan şey bu bildirimler.</p>
-      <a href="${this.appUrl}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Motorya'ya Dön</a>
+      <a href="${this.appUrl}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Motorya'ya Dön</a>
     `));
   }
 
@@ -480,27 +480,27 @@ export class MailService {
     const kimi = rol === 'buyer' ? 'satıcıyı' : 'alıcıyı';
     const hedef = rol === 'seller' ? '/tekliflerim?tab=received' : '/tekliflerim?tab=sent';
     await this.send(email, `⭐ Alışverişin nasıl geçti? ${listingTitle}`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">Alışverişin Nasıl Geçti? ⭐</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">Alışverişin Nasıl Geçti? ⭐</h2>
       <p>Merhaba ${name},</p>
       <p><strong>"${listingTitle}"</strong> alışverişin tamamlandı. Birkaç saniyeni ayırıp ${kimi} değerlendirir misin?</p>
       <p style="color:#555">İkinci el alışverişte insanları karar verdiren tek şey karşı tarafın geçmişi. Senin bıraktığın puan, bir sonraki alıcının güvenle alışveriş yapmasını sağlıyor.</p>
-      <a href="${this.appUrl}${hedef}" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Değerlendir</a>
-      <p style="color:#888;font-size:13px"><a href="${this.appUrl}/ilan/${slug}" style="color:#f97316">İlanı aç</a></p>
+      <a href="${this.appUrl}${hedef}" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Değerlendir</a>
+      <p style="color:#888;font-size:13px"><a href="${this.appUrl}/ilan/${slug}" style="color:#D83E13">İlanı aç</a></p>
     `));
   }
 
   /** Kayıttan 2 gün sonra: nasıl ilan verilir. */
   async sendWelcomeGuideEmail(email: string, name: string) {
     await this.send(email, `${name}, ilk ilanını 2 dakikada verebilirsin`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">İlk İlanın 2 Dakika Sürüyor</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">İlk İlanın 2 Dakika Sürüyor</h2>
       <p>Merhaba ${name},</p>
       <p>Motorya'ya katıldın ama henüz ilan vermedin. Garajında duran, artık kullanmadığın bir kask ya da mont varsa birilerinin tam da onu arıyor olma ihtimali yüksek.</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0">
-        <tr><td style="padding:8px 0;vertical-align:top;width:30px"><strong style="color:#f97316">1</strong></td><td style="padding:8px 0">Ürünün fotoğrafını çek — iyi ışıkta, 3-4 kare yeterli.</td></tr>
-        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#f97316">2</strong></td><td style="padding:8px 0">Kategori, marka ve bedeni seç. Bu üçü aramalarda bulunmanı sağlıyor.</td></tr>
-        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#f97316">3</strong></td><td style="padding:8px 0">Fiyatı yaz ve yayınla. Komisyon yok, ilan vermek tamamen ücretsiz.</td></tr>
+        <tr><td style="padding:8px 0;vertical-align:top;width:30px"><strong style="color:#D83E13">1</strong></td><td style="padding:8px 0">Ürünün fotoğrafını çek — iyi ışıkta, 3-4 kare yeterli.</td></tr>
+        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#D83E13">2</strong></td><td style="padding:8px 0">Kategori, marka ve bedeni seç. Bu üçü aramalarda bulunmanı sağlıyor.</td></tr>
+        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#D83E13">3</strong></td><td style="padding:8px 0">Fiyatı yaz ve yayınla. Komisyon yok, ilan vermek tamamen ücretsiz.</td></tr>
       </table>
-      <a href="${this.appUrl}/ilan-ver" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlan Ver</a>
+      <a href="${this.appUrl}/ilan-ver" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlan Ver</a>
       <p style="color:#888;font-size:13px">Satmak istemiyorsan da sorun değil - alarm kurup aradığın ürün çıkınca haber alabilirsin.</p>
     `));
   }
@@ -517,15 +517,15 @@ export class MailService {
         <td style="padding:10px 0;border-bottom:1px solid #eee">
           <a href="${this.appUrl}/ilan/${o.slug}" style="color:#1c1917;text-decoration:none;font-weight:600">${o.title}</a>
         </td>
-        <td style="padding:10px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;font-weight:700;color:#f97316">${o.price.toLocaleString('tr-TR')} ₺</td>
+        <td style="padding:10px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;font-weight:700;color:#D83E13">${o.price.toLocaleString('tr-TR')} ₺</td>
       </tr>`).join('');
     await this.send(email, `🔍 Aramalarına uyan ${toplam} yeni ilan`, this.wrap(`
-      <h2 style="color:#f97316;margin:0 0 16px">Bu Hafta Senin İçin 🔍</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px">Bu Hafta Senin İçin 🔍</h2>
       <p>Merhaba ${name},</p>
       <p>Kayıtlı aramalarına uyan <strong>${toplam} yeni ilan</strong> yayınlandı${ornekler.length < toplam ? ` — işte birkaçı:` : ':'}</p>
       <table style="width:100%;border-collapse:collapse;margin:14px 0">${satirlar}</table>
-      <a href="${this.appUrl}/alarmlarim" style="display:inline-block;background:#f97316;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Tüm Alarmlarım</a>
-      <p style="color:#888;font-size:13px">Bu özeti almak istemiyorsan alarmlarını <a href="${this.appUrl}/alarmlarim" style="color:#f97316">buradan</a> yönetebilirsin.</p>
+      <a href="${this.appUrl}/alarmlarim" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">Tüm Alarmlarım</a>
+      <p style="color:#888;font-size:13px">Bu özeti almak istemiyorsan alarmlarını <a href="${this.appUrl}/alarmlarim" style="color:#D83E13">buradan</a> yönetebilirsin.</p>
     `));
   }
 
