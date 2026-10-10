@@ -46,6 +46,11 @@ export class ListingsController {
     return this.listingsService.getBrands();
   }
 
+  @Get('meta/facets')
+  getFacets(@Query('categorySlug') categorySlug?: string) {
+    return this.listingsService.getFacets(categorySlug);
+  }
+
   @Get('meta/category/:slug')
   getCategoryBySlug(@Param('slug') slug: string) {
     return this.listingsService.getCategoryBySlug(slug);

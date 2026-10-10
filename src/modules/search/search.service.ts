@@ -46,7 +46,7 @@ export class SearchService implements OnModuleInit {
       this.index = this.client.index('listings');
       await this.index.updateSettings({
         searchableAttributes: ['title', 'description', 'categoryName', 'brandName', 'city'],
-        filterableAttributes: ['categoryId', 'brandId', 'condition', 'city', 'price', 'status', 'sellerId', 'gender'],
+        filterableAttributes: ['categoryId', 'brandId', 'condition', 'city', 'price', 'status', 'sellerId', 'gender', 'sizeLabel'],
         sortableAttributes: ['price', 'createdAt'],
         displayedAttributes: [
           'id', 'title', 'price', 'originalPrice', 'condition', 'city', 'sizeLabel', 'gender',
@@ -82,6 +82,7 @@ export class SearchService implements OnModuleInit {
     brandId?: string;
     condition?: string;
     city?: string;
+    sizeLabel?: string;
     gender?: string;
     minPrice?: number;
     maxPrice?: number;
@@ -96,6 +97,7 @@ export class SearchService implements OnModuleInit {
       brandId,
       condition,
       city,
+      sizeLabel,
       gender,
       minPrice,
       maxPrice,
@@ -110,6 +112,8 @@ export class SearchService implements OnModuleInit {
     if (brandId) filters.push(`brandId = "${brandId}"`);
     if (condition) filters.push(`condition = "${condition}"`);
     if (city) filters.push(`city = "${city}"`);
+    // Bedenler indekse buyuk harfle yaziliyor; gelen deger de oyle normalize edilir.
+    if (sizeLabel) filters.push(`sizeLabel = "${sizeLabel.trim().toUpperCase()}"`);
     if (gender) filters.push(`gender = "${gender}"`);
     if (minPrice !== undefined) filters.push(`price >= ${minPrice}`);
     if (maxPrice !== undefined) filters.push(`price <= ${maxPrice}`);
@@ -129,7 +133,7 @@ export class SearchService implements OnModuleInit {
       sort: [sortMap[sort] ?? 'createdAt:desc'],
       offset: (page - 1) * limit,
       limit,
-      facets: ['categoryId', 'brandId', 'condition', 'city'],
+      facets: ['categoryId', 'brandId', 'condition', 'city', 'sizeLabel'],
     };
 
     try {

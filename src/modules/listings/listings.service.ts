@@ -30,6 +30,20 @@ function toSlug(text: string): string {
     .slice(0, 60);
 }
 
+// "Xl" ile "XL" ayni bedeni anlatir; arama tam eslesme yaptigi icin
+// yaziyi daima buyuk harfe sabitliyoruz.
+function bedenNormalle(ad?: string | null): string | null {
+  const t = (ad ?? '').trim();
+  return t ? t.toUpperCase() : null;
+}
+
+// Harf bedenleri dogal sirada tutar; sayisal bedenler (56, 47) sona duser.
+const BEDEN_SIRASI = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+function bedenSiralama(ad: string): number {
+  const i = BEDEN_SIRASI.indexOf(ad.toUpperCase());
+  return i === -1 ? 100 : i;
+}
+
 // /ilan/{l1}-{l2}-{title}-{city}-{id} formatında slug üretir.
 // category.parentId varsa l2, parent ise l1; yoksa sadece l1 kullanılır.
 // İlanın mevcut alanlarından otomatik etiket üretir.
@@ -170,6 +184,54 @@ export class ListingsService {
     return this.prisma.brand.findMany({ orderBy: { name: 'asc' } });
   }
 
+  // Arama filtrelerinin seceneklerini yayindaki ilanlardan uretir; boylece
+  // kullanici hicbir zaman sonuc dondurmeyen bir beden/sehir secemez.
+  async getFacets(categorySlug?: string) {
+    const categoryIds = await this.resolveCategoryIds(undefined, categorySlug);
+    const where: any = { status: 'ACTIVE', deletedAt: null };
+    if (categoryIds && categoryIds.length > 0) {
+      where.categoryId = { in: categoryIds };
+    }
+
+    const [bedenler, sehirler] = await Promise.all([
+      this.prisma.listing.groupBy({
+        by: ['sizeLabel'],
+        where: { ...where, sizeLabel: { not: null } },
+        _count: { id: true },
+      }),
+      this.prisma.listing.groupBy({
+        by: ['city'],
+        where: { ...where, city: { not: null } },
+        _count: { id: true },
+      }),
+    ]);
+
+    // "Xl" ile "XL" ayni bedendir; buyuk harfe indirip sayilari topluyoruz.
+    const bedenSayac = new Map<string, number>();
+    for (const b of bedenler) {
+      const ad = (b.sizeLabel as string).trim();
+      if (!ad) continue;
+      const anahtar = ad.toUpperCase();
+      bedenSayac.set(anahtar, (bedenSayac.get(anahtar) ?? 0) + b._count.id);
+    }
+
+    const sehirSayac = new Map<string, number>();
+    for (const c of sehirler) {
+      const ad = (c.city as string).trim();
+      if (!ad) continue;
+      sehirSayac.set(ad, (sehirSayac.get(ad) ?? 0) + c._count.id);
+    }
+
+    return {
+      sizes: [...bedenSayac.entries()]
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => bedenSiralama(a.value) - bedenSiralama(b.value) || a.value.localeCompare(b.value, 'tr')),
+      cities: [...sehirSayac.entries()]
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value, 'tr')),
+    };
+  }
+
   async getBrandsByCategory(categorySlug: string) {
     const categoryIds = await this.resolveCategoryIds(undefined, categorySlug);
     if (!categoryIds || categoryIds.length === 0) {
@@ -301,7 +363,7 @@ export class ListingsService {
         ...rest,
         brandId: rest.brandId || null,
         city: rest.city || null,
-        sizeLabel: rest.sizeLabel || null,
+        sizeLabel: bedenNormalle(rest.sizeLabel),
         price: rest.price,
         originalPrice: rest.originalPrice ?? null,
         sellerId,
@@ -436,6 +498,7 @@ export class ListingsService {
       categorySlug,
       brandId,
       condition,
+      sizeLabel,
       city,
       minPrice,
       maxPrice,
@@ -473,6 +536,7 @@ export class ListingsService {
     if (brandId) where.brandId = brandId;
     if (condition) where.condition = condition;
     if ((query as any).gender) where.gender = (query as any).gender;
+    if (sizeLabel) where.sizeLabel = { equals: sizeLabel, mode: 'insensitive' };
     if (city) where.city = { contains: city, mode: 'insensitive' };
     if (minPrice !== undefined || maxPrice !== undefined) {
       where.price = {};
@@ -791,7 +855,7 @@ export class ListingsService {
           ...rest,
           brandId: rest.brandId === '' ? null : rest.brandId,
           city: rest.city === '' ? null : rest.city,
-          sizeLabel: rest.sizeLabel === '' ? null : rest.sizeLabel,
+          sizeLabel: rest.sizeLabel === '' ? null : bedenNormalle(rest.sizeLabel),
           status: newStatus as any,
           tags,
         },

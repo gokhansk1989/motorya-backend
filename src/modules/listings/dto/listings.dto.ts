@@ -148,6 +148,10 @@ export class ListingsQueryDto {
 
   @IsOptional()
   @IsString()
+  sizeLabel?: string;
+
+  @IsOptional()
+  @IsString()
   city?: string;
 
   @IsOptional()
