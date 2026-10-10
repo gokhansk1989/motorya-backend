@@ -61,7 +61,7 @@ export class MailService {
             <tr><td style="padding:28px 32px 0;">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
                 <td style="width:40px;"><div style="width:40px;height:40px;border-radius:10px;background:#D83E13;color:#ffffff;text-align:center;line-height:40px;font-size:20px;font-weight:800;">M</div></td>
-                <td style="padding-left:10px;font-size:19px;font-weight:800;color:#D83E13;">MOTORYA</td>
+                <td style="padding-left:10px;font-size:19px;font-weight:800;color:#1a1d24;">MOTORYA</td>
               </tr></table>
             </td></tr>
             ${govde}
