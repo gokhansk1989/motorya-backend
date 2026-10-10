@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Post,
   Delete,
   Param,
   Body,
@@ -27,6 +28,22 @@ export class AdminController {
     private adminService: AdminService,
     private messagesService: MessagesService,
   ) {}
+
+  @Get('duyuru/onizleme')
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  duyuruOnizleme() {
+    return this.adminService.duyuruOnizleme();
+  }
+
+  @Post('duyuru/story-karti')
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  storyKartiDuyurusu(@Query('test') test: string, @Request() req) {
+    return this.adminService.storyKartiDuyurusu({
+      test: test === '1',
+      testEmail: req.user?.email,
+      testAd: req.user?.displayName,
+    });
+  }
 
   @Get('metrics')
   getMetrics() {

@@ -16,6 +16,68 @@ export class AdminService {
     private savedSearch: SavedSearchService,
   ) {}
 
+  // ── Urun duyurusu ────────────────────────────────────────────────────────
+  //
+  // Duyuru maili pazarlama iletisidir: yalnizca MARKETING izni verenlere
+  // gider. Izin kayitlarinin en YENISI gecerlidir; kullanici izni geri
+  // cekmisse eski "kabul" kaydina bakip gondermek izinsiz ileti olur.
+  private async pazarlamaIzniOlanlar(adaylar: { id: string }[]): Promise<Set<string>> {
+    if (adaylar.length === 0) return new Set();
+    const kayitlar = await this.prisma.userConsent.findMany({
+      where: { userId: { in: adaylar.map(a => a.id) }, type: 'MARKETING' },
+      orderBy: { createdAt: 'desc' },
+      select: { userId: true, accepted: true },
+    });
+    const sonDurum = new Map<string, boolean>();
+    for (const k of kayitlar) {
+      if (!sonDurum.has(k.userId)) sonDurum.set(k.userId, k.accepted);
+    }
+    return new Set([...sonDurum.entries()].filter(([, kabul]) => kabul).map(([id]) => id));
+  }
+
+  private async duyuruAdaylari() {
+    const adaylar = await this.prisma.user.findMany({
+      where: { deletedAt: null, status: 'ACTIVE', emailVerifiedAt: { not: null } },
+      select: { id: true, email: true, displayName: true },
+    });
+    const izinli = await this.pazarlamaIzniOlanlar(adaylar);
+    return adaylar.filter(a => izinli.has(a.id));
+  }
+
+  /** Kac kisiye gidecegini gonderimden once gosterir. */
+  async duyuruOnizleme() {
+    const alicilar = await this.duyuruAdaylari();
+    return { aliciSayisi: alicilar.length };
+  }
+
+  /**
+   * Story karti duyurusunu gonderir.
+   * test=true ise yalnizca istegi yapan adrese gider — liste etkilenmez.
+   */
+  async storyKartiDuyurusu(opts: { test: boolean; testEmail?: string; testAd?: string }) {
+    if (opts.test) {
+      if (!opts.testEmail) return { gonderildi: 0, hata: 0 };
+      await this.mail.sendStoryCardAnnouncementEmail(opts.testEmail, opts.testAd || 'Motorcu');
+      return { gonderildi: 1, hata: 0, test: true };
+    }
+
+    const alicilar = await this.duyuruAdaylari();
+    let gonderildi = 0;
+    let hata = 0;
+    // Resend saniyede 2 istege izin veriyor; toplu gonderimde araya bekleme
+    // koymazsak yarisi 429 ile dusuyor.
+    for (const a of alicilar) {
+      try {
+        await this.mail.sendStoryCardAnnouncementEmail(a.email, a.displayName || 'Motorcu');
+        gonderildi++;
+      } catch {
+        hata++;
+      }
+      await new Promise(r => setTimeout(r, 600));
+    }
+    return { gonderildi, hata, toplam: alicilar.length };
+  }
+
   async getMetrics() {
     const [
       totalUsers,

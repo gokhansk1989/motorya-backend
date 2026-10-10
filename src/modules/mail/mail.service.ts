@@ -505,6 +505,40 @@ export class MailService {
     `));
   }
 
+  /**
+   * Urun duyurusu: ilan paylasim karti.
+   *
+   * Pazarlama maili oldugu icin yalnizca MARKETING izni verenlere gonderilir;
+   * cagiran taraf bu suzmeyi yapmak zorundadir (bkz. pazarlamaIzniOlanlar).
+   *
+   * Gorsel uzaktan yukleniyor ve bircok istemci bunu varsayilan olarak
+   * engelliyor; bu yuzden anlatimin tamami metinde duruyor, gorsel
+   * engellenirse mail yine de anlasilir kaliyor.
+   */
+  async sendStoryCardAnnouncementEmail(email: string, name: string) {
+    await this.send(email, `${name}, ilanını Instagram hikâyende paylaş`, this.wrap(`
+      <h2 style="color:#D83E13;margin:0 0 16px">İlanını Paylaş, Daha Fazla Motorcuya Ulaş</h2>
+      <p>Merhaba ${name},</p>
+      <p>Garajındaki ekipmanın sıradaki sahibine ulaşması artık daha kolay. Yeni <strong>Story kartı</strong> ile ürün fotoğrafını, fiyatını ve Motorya logosunu içeren Instagram hikâye görselini tek dokunuşla hazırlayabilirsin.</p>
+
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:8px 0;vertical-align:top;width:30px"><strong style="color:#D83E13">1</strong></td><td style="padding:8px 0">Motorya'da kendi ilanını aç.</td></tr>
+        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#D83E13">2</strong></td><td style="padding:8px 0">Sağdaki <strong>"Story kartı indir"</strong> düğmesine dokun.</td></tr>
+        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#D83E13">3</strong></td><td style="padding:8px 0">İnen görseli Instagram hikâyende paylaş.</td></tr>
+      </table>
+
+      <p style="text-align:center;margin:24px 0">
+        <img src="${this.appUrl}/mail/story-karti.png" width="260" alt="Örnek Story kartı: ürün fotoğrafı, fiyat ve Motorya logosu" style="width:260px;max-width:100%;height:auto;border-radius:12px;border:1px solid #e3e0d8">
+      </p>
+
+      <p>Görsel tam hikâye ölçüsünde (1080×1920) üretiliyor, yani yüklerken kırpman gerekmiyor. Hikâyene ilanının bağlantısını da eklersen ilgilenen motorcular doğrudan ilanına gelir.</p>
+
+      <a href="${this.appUrl}/ilanlarim" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanlarıma Git</a>
+
+      <p style="color:#888;font-size:13px">Garajındaki ekipman, başkasının sıradaki yolculuğu.<br>Motorya Ekibi</p>
+    `));
+  }
+
   /** Haftalık kayıtlı arama özeti. */
   async sendSavedSearchWeeklyEmail(
     email: string,
