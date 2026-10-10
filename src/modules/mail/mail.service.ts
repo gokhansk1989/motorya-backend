@@ -45,6 +45,15 @@ export class MailService {
    * Tablo tabanlı bu sarmalayıcı tüm istemcilerde aynı görünür.
    */
   private wrap(bodyHtml: string, footerNote?: string) {
+    // Govde bu tablonun icine giriyor; satir (<tr>) olarak gelirse kendi
+    // dolgusunu tasir. Sablonlarin cogu ise duz <h2>/<p> veriyordu: bunlar
+    // hucrenin disinda kaldigi icin yan bosluk almiyor, yazi cercevenin sol
+    // kenarina yapisiyordu. Satir degilse burada dolgulu bir hucreye sariyoruz
+    // ki her sablon ayni kenar boslugunu alsin.
+    const govde = bodyHtml.trimStart().startsWith('<tr')
+      ? bodyHtml
+      : `<tr><td style="padding:24px 32px 0;font-size:15px;color:#464b57;line-height:1.65;">${bodyHtml}</td></tr>`;
+
     return `
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#fafafa;padding:24px 12px;">
         <tr><td align="center">
@@ -55,7 +64,7 @@ export class MailService {
                 <td style="padding-left:10px;font-size:19px;font-weight:800;color:#D83E13;">MOTORYA</td>
               </tr></table>
             </td></tr>
-            ${bodyHtml}
+            ${govde}
             <tr><td style="padding:26px 32px 24px;">
               <div style="border-top:1px solid #e4e6ea;padding-top:16px;font-size:12px;color:#9aa0ab;line-height:1.6;text-align:center;">
                 ${footerNote ?? 'Bu e-postayı Motorya üyesi olduğunuz için aldınız.'}<br>
@@ -517,13 +526,13 @@ export class MailService {
    */
   async sendStoryCardAnnouncementEmail(email: string, name: string) {
     await this.send(email, `${name}, ilanını Instagram hikâyende paylaş`, this.wrap(`
-      <h2 style="color:#D83E13;margin:0 0 16px">İlanını Paylaş, Daha Fazla Motorcuya Ulaş</h2>
+      <h2 style="color:#D83E13;margin:0 0 16px;font-size:21px;line-height:1.3">İlanını Paylaş, Daha Fazla Motorcuya Ulaş</h2>
       <p>Merhaba ${name},</p>
       <p>Garajındaki ekipmanın sıradaki sahibine ulaşması artık daha kolay. Yeni <strong>Story kartı</strong> ile ürün fotoğrafını, fiyatını ve Motorya logosunu içeren Instagram hikâye görselini tek dokunuşla hazırlayabilirsin.</p>
 
       <table style="width:100%;border-collapse:collapse;margin:16px 0">
         <tr><td style="padding:8px 0;vertical-align:top;width:30px"><strong style="color:#D83E13">1</strong></td><td style="padding:8px 0">Motorya'da kendi ilanını aç.</td></tr>
-        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#D83E13">2</strong></td><td style="padding:8px 0">Sağdaki <strong>"Story kartı indir"</strong> düğmesine dokun.</td></tr>
+        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#D83E13">2</strong></td><td style="padding:8px 0"><strong>"Story kartı indir"</strong> düğmesine dokun — "İlanı Düzenle"nin hemen altında.</td></tr>
         <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#D83E13">3</strong></td><td style="padding:8px 0">İnen görseli Instagram hikâyende paylaş.</td></tr>
       </table>
 
