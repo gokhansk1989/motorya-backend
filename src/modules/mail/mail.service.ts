@@ -537,7 +537,7 @@ export class MailService {
     await this.send(email, d.subject.replace(/\{ad\}/g, name), this.wrap(`
       ${d.imageUrl ? `
       <tr><td style="padding:22px 32px 0;" align="center">
-        <img src="${d.imageUrl}" width="496" alt="" style="width:100%;max-width:496px;height:auto;display:block;border-radius:12px;border:1px solid #e4e6ea;">
+        <img src="${guvenliAdres(d.imageUrl)}" width="496" alt="" style="width:100%;max-width:496px;height:auto;display:block;border-radius:12px;border:1px solid #e4e6ea;">
       </td></tr>` : ''}
       <tr><td style="padding:24px 32px 0;">
         <div style="font-size:20px;font-weight:800;color:#1a1d24;line-height:1.35;">${kacirHtml(d.heading.replace(/\{ad\}/g, name))}</div>
@@ -545,7 +545,7 @@ export class MailService {
       ${duyuruGovdesi(d.body.replace(/\{ad\}/g, name))}
       ${d.ctaText && d.ctaUrl ? `
       <tr><td style="padding:24px 32px 0;" align="center">
-        <a href="${d.ctaUrl}" style="display:inline-block;background:#D83E13;color:#ffffff;padding:14px 34px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;">${kacirHtml(d.ctaText)}</a>
+        <a href="${guvenliAdres(d.ctaUrl)}" style="display:inline-block;background:#D83E13;color:#ffffff;padding:14px 34px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;">${kacirHtml(d.ctaText)}</a>
       </td></tr>` : ''}
     `));
   }
@@ -674,6 +674,15 @@ export class MailService {
 // kaciriliyor, sonra yalnizca izin verdigimiz birkac bicim tanniyor:
 // bos satirla ayrilmis paragraflar, "1." ile baslayan adimlar, "- " ile
 // baslayan maddeler ve **kalin**.
+// Adresler oznitelik icine giriyor; kacirilmazsa tirnak kapatilip ek
+// oznitelik eklenebilir. Ayrica yalnizca http/https kabul ediyoruz ki
+// javascript: gibi bir sema dugmeye baglanamasin.
+function guvenliAdres(url?: string | null): string {
+  const u = (url ?? '').trim();
+  if (!/^https?:\/\//i.test(u)) return '';
+  return kacirHtml(u);
+}
+
 function kacirHtml(t: string): string {
   return t
     .replace(/&/g, '&amp;')

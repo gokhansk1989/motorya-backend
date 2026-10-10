@@ -19,7 +19,14 @@ import sharp from 'sharp';
 const UPLOADS_DIR = join(process.cwd(), 'uploads');
 mkdirSync(UPLOADS_DIR, { recursive: true });
 
+// Istemcinin gonderdigi Content-Type ucuz bir on eleme; guvenlik karari degil.
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+
+// Asil kontrol bu: sharp bicimi dosya icerigine gore belirliyor. Onceden
+// yalnizca Content-Type'a bakiliyordu ve bu baslik tamamen istemci
+// denetiminde - "image/png" etiketli bir SVG kabul ediliyor, sharp onu SVG
+// olarak cozuyordu. Yani hangi cozucunun calisacagini yukleyen secebiliyordu.
+const IZINLI_BICIM = ['jpeg', 'png', 'webp', 'heif', 'avif'];
 
 // İlan fotoğrafları her zaman bu boyuta indirilip WebP'ye çevrilir — disk/bant
 // genişliği tasarrufu ve HEIC gibi tarayıcının doğrudan render edemediği
@@ -52,6 +59,19 @@ export class UploadController {
 
     const urls = await Promise.all(
       files.map(async (file) => {
+        let bicim: string | undefined;
+        try {
+          bicim = (await sharp(file.buffer).metadata()).format;
+        } catch {
+          throw new BadRequestException(`"${file.originalname}" işlenemedi — dosya bozuk olabilir`);
+        }
+
+        if (!bicim || !IZINLI_BICIM.includes(bicim)) {
+          throw new BadRequestException(
+            `"${file.originalname}" desteklenmeyen bir görsel biçimi (${bicim ?? 'tanınmadı'})`,
+          );
+        }
+
         let processed: Buffer;
         try {
           processed = await sharp(file.buffer)

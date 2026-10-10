@@ -57,6 +57,10 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Swagger uretimde kapali: butun uc listesini, parametre adlarini ve
+  // sema ayrintilarini kimlik dogrulamasi olmadan disariya veriyordu.
+  // Gizli veri icermiyor ama saldirgana hazir bir harita sunuyor.
+  if (process.env.NODE_ENV !== 'production') {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Motorya API')
     .setDescription('Motosiklet ekipman pazarı — REST API')
@@ -68,6 +72,7 @@ async function bootstrap() {
   SwaggerModule.setup('api', app, document, {
     swaggerOptions: { persistAuthorization: true },
   });
+  }
 
   const port = process.env.PORT || 3000;
   await app.listen(port);

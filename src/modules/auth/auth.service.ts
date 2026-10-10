@@ -465,11 +465,22 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash, passwordResetToken: null, passwordResetExpiry: null },
-    });
 
-    return { message: 'Şifreniz başarıyla güncellendi.' };
+    // Sifre sifirlama hesabi kurtarma yoludur: islemden sonra eski oturumlarin
+    // hicbiri gecerli kalmamali. Aksi halde hesabi ele geciren birinin refresh
+    // jetonu calismaya devam ediyordu - kurban sifresini degistirse bile
+    // saldirgan iceride kaliyordu.
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash, passwordResetToken: null, passwordResetExpiry: null },
+      }),
+      this.prisma.device.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    return { message: 'Şifreniz güncellendi. Güvenlik için tüm cihazlardaki oturumlar kapatıldı.' };
   }
 }

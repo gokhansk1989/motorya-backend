@@ -278,7 +278,16 @@ export class UsersService {
     }
 
     const hash = await bcrypt.hash(dto.newPassword, 10);
-    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } });
+
+    // Sifre degisince diger cihazlardaki oturumlar kapanmali; sifre
+    // degistirmenin asil amaci zaten istenmeyen erisimi kesmek.
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } }),
+      this.prisma.device.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
     this.audit.log({ actorId: userId, action: 'user.password_change', entity: 'User', entityId: userId, ip, userAgent });
 
     // Güvenlik uyarısı. Hesap ele geçirilmesinde kullanıcının durumu fark

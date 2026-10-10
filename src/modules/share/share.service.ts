@@ -2,7 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import sharp from 'sharp';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
+import { readFile, writeFile, rename } from 'fs/promises';
+import { randomBytes } from 'crypto';
 
 // Instagram Story olcusu. Kart bu olcude uretilir ki kullanici kirpmak
 // zorunda kalmasin; WhatsApp ve X paylasimlarinda da sorunsuz gorunur.
@@ -17,9 +19,15 @@ const SOLUK = '#85878F';
 
 const FOTO = { x: 90, y: 430, g: 900, y2: 900 };
 
+// Uretilen kartlar burada saklanir. Her kart bir kez uretilir; ilan
+// degistiginde dosya adindaki damga degistigi icin yenisi uretilir.
+const KART_DIZINI = join(process.cwd(), 'uploads', 'kart');
+
 @Injectable()
 export class ShareService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {
+    mkdirSync(KART_DIZINI, { recursive: true });
+  }
 
   async ilanKarti(slugYaDaId: string): Promise<Buffer> {
     // Ilan slug'i "...-{id}" ile biter; slug geldiyse kuyrugundaki id'yi aliriz.
@@ -28,6 +36,8 @@ export class ShareService {
     const ilan = await this.prisma.listing.findFirst({
       where: { id, status: 'ACTIVE', deletedAt: null },
       select: {
+        id: true,
+        updatedAt: true,
         title: true,
         price: true,
         city: true,
@@ -37,6 +47,14 @@ export class ShareService {
       },
     });
     if (!ilan) throw new NotFoundException('Ilan bulunamadi');
+
+    // Kart uretimi istek basina ~1 saniye islemci harciyor ve uc herkese
+    // acik. Onbelleklemeden, tek bir istemci mevcut hiz siniri icinde
+    // kalarak sunucunun islemcisini doldurabiliyordu.
+    const onbellek = join(KART_DIZINI, `${ilan.id}-${ilan.updatedAt.getTime()}.png`);
+    if (existsSync(onbellek)) {
+      return readFile(onbellek);
+    }
 
     const foto = await this.fotoKatmani(ilan.images[0]?.url);
     const svg = this.kartSvg({
@@ -51,7 +69,7 @@ export class ShareService {
     if (foto) katmanlar.push({ input: foto, left: FOTO.x, top: FOTO.y });
     katmanlar.push({ input: Buffer.from(svg) });
 
-    return sharp({
+    const png = await sharp({
       create: {
         width: GENISLIK,
         height: YUKSEKLIK,
@@ -62,6 +80,18 @@ export class ShareService {
       .composite(katmanlar)
       .png({ compressionLevel: 9 })
       .toBuffer();
+
+    // Once gecici ada yazip tasiyoruz: iki istek ayni anda uretirse
+    // yarim yazilmis bir dosya okunmasin.
+    const gecici = `${onbellek}.${randomBytes(6).toString('hex')}.tmp`;
+    try {
+      await writeFile(gecici, png);
+      await rename(gecici, onbellek);
+    } catch {
+      // Onbellege yazilamazsa kart yine donmeli; yalnizca hiz kaybi olur.
+    }
+
+    return png;
   }
 
   // Urun fotografini kartin olcusune getirir ve kosegenleri yuvarlar.

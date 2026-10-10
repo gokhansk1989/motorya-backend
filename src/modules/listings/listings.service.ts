@@ -30,6 +30,24 @@ function toSlug(text: string): string {
     .slice(0, 60);
 }
 
+// Ilan gorselleri yalnizca kendi yukleme ucumuzun urettigi adreslerden
+// gelebilir. Once yalnizca @IsString dogrulamasi vardi: kullanici kendi
+// sunucusundaki bir adresi gorsel olarak kaydedip ilani acan herkesin
+// IP'sini ve tarayici bilgisini toplayabiliyordu.
+const YUKLEME_TABANI = () =>
+  `${process.env.BASE_URL ?? 'https://motorya.com.tr/api-backend'}/uploads/`;
+
+function gorselleriDogrula(urls: string[]): void {
+  const taban = YUKLEME_TABANI();
+  for (const url of urls) {
+    if (!url.startsWith(taban)) {
+      throw new BadRequestException(
+        'Görseller yalnızca Motorya yükleme adresinden gelebilir',
+      );
+    }
+  }
+}
+
 // "Xl" ile "XL" ayni bedeni anlatir; arama tam eslesme yaptigi icin
 // yaziyi daima buyuk harfe sabitliyoruz.
 function bedenNormalle(ad?: string | null): string | null {
@@ -343,6 +361,7 @@ export class ListingsService {
     }
 
     const { imageUrls = [], ...rest } = dto;
+    gorselleriDogrula(imageUrls);
 
     const [category, brand] = await Promise.all([
       rest.categoryId ? this.prisma.category.findUnique({ where: { id: rest.categoryId } }) : null,
@@ -820,6 +839,7 @@ export class ListingsService {
     }
 
     const { imageUrls, ...rest } = dto;
+    if (imageUrls !== undefined) gorselleriDogrula(imageUrls);
 
     const categoryId = rest.categoryId ?? listing.categoryId;
     const brandId = rest.brandId !== undefined ? (rest.brandId || null) : listing.brandId;
