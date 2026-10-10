@@ -185,6 +185,11 @@ export class UsersService {
     identityVerifiedAt: Date | null;
     fastResponder: boolean;
   }) {
+    // Not: identityVerifiedAt ve phoneVerifiedAt alanlari kodun hicbir yerinde
+    // YAZILMIYOR - boyle bir dogrulama akisi yok. Asagidaki iki rozet bu yuzden
+    // bugun hicbir kullanicida gorunmuyor. Alanlar ileride gercek bir dogrulama
+    // eklenirse kullanilmak uzere duruyor; o gune kadar hicbir metinde bu
+    // dogrulamalar varmis gibi anlatilmamali.
     const badges: { key: string; label: string; icon: string; tier: 'gold' | 'silver' | 'blue' }[] = [];
 
     if (user.identityVerifiedAt) badges.push({ key: 'identity_verified', label: 'Kimlik Doğrulandı', icon: '🪪', tier: 'gold' });
