@@ -526,25 +526,38 @@ export class MailService {
    */
   async sendStoryCardAnnouncementEmail(email: string, name: string) {
     await this.send(email, `${name}, ilanını Instagram hikâyende paylaş`, this.wrap(`
-      <h2 style="color:#D83E13;margin:0 0 16px;font-size:21px;line-height:1.3">İlanını Paylaş, Daha Fazla Motorcuya Ulaş</h2>
-      <p>Merhaba ${name},</p>
-      <p>Garajındaki ekipmanın sıradaki sahibine ulaşması artık daha kolay. Yeni <strong>Story kartı</strong> ile ürün fotoğrafını, fiyatını ve Motorya logosunu içeren Instagram hikâye görselini tek dokunuşla hazırlayabilirsin.</p>
-
-      <table style="width:100%;border-collapse:collapse;margin:16px 0">
-        <tr><td style="padding:8px 0;vertical-align:top;width:30px"><strong style="color:#D83E13">1</strong></td><td style="padding:8px 0">Motorya'da kendi ilanını aç.</td></tr>
-        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#D83E13">2</strong></td><td style="padding:8px 0"><strong>"Story kartı indir"</strong> düğmesine dokun — "İlanı Düzenle"nin hemen altında.</td></tr>
-        <tr><td style="padding:8px 0;vertical-align:top"><strong style="color:#D83E13">3</strong></td><td style="padding:8px 0">İnen görseli Instagram hikâyende paylaş.</td></tr>
-      </table>
-
-      <p style="text-align:center;margin:24px 0">
-        <img src="${this.appUrl}/mail/story-karti.png" width="260" alt="Örnek Story kartı: ürün fotoğrafı, fiyat ve Motorya logosu" style="width:260px;max-width:100%;height:auto;border-radius:12px;border:1px solid #e3e0d8">
-      </p>
-
-      <p>Görsel tam hikâye ölçüsünde (1080×1920) üretiliyor, yani yüklerken kırpman gerekmiyor. Hikâyene ilanının bağlantısını da eklersen ilgilenen motorcular doğrudan ilanına gelir.</p>
-
-      <a href="${this.appUrl}/ilanlarim" style="display:inline-block;background:#D83E13;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">İlanlarıma Git</a>
-
-      <p style="color:#888;font-size:13px">Garajındaki ekipman, başkasının sıradaki yolculuğu.<br>Motorya Ekibi</p>
+      <tr><td style="padding:22px 32px 0;" align="center">
+        <img src="${this.appUrl}/mail/story-duyuru.jpg" width="496" alt="Yeni özellik: ilanını paylaş, daha fazla motorcuya ulaş. Instagram Story kartın tek dokunuşla hazır." style="width:100%;max-width:496px;height:auto;display:block;border-radius:12px;border:1px solid #e4e6ea;">
+      </td></tr>
+      <tr><td style="padding:24px 32px 0;font-size:15px;color:#464b57;line-height:1.65;">
+        <div style="font-size:20px;font-weight:800;color:#1a1d24;line-height:1.35;">Yeni: Story kartı</div>
+        <div style="padding-top:12px;">
+          Merhaba ${name}, garajındaki ekipmanın sıradaki sahibine ulaşması artık daha kolay.
+          Ürün fotoğrafını, fiyatını ve Motorya logosunu içeren Instagram hikâye görselini
+          tek dokunuşla hazırlayabilirsin.
+        </div>
+      </td></tr>
+      <tr><td style="padding:20px 32px 0;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#fff7ed;border-radius:10px;">
+          <tr><td style="padding:16px 18px;font-size:14px;color:#464b57;line-height:1.9;">
+            <span style="color:#D83E13;font-weight:700;">1</span>&nbsp;&nbsp;Motorya'da kendi ilanını aç<br>
+            <span style="color:#D83E13;font-weight:700;">2</span>&nbsp;&nbsp;<strong>"Story kartı indir"</strong> düğmesine dokun — "İlanı Düzenle"nin hemen altında<br>
+            <span style="color:#D83E13;font-weight:700;">3</span>&nbsp;&nbsp;İnen görseli Instagram hikâyende paylaş
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:20px 32px 0;font-size:14.5px;color:#464b57;line-height:1.65;">
+        Görsel tam hikâye ölçüsünde (1080×1920) üretiliyor, yani yüklerken kırpman gerekmiyor.
+        Hikâyene ilanının bağlantısını da eklersen ilgilenen motorcular doğrudan ilanına gelir.
+      </td></tr>
+      <tr><td style="padding:24px 32px 0;" align="center">
+        <a href="${this.appUrl}/ilanlarim" style="display:inline-block;background:#D83E13;color:#ffffff;padding:14px 34px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;">İlanlarıma Git</a>
+      </td></tr>
+      <tr><td style="padding:20px 32px 0;">
+        <div style="font-size:13.5px;color:#767c89;line-height:1.6;text-align:center;">
+          Garajındaki ekipman, başkasının sıradaki yolculuğu.
+        </div>
+      </td></tr>
     `));
   }
 
