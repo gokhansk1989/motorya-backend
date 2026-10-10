@@ -473,7 +473,12 @@ export class AuthService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: user.id },
-        data: { passwordHash, passwordResetToken: null, passwordResetExpiry: null },
+        data: {
+          passwordHash,
+          passwordChangedAt: new Date(),
+          passwordResetToken: null,
+          passwordResetExpiry: null,
+        },
       }),
       this.prisma.device.updateMany({
         where: { userId: user.id, revokedAt: null },

@@ -14,7 +14,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; email: string }) {
+  async validate(payload: { sub: string; email: string; iat?: number }) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
@@ -28,6 +28,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
     if (user.status === 'BANNED' || user.status === 'SUSPENDED') {
       throw new UnauthorizedException('Bu hesap askıya alınmış');
+    }
+    // Sifre degisiminde cihazlar (refresh) iptal ediliyor, ama imzali access
+    // token durumsuz oldugu icin suresi dolana kadar calismaya devam
+    // ediyordu: hesabini kurtaran kullanici saldirgani iki saat daha
+    // disari atamiyordu. Jeton sifre degisiminden onceyse reddediyoruz.
+    if (user.passwordChangedAt && payload.iat) {
+      // iat saniye cinsinden; bir saniyelik tolerans birakiyoruz ki ayni
+      // saniyede uretilen taze jeton yanlislikla reddedilmesin.
+      if (payload.iat * 1000 < user.passwordChangedAt.getTime() - 1000) {
+        throw new UnauthorizedException('Şifre değişti, lütfen tekrar giriş yapın');
+      }
     }
     return user;
   }

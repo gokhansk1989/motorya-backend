@@ -282,7 +282,10 @@ export class UsersService {
     // Sifre degisince diger cihazlardaki oturumlar kapanmali; sifre
     // degistirmenin asil amaci zaten istenmeyen erisimi kesmek.
     await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: hash, passwordChangedAt: new Date() },
+      }),
       this.prisma.device.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: new Date() },

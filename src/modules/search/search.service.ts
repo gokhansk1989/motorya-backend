@@ -27,6 +27,15 @@ export interface ListingDocument {
   createdAt: number; // unix timestamp for sorting
 }
 
+// Filtre degerleri Meilisearch'in filtre diline giriyor. Kacirilmadan
+// yerlestirildiginde kullanici tirnagi kapatip OR ekleyebiliyordu; Meili'de
+// AND, OR'dan once bagladigi icin bu, listenin basindaki status = "ACTIVE"
+// kisitini etkisiz birakiyor ve moderasyondan gecmemis ya da reddedilmis
+// ilanlar disariya cikiyordu.
+function filtreDegeri(v: string): string {
+  return v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 @Injectable()
 export class SearchService implements OnModuleInit {
   private readonly logger = new Logger(SearchService.name);
@@ -108,17 +117,17 @@ export class SearchService implements OnModuleInit {
     } = params;
 
     const filters: string[] = ['status = "ACTIVE"'];
-    if (categoryId) filters.push(`categoryId = "${categoryId}"`);
-    if (brandId) filters.push(`brandId = "${brandId}"`);
-    if (condition) filters.push(`condition = "${condition}"`);
-    if (city) filters.push(`city = "${city}"`);
+    if (categoryId) filters.push(`categoryId = "${filtreDegeri(categoryId)}"`);
+    if (brandId) filters.push(`brandId = "${filtreDegeri(brandId)}"`);
+    if (condition) filters.push(`condition = "${filtreDegeri(condition)}"`);
+    if (city) filters.push(`city = "${filtreDegeri(city)}"`);
     // Bedenler indekse buyuk harfle yaziliyor; gelen deger de oyle normalize edilir.
-    if (sizeLabel) filters.push(`sizeLabel = "${sizeLabel.trim().toUpperCase()}"`);
-    if (gender) filters.push(`gender = "${gender}"`);
+    if (sizeLabel) filters.push(`sizeLabel = "${filtreDegeri(sizeLabel.trim().toUpperCase())}"`);
+    if (gender) filters.push(`gender = "${filtreDegeri(gender)}"`);
     if (minPrice !== undefined) filters.push(`price >= ${minPrice}`);
     if (maxPrice !== undefined) filters.push(`price <= ${maxPrice}`);
     if (excludeSellerIds && excludeSellerIds.length > 0) {
-      filters.push(`sellerId NOT IN [${excludeSellerIds.map(id => `"${id}"`).join(', ')}]`);
+      filters.push(`sellerId NOT IN [${excludeSellerIds.map(id => `"${filtreDegeri(id)}"`).join(', ')}]`);
     }
 
     const sortMap: Record<string, string> = {

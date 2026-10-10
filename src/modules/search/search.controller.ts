@@ -6,16 +6,24 @@ import { OptionalJwtGuard } from '../../common/guards/optional-jwt.guard';
 import { ListingsService } from '../listings/listings.service';
 import { SearchService } from './search.service';
 import { SocialService } from '../social/social.service';
-import { IsOptional, IsString, IsNumber, IsPositive, IsInt, Min, Max, IsEnum } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsPositive, IsInt, Min, Max, IsEnum, Matches, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
+// Kimlikler cuid ya da uuid; sehir ve beden kisa serbest metin ama filtre
+// diline girdikleri icin tirnak ve ters bolu gibi denetim karakterlerini
+// disarida birakiyoruz. Kacirma zaten search.service tarafinda yapiliyor;
+// bu ikinci katman, ileride yeni bir filtre eklenirken ayni hatanin
+// tekrarlanmasini zorlastiriyor.
+const KIMLIK = /^[A-Za-z0-9_-]{1,40}$/;
+const METIN = /^[\p{L}\p{N} .,'’()\/-]{1,60}$/u;
+
 class SearchQueryDto {
-  @IsOptional() @IsString() q?: string;
-  @IsOptional() @IsString() categoryId?: string;
-  @IsOptional() @IsString() brandId?: string;
-  @IsOptional() @IsString() condition?: string;
-  @IsOptional() @IsString() city?: string;
-  @IsOptional() @IsString() sizeLabel?: string;
+  @IsOptional() @IsString() @MaxLength(200) q?: string;
+  @IsOptional() @IsString() @Matches(KIMLIK) categoryId?: string;
+  @IsOptional() @IsString() @Matches(KIMLIK) brandId?: string;
+  @IsOptional() @IsEnum(['NEW', 'LIKE_NEW', 'GOOD', 'FAIR']) condition?: string;
+  @IsOptional() @IsString() @Matches(METIN) city?: string;
+  @IsOptional() @IsString() @Matches(METIN) sizeLabel?: string;
   @IsOptional() @IsEnum(['ERKEK', 'KADIN', 'UNISEX', 'COCUK']) gender?: string;
   @IsOptional() @Type(() => Number) @IsNumber() @IsPositive() minPrice?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @IsPositive() maxPrice?: number;
