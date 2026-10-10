@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminService } from './admin.service';
-import { ModerateListingDto, ModerateUserDto, ChangeRoleDto, UpdateReportStatusDto } from './dto/admin.dto';
+import { ModerateListingDto, ModerateUserDto, ChangeRoleDto, UpdateReportStatusDto, AnnouncementDto } from './dto/admin.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MessagesService } from '../messages/messages.service';
@@ -29,20 +29,52 @@ export class AdminController {
     private messagesService: MessagesService,
   ) {}
 
-  @Get('duyuru/onizleme')
+  @Get('duyurular')
   @Roles('ADMIN', 'SUPER_ADMIN')
-  duyuruOnizleme() {
-    return this.adminService.duyuruOnizleme();
+  duyuruListesi() {
+    return this.adminService.duyuruListesi();
   }
 
-  @Post('duyuru/story-karti')
+  @Get('duyurular/alici-sayisi')
   @Roles('ADMIN', 'SUPER_ADMIN')
-  storyKartiDuyurusu(@Query('test') test: string, @Request() req) {
-    return this.adminService.storyKartiDuyurusu({
-      test: test === '1',
-      testEmail: req.user?.email,
-      testAd: req.user?.displayName,
-    });
+  duyuruAliciSayisi(@Query('audience') audience?: string) {
+    return this.adminService.duyuruAliciSayisi(audience || 'MARKETING');
+  }
+
+  @Get('duyurular/:id')
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  duyuruGetir(@Param('id') id: string) {
+    return this.adminService.duyuruGetir(id);
+  }
+
+  @Post('duyurular')
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  duyuruOlustur(@Body() dto: AnnouncementDto, @Request() req) {
+    return this.adminService.duyuruOlustur(dto, req.user?.id);
+  }
+
+  @Patch('duyurular/:id')
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  duyuruGuncelle(@Param('id') id: string, @Body() dto: AnnouncementDto) {
+    return this.adminService.duyuruGuncelle(id, dto);
+  }
+
+  @Delete('duyurular/:id')
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  duyuruSil(@Param('id') id: string) {
+    return this.adminService.duyuruSil(id);
+  }
+
+  @Post('duyurular/:id/test')
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  duyuruTest(@Param('id') id: string, @Request() req) {
+    return this.adminService.duyuruTestGonder(id, req.user?.email, req.user?.displayName);
+  }
+
+  @Post('duyurular/:id/gonder')
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  duyuruGonder(@Param('id') id: string) {
+    return this.adminService.duyuruGonder(id);
   }
 
   @Get('metrics')

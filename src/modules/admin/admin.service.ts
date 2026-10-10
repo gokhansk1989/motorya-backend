@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ModerateListingDto, ModerateUserDto } from './dto/admin.dto';
 import { UserRole, ReportStatus } from '@prisma/client';
@@ -16,11 +16,11 @@ export class AdminService {
     private savedSearch: SavedSearchService,
   ) {}
 
-  // ── Urun duyurusu ────────────────────────────────────────────────────────
+  // ── Duyuru mailleri ──────────────────────────────────────────────────────
   //
-  // Duyuru maili pazarlama iletisidir: yalnizca MARKETING izni verenlere
-  // gider. Izin kayitlarinin en YENISI gecerlidir; kullanici izni geri
-  // cekmisse eski "kabul" kaydina bakip gondermek izinsiz ileti olur.
+  // Duyuru pazarlama iletisidir: yalnizca MARKETING izni verenlere gider.
+  // Izin kayitlarinin EN YENISI gecerlidir; kullanici izni geri cekmisse
+  // eski "kabul" kaydina bakip gondermek izinsiz ileti olur.
   private async pazarlamaIzniOlanlar(adaylar: { id: string }[]): Promise<Set<string>> {
     if (adaylar.length === 0) return new Set();
     const kayitlar = await this.prisma.userConsent.findMany({
@@ -35,48 +35,99 @@ export class AdminService {
     return new Set([...sonDurum.entries()].filter(([, kabul]) => kabul).map(([id]) => id));
   }
 
-  private async duyuruAdaylari() {
+  private async duyuruAlicilari(audience: string) {
     const adaylar = await this.prisma.user.findMany({
       where: { deletedAt: null, status: 'ACTIVE', emailVerifiedAt: { not: null } },
       select: { id: true, email: true, displayName: true },
     });
+    if (audience === 'ALL') return adaylar;
     const izinli = await this.pazarlamaIzniOlanlar(adaylar);
     return adaylar.filter(a => izinli.has(a.id));
   }
 
-  /** Kac kisiye gidecegini gonderimden once gosterir. */
-  async duyuruOnizleme() {
-    const alicilar = await this.duyuruAdaylari();
-    return { aliciSayisi: alicilar.length };
+  async duyuruListesi() {
+    return this.prisma.announcement.findMany({ orderBy: { createdAt: 'desc' }, take: 50 });
   }
 
-  /**
-   * Story karti duyurusunu gonderir.
-   * test=true ise yalnizca istegi yapan adrese gider — liste etkilenmez.
-   */
-  async storyKartiDuyurusu(opts: { test: boolean; testEmail?: string; testAd?: string }) {
-    if (opts.test) {
-      if (!opts.testEmail) return { gonderildi: 0, hata: 0 };
-      await this.mail.sendStoryCardAnnouncementEmail(opts.testEmail, opts.testAd || 'Motorcu');
-      return { gonderildi: 1, hata: 0, test: true };
+  async duyuruGetir(id: string) {
+    const d = await this.prisma.announcement.findUnique({ where: { id } });
+    if (!d) throw new NotFoundException('Duyuru bulunamadi');
+    return d;
+  }
+
+  /** Gonderimden once kac kisiye gidecegini gosterir. */
+  async duyuruAliciSayisi(audience: string) {
+    const alicilar = await this.duyuruAlicilari(audience);
+    return { aliciSayisi: alicilar.length, audience };
+  }
+
+  async duyuruOlustur(data: any, createdById?: string) {
+    return this.prisma.announcement.create({ data: { ...data, createdById } });
+  }
+
+  async duyuruGuncelle(id: string, data: any) {
+    const mevcut = await this.duyuruGetir(id);
+    // Gonderilmis duyurunun metni degistirilemez: kayit, gercekte ne
+    // gonderildigini gosteren tek belge.
+    if (mevcut.status === 'SENT') {
+      throw new BadRequestException('Gonderilmis duyuru duzenlenemez');
+    }
+    return this.prisma.announcement.update({ where: { id }, data });
+  }
+
+  async duyuruSil(id: string) {
+    const mevcut = await this.duyuruGetir(id);
+    if (mevcut.status === 'SENT') {
+      throw new BadRequestException('Gonderilmis duyuru silinemez');
+    }
+    await this.prisma.announcement.delete({ where: { id } });
+    return { silindi: true };
+  }
+
+  /** Yalnizca istegi yapan admine gonderir; liste etkilenmez, kayit degismez. */
+  async duyuruTestGonder(id: string, email?: string, ad?: string) {
+    const d = await this.duyuruGetir(id);
+    if (!email) throw new BadRequestException('Test icin adres bulunamadi');
+    await this.mail.sendAnnouncementEmail(email, ad || 'Motorcu', d);
+    return { gonderildi: 1, test: true };
+  }
+
+  async duyuruGonder(id: string) {
+    const d = await this.duyuruGetir(id);
+    if (d.status === 'SENT') {
+      throw new BadRequestException('Bu duyuru zaten gonderildi');
+    }
+    if (d.status === 'SENDING') {
+      throw new BadRequestException('Bu duyuru su anda gonderiliyor');
     }
 
-    const alicilar = await this.duyuruAdaylari();
+    // Once SENDING'e cekiyoruz: iki admin ayni anda basarsa ikincisi
+    // yukaridaki kontrole takilir, duyuru iki kez gitmez.
+    await this.prisma.announcement.update({ where: { id }, data: { status: 'SENDING' } });
+
+    const alicilar = await this.duyuruAlicilari(d.audience);
     let gonderildi = 0;
     let hata = 0;
-    // Resend saniyede 2 istege izin veriyor; toplu gonderimde araya bekleme
-    // koymazsak yarisi 429 ile dusuyor.
     for (const a of alicilar) {
       try {
-        await this.mail.sendStoryCardAnnouncementEmail(a.email, a.displayName || 'Motorcu');
+        await this.mail.sendAnnouncementEmail(a.email, a.displayName || 'Motorcu', d);
         gonderildi++;
       } catch {
         hata++;
       }
+      // Resend saniyede 2 istege izin veriyor; beklemeden gonderirsek
+      // buyuk bolumu 429 ile duser.
       await new Promise(r => setTimeout(r, 600));
     }
+
+    await this.prisma.announcement.update({
+      where: { id },
+      data: { status: 'SENT', sentAt: new Date(), sentCount: gonderildi, failCount: hata },
+    });
+
     return { gonderildi, hata, toplam: alicilar.length };
   }
+
 
   async getMetrics() {
     const [
