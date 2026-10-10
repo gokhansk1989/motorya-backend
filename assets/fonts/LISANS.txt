@@ -1,0 +1,7 @@
+Saira (Omnibus-Type)
+SIL Open Font License 1.1 — https://scripts.sil.org/OFL
+Kaynak: https://fonts.google.com/specimen/Saira
+
+Bu dosyalar paylasim karti uretiminde kullaniliyor; Docker imajinda
+/usr/share/fonts/truetype altina kopyalanir. OFL, yazi tipinin yazilimla
+birlikte dagitilmasina izin verir.

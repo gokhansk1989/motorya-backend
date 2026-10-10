@@ -22,7 +22,11 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache dumb-init openssl
+# Paylasim kartindaki yazilar sharp/librsvg ile ciziliyor; imajda hic font
+# olmadigi icin metinler bos cikiyordu. Saira SIL OFL lisanslidir.
+RUN apk add --no-cache dumb-init openssl fontconfig
+COPY assets/fonts/*.ttf /usr/share/fonts/truetype/
+RUN fc-cache -f
 
 COPY package*.json ./
 COPY --from=builder /app/node_modules ./node_modules

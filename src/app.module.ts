@@ -26,6 +26,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { ErrorLogsModule } from './modules/error-logs/error-logs.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
+import { ShareModule } from './modules/share/share.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { FeedbackModule } from './modules/feedback/feedback.module';
     AdminModule,
     OffersModule,
     SearchModule,
+    ShareModule,
     UploadModule,
     MessagesModule,
     SocialModule,
