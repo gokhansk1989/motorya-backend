@@ -7,6 +7,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { gecerliTcKimlik } from '../../common/tc-kimlik';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchService } from '../search/search.service';
 import { SocialService } from '../social/social.service';
@@ -252,6 +253,11 @@ export class UsersService {
     }
 
     if (dto.tcKimlik) {
+      // Kayit formundan TC alani kaldirildi; numara artik buradan giriyor.
+      // Dogrulama yalnizca kayit akisindaydi, bu yol kontrolsuzdu.
+      if (!gecerliTcKimlik(dto.tcKimlik)) {
+        throw new BadRequestException('Geçersiz T.C. Kimlik numarası');
+      }
       const existing = await this.prisma.user.findFirst({ where: { tcKimlik: dto.tcKimlik, id: { not: userId } } });
       if (existing) throw new ConflictException('Bu TC Kimlik numarası başka bir hesapla ilişkili');
     }

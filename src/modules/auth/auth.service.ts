@@ -7,17 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { SettingsService } from '../settings/settings.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-
-function validateTcKimlik(tc: string): boolean {
-  if (!/^[1-9][0-9]{10}$/.test(tc)) return false;
-  const d = tc.split('').map(Number);
-  const odd = d[0] + d[2] + d[4] + d[6] + d[8];
-  const even = d[1] + d[3] + d[5] + d[7];
-  const digit10 = ((odd * 7) - even) % 10;
-  if (digit10 < 0 || digit10 !== d[9]) return false;
-  const sum10 = d.slice(0, 10).reduce((a, b) => a + b, 0);
-  return (sum10 % 10) === d[10];
-}
+import { gecerliTcKimlik } from '../../common/tc-kimlik';
 
 function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -52,7 +42,7 @@ export class AuthService {
     if (!(await this.settings.get('new_registrations'))) {
       throw new ServiceUnavailableException('Yeni kayıtlar şu anda kapalı.');
     }
-    if (dto.tcKimlik && !validateTcKimlik(dto.tcKimlik)) {
+    if (dto.tcKimlik && !gecerliTcKimlik(dto.tcKimlik)) {
       throw new BadRequestException('Geçersiz TC Kimlik numarası');
     }
 
