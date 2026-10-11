@@ -27,6 +27,9 @@ WORKDIR /app
 RUN apk add --no-cache dumb-init openssl fontconfig
 COPY assets/fonts/*.ttf /usr/share/fonts/truetype/
 RUN fc-cache -f
+# Paylasim kartinda kullanilan logo. Calisma imajina kopyalanmadigi icin
+# kart logosuz uretiliyordu; builder asamasindaki dosyalar buraya gelmiyor.
+COPY assets/marka /app/assets/marka
 
 COPY package*.json ./
 COPY --from=builder /app/node_modules ./node_modules

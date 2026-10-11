@@ -34,6 +34,10 @@ const LOGO = { g: 420, y: 116 };
 // degistiginde dosya adindaki damga degistigi icin yenisi uretilir.
 const KART_DIZINI = join(process.cwd(), 'uploads', 'kart');
 
+// Kart tasarimi degistiginde onbellekteki eski gorseller servis edilmeye
+// devam ediyordu. Tasarima dokunan her degisiklikte bu surumu artir.
+const KART_SURUMU = 'v2';
+
 @Injectable()
 export class ShareService {
   constructor(private prisma: PrismaService) {
@@ -62,7 +66,7 @@ export class ShareService {
     // Kart uretimi istek basina ~1 saniye islemci harciyor ve uc herkese
     // acik. Onbelleklemeden, tek bir istemci mevcut hiz siniri icinde
     // kalarak sunucunun islemcisini doldurabiliyordu.
-    const onbellek = join(KART_DIZINI, `${ilan.id}-${ilan.updatedAt.getTime()}.png`);
+    const onbellek = join(KART_DIZINI, `${ilan.id}-${ilan.updatedAt.getTime()}-${KART_SURUMU}.png`);
     if (existsSync(onbellek)) {
       return readFile(onbellek);
     }
