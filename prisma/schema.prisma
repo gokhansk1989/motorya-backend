@@ -296,6 +296,9 @@ model Listing {
   soldToUserId String?
   soldTo       User?     @relation("ListingBuyer", fields: [soldToUserId], references: [id])
   soldAt       DateTime?
+  /// Alicinin alisverisi onayladigi an. Bos ise satis yalnizca saticinin
+  /// beyanidir; dolu ise iki taraf da kabul etmis demektir.
+  buyerConfirmedAt DateTime?
   categoryId   String
   category     Category  @relation(fields: [categoryId], references: [id])
   brandId      String?
@@ -342,6 +345,7 @@ model Listing {
   @@index([status, createdAt])
   @@index([categoryId, status])
   @@index([sellerId])
+  @@index([sellerId, buyerConfirmedAt])
   @@index([isFeatured, featuredUntil])
 }
 

@@ -225,6 +225,13 @@ export class ListingsController {
     return this.listingsService.getBuyerCandidates(req.user.id, id);
   }
 
+  // Alici onayi: saticinin "satildi" beyanini iki tarafli hale getirir.
+  @Patch(':id/alisverisi-onayla')
+  @UseGuards(AuthGuard('jwt'))
+  alisverisiOnayla(@Param('id') id: string, @Request() req) {
+    return this.listingsService.alisverisiOnayla(id, req.user.id);
+  }
+
   @Patch(':id/sold')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)

@@ -701,6 +701,61 @@ export class ListingsService {
 
   // originalPrice/price karşılaştırması Prisma'da sütun-sütun filtrelenemediği için
   // (raw SQL gerektirir), indirimli olabilecek adayları çekip JS'te filtreliyoruz.
+  /**
+   * Alicinin "evet, bu alisverisi yaptim" onayi.
+   *
+   * Yalnizca satici tarafindan alici olarak kaydedilen kisi onaylayabilir.
+   * Onay geri alinamaz; alindiginda satici profilinde "alici onayli"
+   * sayisina dahil olur. Mevcut salesCount degismeden kalir - o sayac
+   * saticinin beyanini temsil ediyor ve gecmise donuk yeniden
+   * hesaplanmiyor.
+   */
+  async alisverisiOnayla(listingId: string, buyerId: string) {
+    const listing = await this.prisma.listing.findFirst({
+      where: { id: listingId, deletedAt: null },
+      select: {
+        id: true, title: true, sellerId: true, soldToUserId: true,
+        status: true, buyerConfirmedAt: true, categoryId: true,
+        city: true, brandId: true,
+      },
+    });
+    if (!listing) throw new NotFoundException('Ilan bulunamadi');
+    if (listing.status !== ListingStatus.SOLD) {
+      throw new BadRequestException('Bu ilan satildi olarak isaretlenmemis');
+    }
+    if (listing.soldToUserId !== buyerId) {
+      throw new ForbiddenException('Bu alisverisi yalnizca alicisi onaylayabilir');
+    }
+    if (listing.buyerConfirmedAt) {
+      return { onaylandi: true, tarih: listing.buyerConfirmedAt };
+    }
+
+    const guncel = await this.prisma.listing.update({
+      where: { id: listingId },
+      data: { buyerConfirmedAt: new Date() },
+      select: { buyerConfirmedAt: true },
+    });
+
+    await this.prisma.notification.create({
+      data: {
+        userId: listing.sellerId,
+        type: 'sale.confirmed',
+        title: 'Alici alisverisi onayladi',
+        body: `"${listing.title}" alisverisi alici tarafindan onaylandi.`,
+        payload: { listingId },
+      },
+    }).catch(() => null);
+
+    return { onaylandi: true, tarih: guncel.buyerConfirmedAt };
+  }
+
+  /** Saticinin alici tarafindan onaylanmis alisveris sayisi. */
+  async onayliSatisSayisi(sellerId: string): Promise<number> {
+    return this.prisma.listing.count({
+      where: { sellerId, buyerConfirmedAt: { not: null }, deletedAt: null },
+    });
+  }
+
   async getPriceDrops(limit = 12) {
     const candidates = await this.prisma.listing.findMany({
       where: { status: 'ACTIVE', deletedAt: null, originalPrice: { not: null } },
@@ -1280,6 +1335,15 @@ export class ListingsService {
       const slug = buildListingSlug({ ...listing, category: null as any });
       await this.prisma.notification.createMany({
         data: [
+          {
+            // Satış şu an yalnızca satıcının beyanı. Alıcıdan onay istiyoruz;
+            // onaylanan alışverişler profilde beyandan ayrı gösteriliyor.
+            userId: buyerId,
+            type: 'sale.confirm_request',
+            title: 'Bu alışverişi onaylıyor musun?',
+            body: `"${listing.title}" ilanının satıcısı sana sattığını belirtti. Doğruysa onayla.`,
+            payload: { listingId, listingSlug: slug },
+          },
           {
             userId: buyerId,
             type: 'review.invite',

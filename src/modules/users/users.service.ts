@@ -78,7 +78,12 @@ export class UsersService {
     };
     const badges = this.getBadges(userWithResponder);
     const trustScore = this.getTrustScore(userWithResponder);
-    return { ...userWithResponder, badges, trustScore };
+    // salesCount saticinin "satildi" beyanidir. Alicinin ayrica onayladigi
+    // alisverisler ayri sayiliyor ki profil ikisini karistirmasin.
+    const onayliSatis = await this.prisma.listing.count({
+      where: { sellerId: user.id, buyerConfirmedAt: { not: null }, deletedAt: null },
+    });
+    return { ...userWithResponder, badges, trustScore, onayliSatis };
   }
 
   async updateNotificationPrefs(userId: string, dto: Partial<Record<keyof typeof DEFAULT_NOTIFICATION_PREFS, boolean>>) {
@@ -142,7 +147,12 @@ export class UsersService {
     const userWithResponder = { ...user, fastResponder };
     const badges = this.getBadges(userWithResponder);
     const trustScore = this.getTrustScore(userWithResponder);
-    return { ...userWithResponder, badges, trustScore };
+    // salesCount saticinin "satildi" beyanidir. Alicinin ayrica onayladigi
+    // alisverisler ayri sayiliyor ki profil ikisini karistirmasin.
+    const onayliSatis = await this.prisma.listing.count({
+      where: { sellerId: user.id, buyerConfirmedAt: { not: null }, deletedAt: null },
+    });
+    return { ...userWithResponder, badges, trustScore, onayliSatis };
   }
 
   // Son 30 konuşmada satıcının alıcıya ortalama yanıt süresi 60 dk altındaysa "Hızlı yanıt verir" rozeti
