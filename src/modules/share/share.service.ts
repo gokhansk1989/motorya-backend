@@ -17,7 +17,18 @@ const MURECCEP = '#121318';
 const ACCENT = '#D83E13';
 const SOLUK = '#85878F';
 
-const FOTO = { x: 90, y: 430, g: 900, y2: 900 };
+// Instagram arayuzu kartin en ust ve en alt seridini kapatiyor (profil
+// adi, yanit kutusu, paylasim dugmeleri). Onemli hicbir sey bu bantlara
+// girmemeli; icerigi guvenli alana sikistiriyoruz.
+const UST_GUVENLI = 290;
+const ALT_GUVENLI = YUKSEKLIK - 300; // 1620
+
+const FOTO = { x: 90, y: 548, g: 900, y2: 742 };
+
+// Site logosunun kendisi. Onceden "MOTORYA" yazisi SVG metni olarak
+// ciziliyordu; harf bicimleri sitedeki logoyla ayni degildi.
+const LOGO_YOLU = join(process.cwd(), 'assets', 'marka', 'logo-wordmark.png');
+const LOGO = { g: 420, y: 116 };
 
 // Uretilen kartlar burada saklanir. Her kart bir kez uretilir; ilan
 // degistiginde dosya adindaki damga degistigi icin yenisi uretilir.
@@ -58,6 +69,7 @@ export class ShareService {
 
     const foto = await this.fotoKatmani(ilan.images[0]?.url);
     const svg = this.kartSvg({
+      fotoVar: !!foto,
       baslik: ilan.title,
       fiyat: Number(ilan.price),
       sehir: ilan.city,
@@ -68,6 +80,17 @@ export class ShareService {
     const katmanlar: Parameters<ReturnType<typeof sharp>['composite']>[0] = [];
     if (foto) katmanlar.push({ input: foto, left: FOTO.x, top: FOTO.y });
     katmanlar.push({ input: Buffer.from(svg) });
+
+    // Logo en uste biniyor. Dosya okunamazsa kart yine uretiliyor; eksik
+    // logo, kartin hic olusmamasindan iyidir.
+    if (existsSync(LOGO_YOLU)) {
+      try {
+        const logo = await sharp(LOGO_YOLU).resize({ width: LOGO.g }).png().toBuffer();
+        katmanlar.push({ input: logo, left: 90, top: UST_GUVENLI + 10 });
+      } catch {
+        // gec
+      }
+    }
 
     const png = await sharp({
       create: {
@@ -147,46 +170,56 @@ export class ShareService {
     sehir: string | null;
     beden: string | null;
     marka: string | null;
+    fotoVar: boolean;
   }): string {
-    const fiyat = new Intl.NumberFormat('tr-TR').format(d.fiyat) + ' ₺';
+    // Sitedeki bicimle ayni: "15.000 ₺" (bkz. frontend lib/utils formatPrice).
+    const fiyat = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }).format(d.fiyat) + ' ₺';
     const satirlar = this.basligiBol(d.baslik, 26);
     const rozetler = [d.marka, d.beden ? `Beden ${d.beden}` : null, d.sehir]
       .filter(Boolean)
       .join('  ·  ');
 
+    // Iki satirlik baslik fiyata fazla yaklasiyordu; satir sayisina gore
+    // blogu yukari aliyoruz.
+    const baslikTabani = FOTO.y + FOTO.y2 + (satirlar.length > 1 ? 66 : 84);
     const baslikSvg = satirlar
-      .map((s, i) => `<text x="90" y="${1450 + i * 62}" class="baslik">${kacir(s)}</text>`)
+      .map((s, i) => `<text x="90" y="${baslikTabani + i * 58}" class="baslik">${kacir(s)}</text>`)
       .join('');
+
+    // Fotograf okunamadiginda ortada 742 piksellik bos bir alan kaliyordu.
+    // Kartin bozuk gorunmemesi icin oraya sade bir marka paneli koyuyoruz.
+    const fotoYedek = d.fotoVar ? '' : `
+  <rect x="${FOTO.x}" y="${FOTO.y}" width="${FOTO.g}" height="${FOTO.y2}" rx="28" fill="#F1EFEA"/>
+  <text x="${FOTO.x + FOTO.g / 2}" y="${FOTO.y + FOTO.y2 / 2 + 12}" text-anchor="middle" class="alt">Fotoğraf için ilana göz at</text>`;
 
     return `<svg width="${GENISLIK}" height="${YUKSEKLIK}" xmlns="http://www.w3.org/2000/svg">
   <style>
     text { font-family: 'Saira'; }
-    .logo { font-size: 72px; font-weight: 800; letter-spacing: -3px; fill: ${MURECCEP}; }
     .rozet { font-size: 26px; font-weight: 700; letter-spacing: 2px; fill: #ffffff; }
-    .baslik { font-size: 52px; font-weight: 700; fill: ${MURECCEP}; }
-    .fiyat { font-size: 104px; font-weight: 800; fill: ${ACCENT}; letter-spacing: -2px; }
-    .alt { font-size: 30px; font-weight: 700; fill: ${SOLUK}; }
-    .cta { font-size: 34px; font-weight: 700; fill: ${MURECCEP}; }
-    .adres { font-size: 30px; font-weight: 700; fill: ${SOLUK}; letter-spacing: 1px; }
+    .baslik { font-size: 50px; font-weight: 700; fill: ${MURECCEP}; }
+    .fiyat { font-size: 96px; font-weight: 800; fill: ${ACCENT}; letter-spacing: -2px; }
+    .alt { font-size: 29px; font-weight: 700; fill: ${SOLUK}; }
+    .cta { font-size: 32px; font-weight: 700; fill: ${MURECCEP}; }
+    .adres { font-size: 29px; font-weight: 700; fill: ${SOLUK}; letter-spacing: 1px; }
   </style>
 
-  <!-- Marka -->
-  <text x="90" y="200" class="logo"><tspan fill="${ACCENT}">M</tspan>OTORYA</text>
-  <rect x="90" y="248" width="900" height="5" rx="2" fill="${ACCENT}"/>
+  <!-- Logo gorsel olarak ustte birlestiriliyor; burada yalnizca altindaki
+       cizgi var. Guvenli alanin icinde duruyor. -->
+  <rect x="90" y="${UST_GUVENLI + 146}" width="900" height="5" rx="2" fill="${ACCENT}"/>
+  ${fotoYedek}
 
   <!-- Satilik rozeti -->
-  <rect x="90" y="310" width="206" height="62" rx="31" fill="${ACCENT}"/>
-  <text x="193" y="352" class="rozet" text-anchor="middle">SATILIK</text>
+  <rect x="90" y="${UST_GUVENLI + 166}" width="206" height="62" rx="31" fill="${ACCENT}"/>
+  <text x="193" y="${UST_GUVENLI + 208}" class="rozet" text-anchor="middle">SATILIK</text>
 
-  <!-- Baslik, fiyat, kunye -->
+  <!-- Baslik, fiyat, kunye: hepsi alt guvenli sinirin ustunde -->
   ${baslikSvg}
-  <text x="90" y="1610" class="fiyat">${kacir(fiyat)}</text>
-  ${rozetler ? `<text x="90" y="1668" class="alt">${kacir(rozetler)}</text>` : ''}
+  <text x="90" y="${ALT_GUVENLI - 124}" class="fiyat">${kacir(fiyat)}</text>
+  ${rozetler ? `<text x="90" y="${ALT_GUVENLI - 74}" class="alt">${kacir(rozetler)}</text>` : ''}
 
-  <!-- Alt serit -->
-  <rect x="90" y="1736" width="900" height="2" rx="1" fill="#E3E0D8"/>
-  <text x="90" y="1806" class="cta">İlanı Motorya'da keşfet →</text>
-  <text x="990" y="1806" class="adres" text-anchor="end">motorya.com.tr</text>
+  <rect x="90" y="${ALT_GUVENLI - 52}" width="900" height="2" rx="1" fill="#E3E0D8"/>
+  <text x="90" y="${ALT_GUVENLI - 20}" class="cta">İlanı Motorya'da keşfet</text>
+  <text x="990" y="${ALT_GUVENLI - 20}" class="adres" text-anchor="end">motorya.com.tr</text>
 </svg>`;
   }
 }

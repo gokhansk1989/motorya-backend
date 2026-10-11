@@ -159,8 +159,23 @@ export class ListingsService {
     };
   }
 
+  /**
+   * Menu, kategori sayfalari, arama filtreleri ve ilan formu hepsi buradan
+   * besleniyor; tek kaynak olmasi icin kural da burada.
+   *
+   * Yalnizca isActive bakmak yetmiyordu: pasif bir ust kategorinin AKTIF
+   * cocuklari listede kaliyordu. Ebeveynleri elendigi icin hicbir kartin
+   * altinda gorunmuyorlar ama sayilara dahil oluyorlardi - "86 alt kategori"
+   * yazip 67 gostermesinin sebebi buydu. Ayrica Kask sayfasinda
+   * "Cross / Enduro" gibi, aslinda pasif bir agaca ait baslikler cikiyordu.
+   */
   async getCategories() {
-    return this.prisma.category.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } });
+    const hepsi = await this.prisma.category.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+    const aktifIdler = new Set(hepsi.map(c => c.id));
+    return hepsi.filter(c => !c.parentId || aktifIdler.has(c.parentId));
   }
 
   async adminGetCategories() {
@@ -172,9 +187,11 @@ export class ListingsService {
     // `return null` NestJS'te 200 + boş gövde döndürüyordu; istemci tarafında
     // res.json() patlıyor ve sayfa 500 veriyordu. Olmayan kategori 404 olmalı.
     if (!category) throw new NotFoundException('Category not found');
-    const children = await this.prisma.category.findMany({ where: { parentId: category.id }, orderBy: { sortOrder: 'asc' } });
+    // isActive suzgeci yoktu: pasif alt kategoriler (orn. "Cross / Enduro
+    // Kask", "Adventure Kask") kategori sayfasinda gorunmeye devam ediyordu.
+    const children = await this.prisma.category.findMany({ where: { parentId: category.id, isActive: true }, orderBy: { sortOrder: 'asc' } });
     const grandchildren = children.length > 0
-      ? await this.prisma.category.findMany({ where: { parentId: { in: children.map(c => c.id) } }, orderBy: { sortOrder: 'asc' } })
+      ? await this.prisma.category.findMany({ where: { parentId: { in: children.map(c => c.id) }, isActive: true }, orderBy: { sortOrder: 'asc' } })
       : [];
     return { category, children, grandchildren };
   }
