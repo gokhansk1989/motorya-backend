@@ -91,6 +91,12 @@ ilan ve olay sayıları karıştırılmıyor — birim metrik adında ve tanım�
 **Gönderim → yayın** (veritabanı)
 - Oran = `publishedAt IS NOT NULL` ÷ `createdAt < şimdi-48sa` olan ilanlar
 - Medyan bekleme = `percentile_cont(0.5)` üzerinden `publishedAt - createdAt`
+- Ret neden kırılımı = `Listing.rejectionReason` kodları (`src/common/ret-nedenleri.ts`).
+  Kod zorunlu değil: önbellekten çalışan eski bir panel paketi reddetmeyi
+  kırmasın. Kod gelmezse NULL kalıyor ve kırılımda **`kod-girilmemiş`** olarak
+  ayrı satırda duruyor — alan eklenmeden önceki retler de orada. Tahminle
+  doldurulmuyor. Serbest metin açıklama satıcıya gidiyor, **analitiğe
+  girmiyor**; kişisel veri içerebiliyor
 - Personel satıcılar hariç
 
 **Arama** (olay)
@@ -99,6 +105,9 @@ ilan ve olay sayıları karıştırılmıyor — birim metrik adında ve tanım�
   **Olay oranıdır**, %100'ü aşabilir (bir arama birden fazla tıklama üretir)
 
 **Satıcıya ulaşma**
+- Detay → ilk mesaj gönderimi = kaydedilmiş ilk alıcı mesajı ÷ detay görüntülemesi.
+  Uçtan uca oran; aşağıdaki iki metrik aynı yolu düğme tıklamasından bölerek
+  düşüşün nerede olduğunu gösteriyor
 - Detay → mesaj butonu = buton tıklaması ÷ detay görüntülemesi (ikisi de `kendiIlani=false`)
 - Satıcı yanıt oranı = yanıtlanan konuşma ÷ ilk mesajı 48 saatten eski konuşma
 - Medyan yanıt süresi = ilk satıcı mesajı − ilk alıcı mesajı
@@ -136,7 +145,20 @@ ADMIN/SUPER_ADMIN'e kısıtlı. Panelde menüyü gizlemek yeterli değil.
 Eklemeli değişiklik — sıra **veritabanı → kod** (bkz. `motorya-db-migration`):
 
 ```bash
-ssh ubuntu@78.47.227.132 "sudo -u postgres psql -d vites -f -" < prisma/migrations/add_analytics_event.sql
+# Kilit kuyruğuna girmemek için lock_timeout ile; betikler yeniden koşulabilir
+(echo "SET lock_timeout='3s';"; cat prisma/migrations/add_analytics_event.sql) \
+  | ssh ubuntu@78.47.227.132 "sudo -u postgres psql -d vites -v ON_ERROR_STOP=1 -f -"
+(echo "SET lock_timeout='3s';"; cat prisma/migrations/add_listing_rejection_reason.sql) \
+  | ssh ubuntu@78.47.227.132 "sudo -u postgres psql -d vites -v ON_ERROR_STOP=1 -f -"
+```
+
+Yabancı anahtar eklenirken `User` üzerinde kısa bir `ShareRowExclusiveLock`
+alınıyor (ölçüldü: 59 ms) — okuma serbest, yazma bekliyor. `lock_timeout`
+kilit kuyruğunun o 59 ms'yi dakikalara çevirmesini engelliyor.
+
+Doğrulama:
+
+```bash
 ssh ubuntu@78.47.227.132 "sudo -u postgres psql -d vites -c '\d \"AnalyticsEvent\"'"
 ```
 
