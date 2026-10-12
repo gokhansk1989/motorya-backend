@@ -355,6 +355,18 @@ export class RaporService {
         AND NOT (${personelVeya})
     `);
 
+    // Ret nedeni kirilimi. Kod girilmemis eski retler NULL; onlari ayri bir
+    // satir olarak gosteriyoruz, "diger"e yikmak gecmisi uydurmak olurdu.
+    const retKirilimi = await this.prisma.$queryRaw<{ kod: string; adet: bigint }[]>(Prisma.sql`
+      SELECT COALESCE(l."rejectionReason", 'kod-girilmemis') AS kod, COUNT(*) AS adet
+      FROM "Listing" l
+      WHERE l."deletedAt" IS NULL
+        AND l.status = 'REJECTED'
+        AND l."createdAt" >= ${ts(baslangic)} AND l."createdAt" < ${ts(bitis)}
+        AND NOT (${personelVeya})
+      GROUP BY 1 ORDER BY adet DESC LIMIT 12
+    `);
+
     const g = Number(satir?.gonderilen ?? 0);
     const olgun = Number(satir?.olgun ?? 0);
     const yayin = Number(satir?.olgunyayinlanan ?? 0);
@@ -374,7 +386,13 @@ export class RaporService {
           'veritabani',
         ),
         sayiMetrigi('Hala onay bekleyen', 'Donemde gonderilmis ve su an PENDING_REVIEW olan ilan sayisi.', Number(satir?.beklemede ?? 0), 'veritabani'),
-        sayiMetrigi('Reddedilen', 'Donemde gonderilip reddedilen ilan sayisi.', Number(satir?.reddedilen ?? 0), 'veritabani', 'Yapisal ret nedeni kodu henuz tutulmuyor; ret notu serbest metin oldugu icin analitige alinmadi.'),
+        sayiMetrigi(
+          'Reddedilen',
+          'Donemde gonderilip reddedilen ilan sayisi. Neden kirilimi asagida.',
+          Number(satir?.reddedilen ?? 0),
+          'veritabani',
+          'Neden kodu alani eklenmeden once reddedilen ilanlar kirilimda "kod-girilmemis" olarak gorunur; geriye donuk tahminle doldurulmadi.',
+        ),
         sureMetrigi(
           'Medyan yayina alinma suresi',
           'Yayina alinmis ilanlarda publishedAt - createdAt degerlerinin medyani (saat).',
@@ -383,6 +401,7 @@ export class RaporService {
           'veritabani',
         ),
       ],
+      retKirilimi: retKirilimi.map((r) => ({ kod: r.kod, adet: Number(r.adet) })),
     };
   }
 

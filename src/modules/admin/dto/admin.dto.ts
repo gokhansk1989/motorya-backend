@@ -1,9 +1,20 @@
 import { IsEnum, IsOptional, IsString, IsIn, MaxLength } from 'class-validator';
+import { RET_NEDENI_KODLARI } from '../../../common/ret-nedenleri';
 import { UserStatus, UserRole, ReportStatus } from '@prisma/client';
 
 export class ModerateListingDto {
   @IsEnum(['ACTIVE', 'REJECTED', 'ARCHIVED'])
   action: 'ACTIVE' | 'REJECTED' | 'ARCHIVED';
+
+  /**
+   * Ret neden kodu. Zorunlu tutulmuyor: eski bir panel paketi onbellekten
+   * calisiyorsa reddetme islemi 400 ile kirilmasin. Kod gelmezse NULL
+   * kaliyor ve rapor bunu "kod girilmemis" olarak ayri gosteriyor -
+   * tahminle doldurmaktan iyi.
+   */
+  @IsOptional()
+  @IsIn(RET_NEDENI_KODLARI)
+  rejectionReason?: string;
 
   @IsOptional()
   @IsString()

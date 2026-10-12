@@ -7,6 +7,8 @@ import { SearchService } from '../search/search.service';
 import { SavedSearchService } from '../saved-search/saved-search.service';
 import { buildListingSlug } from '../listings/listings.service';
 
+import { retNedeniEtiketi } from '../../common/ret-nedenleri';
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -222,6 +224,10 @@ export class AdminService {
         data: {
           status: dto.action,
           publishedAt: dto.action === 'ACTIVE' ? new Date() : listing.publishedAt,
+          // Ret nedeni yalnizca reddederken yaziliyor; sonradan onaylanirsa
+          // temizleniyor, yoksa yayindaki ilan eski ret koduyla dolasirdi.
+          rejectionReason:
+            dto.action === 'REJECTED' ? (dto.rejectionReason ?? null) : null,
         },
       }),
       this.prisma.auditLog.create({
@@ -230,7 +236,7 @@ export class AdminService {
           action: dto.action === 'ACTIVE' ? 'listing.approve' : 'listing.reject',
           entity: 'Listing',
           entityId: id,
-          meta: { note: dto.note },
+          meta: { note: dto.note, rejectionReason: dto.rejectionReason ?? null },
         },
       }),
     ]);
@@ -300,16 +306,26 @@ export class AdminService {
         }).catch(() => null);
       }
     } else if (dto.action === 'REJECTED') {
-      this.mail.sendListingRejectedEmail(listing.seller.email, listing.seller.displayName, listing.title, dto.note).catch(() => null);
+      const retSebebi =
+        [retNedeniEtiketi(dto.rejectionReason), dto.note?.trim()].filter(Boolean).join(' — ') ||
+        undefined;
+      this.mail.sendListingRejectedEmail(listing.seller.email, listing.seller.displayName, listing.title, retSebebi).catch(() => null);
       this.search.removeListing(id).catch(() => null);
       this.prisma.notification.create({
         data: {
           userId: listing.seller.id,
           type: 'listing.rejected',
           title: 'İlanın onaylanmadı',
-          body: dto.note
-            ? `"${listing.title}" ilanın reddedildi. Sebep: ${dto.note}`
-            : `"${listing.title}" ilanın reddedildi. Düzenleyip tekrar gönderebilirsin.`,
+          // Saticiya once kodun insan okunur etiketi, varsa serbest metin
+          // aciklamasi gidiyor. Kod her zaman var olacagi icin "sebep
+          // yazilmamis" ret bildirimleri de artik bos degil.
+          body: (() => {
+            const etiket = retNedeniEtiketi(dto.rejectionReason);
+            const sebep = [etiket, dto.note?.trim()].filter(Boolean).join(' — ');
+            return sebep
+              ? `"${listing.title}" ilanın reddedildi. Sebep: ${sebep}`
+              : `"${listing.title}" ilanın reddedildi. Düzenleyip tekrar gönderebilirsin.`;
+          })(),
           payload: { listingId: id },
         },
       }).catch(() => null);
