@@ -2,13 +2,18 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { buildListingSlug } from '../listings/listings.service';
 
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
 
-  constructor(private prisma: PrismaService, private mail: MailService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mail: MailService,
+    private analytics: AnalyticsService,
+  ) {}
 
   // Her 30 dakikada süresi dolan rezervasyonları kontrol et
   @Cron(CronExpression.EVERY_30_MINUTES)
@@ -766,5 +771,16 @@ export class TasksService {
       where: { createdAt: { lt: sinir } },
     });
     if (count > 0) this.logger.log(`Hata kaydi temizlendi: ${count} satir (14 gunden eski)`);
+  }
+  /**
+   * Analitik olaylarinin saklama suresi: 180 gun.
+   *
+   * Huni oranlari icin 30-90 gunluk pencere karar uretiyor; daha eskisi yer
+   * tutmaktan baska bir is yapmiyor. Hesap silinince o hesabin olaylari
+   * iliskiyle birlikte zaten siliniyor, bu gorev yalnizca yas siniri.
+   */
+  @Cron('15 4 * * *')
+  async analitikOlaylariTemizle() {
+    await this.analytics.eskileriSil(180);
   }
 }

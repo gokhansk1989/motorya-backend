@@ -26,6 +26,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { ErrorLogsModule } from './modules/error-logs/error-logs.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ShareModule } from './modules/share/share.module';
 
 @Module({
@@ -58,6 +59,7 @@ import { ShareModule } from './modules/share/share.module';
     IntegrationsModule,
     ErrorLogsModule,
     FeedbackModule,
+    AnalyticsModule,
   ],
   controllers: [HealthController, RootController],
   providers: [
