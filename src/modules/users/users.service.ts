@@ -205,19 +205,18 @@ export class UsersService {
     identityVerifiedAt: Date | null;
     fastResponder: boolean;
   }) {
-    // Not: identityVerifiedAt ve phoneVerifiedAt alanlari kodun hicbir yerinde
-    // YAZILMIYOR - boyle bir dogrulama akisi yok. Asagidaki iki rozet bu yuzden
-    // bugun hicbir kullanicida gorunmuyor. Alanlar ileride gercek bir dogrulama
-    // eklenirse kullanilmak uzere duruyor; o gune kadar hicbir metinde bu
-    // dogrulamalar varmis gibi anlatilmamali.
+    // "Kimlik Dogrulandi" ve "Telefon Dogrulandi" rozetleri buradan kaldirildi:
+    // identityVerifiedAt ve phoneVerifiedAt alanlari kodun hicbir yerinde
+    // YAZILMIYOR, yani o rozetler hicbir kullanicida gorunemezdi. Olu kod
+    // olarak durmalari, ileride birinin "bizde kimlik dogrulamasi var"
+    // sanmasina yol aciyordu. Veritabani alanlari korundu; gercek bir
+    // dogrulama akisi eklenirse rozetler de geri gelir.
     const badges: { key: string; label: string; icon: string; tier: 'gold' | 'silver' | 'blue' }[] = [];
 
-    if (user.identityVerifiedAt) badges.push({ key: 'identity_verified', label: 'Kimlik Doğrulandı', icon: '🪪', tier: 'gold' });
     if (user.ratingAvg >= 4.5 && user.ratingCount >= 5) badges.push({ key: 'trusted_seller', label: 'Güvenilir Satıcı', icon: '⭐', tier: 'gold' });
     if (user.salesCount >= 10) badges.push({ key: 'top_seller', label: 'Çok Satan', icon: '🏆', tier: 'gold' });
     if (user.isFounder) badges.push({ key: 'founder', label: 'Kurucu Üye', icon: '🚀', tier: 'gold' });
     if (user.fastResponder) badges.push({ key: 'fast_responder', label: 'Hızlı Yanıt', icon: '⚡', tier: 'silver' });
-    if (user.phoneVerifiedAt) badges.push({ key: 'phone_verified', label: 'Telefon Doğrulandı', icon: '📱', tier: 'silver' });
     if (user.emailVerifiedAt) badges.push({ key: 'email_verified', label: 'E-posta Doğrulandı', icon: '✉️', tier: 'blue' });
 
     return badges;
