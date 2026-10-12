@@ -533,6 +533,15 @@ export class RaporService {
         `)
       : [{ buton: BigInt(0) }];
 
+    const [karmaDetay] = karmaKapsiyor
+      ? await this.prisma.$queryRaw<{ detay: bigint }[]>(Prisma.sql`
+          SELECT COUNT(*) AS detay FROM "AnalyticsEvent"
+          WHERE name = 'ilan_detay_goruntulendi' AND NOT "isStaff"
+            AND COALESCE((props->>'kendiIlani')::boolean, false) = false
+            AND "occurredAt" >= ${ts(karmaBaslangic)} AND "occurredAt" < ${ts(bitis)}
+        `)
+      : [{ detay: BigInt(0) }];
+
     const detay = Number(olaySatir?.detay ?? 0);
     const buton = Number(olaySatir?.buton ?? 0);
     const ilkMesaj = Number(konusma?.toplam ?? 0);
@@ -551,6 +560,16 @@ export class RaporService {
           buton,
           detay,
           'olay',
+        ),
+        oranMetrigi(
+          'Ilan detayi -> ilk mesaj gonderimi',
+          `Pay: sunucuda kaydedilmis ilk alici mesaji. Payda: ilan detay goruntulemesi (ilan sahibinin kendi ilani haric). Hunin ucundan ucuna orani; asagidaki iki metrik ayni yolu dugme tiklamasindan bolerek dususun nerede oldugunu gosteriyor. KARMA kaynakli: yalnizca iki tarafin da veri urettigi aralikta hesaplanir${
+            ilkOlay && ilkOlay > baslangic ? ` (${karmaBaslangic.toISOString().slice(0, 10)} sonrasi)` : ''
+          }.`,
+          Number(karma?.ilkmesaj ?? 0),
+          Number(karmaDetay?.detay ?? 0),
+          'karma',
+          karmaKapsiyor ? undefined : 'Donemde olay kaydi yok; bu oran hesaplanamiyor.',
         ),
         oranMetrigi(
           'Mesaj dugmesi -> kaydedilmis ilk mesaj',
