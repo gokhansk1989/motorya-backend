@@ -7,11 +7,19 @@
 # Postgres burada docker'da degil, dogrudan sistemde calisiyor.
 set -euo pipefail
 
+# Yedekler tum veritabanini duz metin SQL olarak tasiyor: e-postalar, parola
+# ozetleri, T.C. kimlik numaralari, sifreli mesajlar ve sarmalanmis anahtarlari.
+# Dosyalar 664, dizin 755 ile olusuyordu; sunucudaki her kullanici - web
+# sunucusunun calistigi www-data dahil - okuyabiliyordu. umask 077 yeni
+# dosyalarin 600, dizinin 700 dogmasini sagliyor.
+umask 077
+
 : "${BACKUP_DIR:=/var/backups/postgres}"
 : "${RETENTION_DAYS:=14}"
 : "${PGDBS:=vites ortamnasil}"   # sunucudaki tum uygulama veritabanlari
 
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 TS=$(date -u +%Y%m%d-%H%M%S)
 
 for DB in $PGDBS; do
