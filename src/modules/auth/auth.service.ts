@@ -178,7 +178,10 @@ export class AuthService {
     // MFA sadece admin panelinden gelen isteklerde ve admin rolündeyse devreye girer
     const isAdminUser = ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'].includes(user.role);
     if (isAdminPanel && isAdminUser) {
-      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      // Math.random() kriptografik degil; V8'in durumu yeterli ciktidan
+      // geri cikarilabiliyor. Dogrulama kodu bir kimlik dogrulama sirri
+      // oldugu icin CSPRNG kullaniyoruz. Davranis ayni: 6 haneli kod.
+      const otp = String(crypto.randomInt(100000, 1000000));
       const expiry = new Date(Date.now() + 10 * 60 * 1000);
       await this.prisma.user.update({
         where: { id: user.id },

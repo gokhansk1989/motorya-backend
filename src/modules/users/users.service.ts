@@ -71,8 +71,17 @@ export class UsersService {
     });
     if (!user) throw new NotFoundException('User not found');
     const fastResponder = await this.isFastResponder(userId);
+
+    // T.C. kimlik numarasinin TAMAMI bu yanitla donuyordu; profil formu onu
+    // dolduruyor, deger tarayici hafizasina, istemci onbellegine ve
+    // gelistirici konsoluna dusuyordu. Numarayi degistirmek icin eski degeri
+    // okumak gerekmiyor, bu yuzden yalnizca maskeli hali ve "dolu mu" bilgisi
+    // donuyor. Saklanan veri degismiyor.
+    const { tcKimlik, ...kalan } = user as typeof user & { tcKimlik: string | null };
     const userWithResponder = {
-      ...user,
+      ...kalan,
+      tcKimlikVar: !!tcKimlik,
+      tcKimlikMaskeli: tcKimlik ? `•••••••${tcKimlik.slice(-2)}` : null,
       fastResponder,
       notificationPrefs: { ...DEFAULT_NOTIFICATION_PREFS, ...((user.notificationPrefs as any) ?? {}) },
     };
@@ -272,10 +281,14 @@ export class UsersService {
       if (existing) throw new ConflictException('Bu TC Kimlik numarası başka bir hesapla ilişkili');
     }
 
-    const { birthDate, displayName: _eskiIstemci, ...rest } = dto;
+    // Bos string gelirse kayitli numara SILINMEMELI. Istemci bos alanlari
+    // zaten gondermiyor ama bu yol tek savunma olmamali; alani tamamen
+    // disariya aliyoruz ki yanlislikla null/'' yazilamasin.
+    const { birthDate, displayName: _eskiIstemci, tcKimlik: _tc, ...rest } = dto;
+    const tcYazilacak = dto.tcKimlik ? { tcKimlik: dto.tcKimlik } : {};
     await this.prisma.user.update({
       where: { id: userId },
-      data: { ...rest, ...gorunenAd, ...(birthDate !== undefined ? { birthDate: birthDate ? new Date(birthDate) : null } : {}) },
+      data: { ...rest, ...tcYazilacak, ...gorunenAd, ...(birthDate !== undefined ? { birthDate: birthDate ? new Date(birthDate) : null } : {}) },
       select: { id: true },
     });
 
