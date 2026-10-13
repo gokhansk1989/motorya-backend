@@ -215,8 +215,133 @@ export class ListingsService {
     return ids;
   }
 
-  async getBrands() {
-    return this.prisma.brand.findMany({ orderBy: { name: 'asc' } });
+  async getBrands(categoryId?: string) {
+    const brands = await this.prisma.brand.findMany({ orderBy: { name: 'asc' } });
+    if (!categoryId) return brands;
+
+    // Kategori verildiginde liste KISALMIYOR, yalnizca her markaya
+    // "oncelikli" bayragi ekleniyor. Marka gizlemek tehlikeli: yanlis
+    // eslersek satici markasini bulamaz ve ilan veremez - sessiz bir kayip.
+    // Onceliklendirmede yanlis eslemenin bedeli fazladan bir kaydirma.
+    const { dogrudan, atadan } = await this.oncelikliMarkaIdleri(categoryId);
+
+    // Sira: once SECILEN kategoriye (ve altina) ait markalar, sonra bir ust
+    // kategoriden miras gelenler, sonra geri kalan her sey - her grup kendi
+    // icinde alfabetik.
+    //
+    // Yakinlik ayrimi olmadan OEM'ler sinyali boguyordu: 33 motosiklet
+    // ureticisi "yedek-parca" kokune eslendigi icin "Lastik" secildiginde
+    // Michelin ve Pirelli'nin arasina karisiyorlardi. Oysa lastik ararken
+    // once lastik markalarini gormek gerekiyor.
+    const yakinlik = (id: string) => (dogrudan.has(id) ? 0 : atadan.has(id) ? 1 : 2);
+    return brands
+      .map((b) => ({ ...b, oncelikli: dogrudan.has(b.id) || atadan.has(b.id) }))
+      .sort((a, b) => yakinlik(a.id) - yakinlik(b.id) || a.name.localeCompare(b.name, 'tr'));
+  }
+
+  /**
+   * Bir kategoride one cikacak marka kimlikleri. Iki kaynak birlesiyor:
+   *
+   * 1. Kurator eslemesi (BrandCategory) - gun bir ilan bile yokken calisir.
+   * 2. O kategoride gercekten ilan verilmis markalar - zamanla 1'i duzeltir
+   *    ve kuratorun atladigi markalari kendiliginden one cikarir.
+   *
+   * Kategori agaci iki yonlu cozuluyor: secilen kategorinin ATALARINA
+   * eslenmis markalar da one cikiyor (Dainese 'mont'a eslenmisse
+   * 'kislik-mont' secildiginde de gorunur), ALTINDAKI kategorilere
+   * eslenmis olanlar da (ana kategori secildiginde yapraklarin markalari).
+   */
+  private async oncelikliMarkaIdleri(
+    categoryId: string,
+  ): Promise<{ dogrudan: Set<string>; atadan: Set<string> }> {
+    const bos = { dogrudan: new Set<string>(), atadan: new Set<string>() };
+    const kategori = await this.prisma.category.findUnique({
+      where: { id: categoryId },
+      select: { id: true, parentId: true },
+    });
+    if (!kategori) return bos;
+
+    // Atalar: en fazla iki seviye (agac kok -> alt -> yaprak).
+    const atalar: string[] = [];
+    if (kategori.parentId) {
+      atalar.push(kategori.parentId);
+      const ustAta = await this.prisma.category.findUnique({
+        where: { id: kategori.parentId },
+        select: { parentId: true },
+      });
+      if (ustAta?.parentId) atalar.push(ustAta.parentId);
+    }
+    const altlar = (await this.resolveCategoryIds(categoryId)) ?? [categoryId];
+
+    const [eslenmisAlt, eslenmisAta, ilanliMarkalar] = await Promise.all([
+      this.prisma.brandCategory.findMany({
+        where: { categoryId: { in: altlar } },
+        select: { brandId: true },
+      }),
+      atalar.length
+        ? this.prisma.brandCategory.findMany({
+            where: { categoryId: { in: atalar } },
+            select: { brandId: true },
+          })
+        : Promise.resolve([]),
+      // Yalnizca ASAGI dogru: ustteki kategorilerde ilan verilmis markayi
+      // one cikarmak alakasiz sonuc uretirdi (kaskta ilani olan marka
+      // "kapali kask"ta anlamli, ama "bakim"da degil).
+      this.prisma.listing.groupBy({
+        by: ['brandId'],
+        where: {
+          categoryId: { in: altlar },
+          status: 'ACTIVE',
+          deletedAt: null,
+          brandId: { not: null },
+        },
+      }),
+    ]);
+
+    const dogrudan = new Set<string>([
+      ...eslenmisAlt.map((e) => e.brandId),
+      ...ilanliMarkalar.map((g) => g.brandId as string),
+    ]);
+    // Ata eslemesi yalnizca dogrudan eslesmeyenler icin anlamli.
+    const atadan = new Set<string>(
+      eslenmisAta.map((e) => e.brandId).filter((id) => !dogrudan.has(id)),
+    );
+    return { dogrudan, atadan };
+  }
+
+  /** Panel: bir markanin eslendigi kategoriler. */
+  async adminMarkaKategorileri(brandId: string) {
+    const satirlar = await this.prisma.brandCategory.findMany({
+      where: { brandId },
+      select: { categoryId: true },
+    });
+    return satirlar.map((s) => s.categoryId);
+  }
+
+  /**
+   * Panel: bir markanin kategorilerini topluca ayarlar.
+   *
+   * Tam degistirme (gonderilmeyen esleme silinir): panelde kutular isaretli
+   * geldigi icin kullanici "kaldirdim" dediginde gercekten kalkmali.
+   * Tek islemde yapiliyor ki yarim kalmis bir kayit birakmasin.
+   */
+  async adminMarkaKategorileriAyarla(brandId: string, categoryIds: string[]) {
+    const marka = await this.prisma.brand.findUnique({ where: { id: brandId }, select: { id: true } });
+    if (!marka) throw new NotFoundException('Marka bulunamadı');
+
+    const gecerli = await this.prisma.category.findMany({
+      where: { id: { in: categoryIds } },
+      select: { id: true },
+    });
+
+    await this.prisma.$transaction([
+      this.prisma.brandCategory.deleteMany({ where: { brandId } }),
+      this.prisma.brandCategory.createMany({
+        data: gecerli.map((c) => ({ brandId, categoryId: c.id })),
+        skipDuplicates: true,
+      }),
+    ]);
+    return { brandId, kategoriSayisi: gecerli.length };
   }
 
   // Arama filtrelerinin seceneklerini yayindaki ilanlardan uretir; boylece

@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, IsIn, MaxLength } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsIn, MaxLength, IsArray, ArrayMaxSize} from 'class-validator';
 import { RET_NEDENI_KODLARI } from '../../../common/ret-nedenleri';
 import { UserStatus, UserRole, ReportStatus } from '@prisma/client';
 
@@ -82,4 +82,16 @@ export class AnnouncementDto {
   @IsOptional()
   @IsIn(['MARKETING', 'ALL'])
   audience?: string;
+}
+
+export class MarkaKategorileriDto {
+  /**
+   * Markanin eslenecegi kategori kimlikleri. Bos dizi gecerli: markanin
+   * hicbir kategoride one cikmamasi istenebilir, o zaman yalnizca
+   * "Tüm markalar" altinda kalir.
+   */
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  categoryIds: string[];
 }

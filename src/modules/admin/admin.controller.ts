@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Post,
+  Put,
   Delete,
   Param,
   Body,
@@ -14,10 +15,11 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminService } from './admin.service';
-import { ModerateListingDto, ModerateUserDto, ChangeRoleDto, UpdateReportStatusDto, AnnouncementDto } from './dto/admin.dto';
+import { MarkaKategorileriDto, ModerateListingDto, ModerateUserDto, ChangeRoleDto, UpdateReportStatusDto, AnnouncementDto } from './dto/admin.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MessagesService } from '../messages/messages.service';
+import { ListingsService } from '../listings/listings.service';
 import { collectSystemMetrics, evaluateHealth, THRESHOLDS } from '../../common/system-metrics';
 
 @Controller('admin')
@@ -27,7 +29,23 @@ export class AdminController {
   constructor(
     private adminService: AdminService,
     private messagesService: MessagesService,
+    private listingsService: ListingsService,
   ) {}
+
+  // ── Marka kategorileri ────────────────────────────────────────────
+  // Esleme ilan verme formunda ve arama filtresinde markalari
+  // onceliklendiriyor. Panelden yonetilebilmesi onemli: yeni marka
+  // eklendiginde ya da esleme yanlis oldugunda deploy beklemeden
+  // duzeltilebilsin.
+  @Get('markalar/:id/kategoriler')
+  markaKategorileri(@Param('id') id: string) {
+    return this.listingsService.adminMarkaKategorileri(id);
+  }
+
+  @Put('markalar/:id/kategoriler')
+  markaKategorileriAyarla(@Param('id') id: string, @Body() dto: MarkaKategorileriDto) {
+    return this.listingsService.adminMarkaKategorileriAyarla(id, dto.categoryIds);
+  }
 
   @Get('duyurular')
   @Roles('ADMIN', 'SUPER_ADMIN')

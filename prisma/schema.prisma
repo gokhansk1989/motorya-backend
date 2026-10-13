@@ -251,6 +251,8 @@ model Category {
   isActive  Boolean    @default(true)
   listings  Listing[]
 
+  markalar BrandCategory[]
+
   @@index([parentId])
 }
 
@@ -260,6 +262,33 @@ model Brand {
   slug     String    @unique
   logoUrl  String?
   listings Listing[]
+
+  kategoriler BrandCategory[]
+}
+
+/// Marka - kategori eslemesi.
+///
+/// Ilan verme formunda 154 markanin tamami tek listede cikiyordu: bakim urunu
+/// ilani veren kullanici kask markalarinin arasindan geciyordu.
+///
+/// Esleme markayi GIZLEMEK icin degil, ONCELIKLENDIRMEK icin: yanlis eslersek
+/// ve markayi gizlersek satici markasini bulamaz ve ilan veremez - sessiz bir
+/// kayip. Onceliklendirirsek yanlis eslemenin bedeli fazladan bir kaydirma
+/// olur. Bu yuzden liste her zaman tam donuyor, yalnizca sirasi degisiyor.
+///
+/// Esleme herhangi bir seviyede yapilabilir: ana kategoriye eslenen marka tum
+/// alt kategorilerinde de one cikar. Dainese bir kez "mont"a yazilir, Brembo
+/// ise dogrudan "parca-fren" yapragina.
+model BrandCategory {
+  brandId    String
+  brand      Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([brandId, categoryId])
+  @@index([categoryId])
 }
 
 enum ListingGender {

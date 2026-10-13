@@ -6,9 +6,10 @@ import { MailModule } from '../mail/mail.module';
 import { SearchModule } from '../search/search.module';
 import { MessagesModule } from '../messages/messages.module';
 import { SavedSearchModule } from '../saved-search/saved-search.module';
+import { ListingsModule } from '../listings/listings.module';
 
 @Module({
-  imports: [PrismaModule, MailModule, SearchModule, MessagesModule, SavedSearchModule],
+  imports: [PrismaModule, MailModule, SearchModule, MessagesModule, SavedSearchModule, ListingsModule],
   providers: [AdminService],
   controllers: [AdminController],
   exports: [AdminService],

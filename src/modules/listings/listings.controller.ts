@@ -42,8 +42,11 @@ export class ListingsController {
   }
 
   @Get('meta/brands')
-  getBrands() {
-    return this.listingsService.getBrands();
+  // categoryId verilmezse davranis AYNI: tum markalar, duz liste. Verilirse
+  // liste yine TAM donuyor, her markaya "oncelikli" bayragi ekleniyor.
+  // Boylece mevcut cagiranlar (ana sayfa, baslik, duzenleme) degismiyor.
+  getBrands(@Query('categoryId') categoryId?: string) {
+    return this.listingsService.getBrands(categoryId);
   }
 
   @Get('meta/facets')
