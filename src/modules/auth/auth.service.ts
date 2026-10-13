@@ -7,7 +7,8 @@ import { AuditService } from '../audit/audit.service';
 import { SettingsService } from '../settings/settings.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-import { gecerliTcKimlik } from '../../common/tc-kimlik';
+import { gecerliTcKimlik, TC_CAKISMA_MESAJI } from '../../common/tc-kimlik';
+import { Prisma } from '@prisma/client';
 
 function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -24,6 +25,12 @@ const KVKK_VERSION = 'v1';
 
 /** "Kurucu Üye" rozeti verilecek üye sayısı. */
 const FOUNDER_LIMIT = 100;
+
+/** Dogrulama baglantisinin gecerlilik suresi (posta metninde "24 saat" yaziyor). */
+const TOKEN_GECERLILIK_MS = 24 * 60 * 60 * 1000;
+
+/** Ayni hesaba iki dogrulama postasi arasindaki en kisa sure. */
+const YENIDEN_GONDERIM_BEKLEME_SN = 60;
 
 @Injectable()
 export class AuthService {
@@ -55,12 +62,12 @@ export class AuthService {
     ]);
 
     if (byEmail) throw new ConflictException('Bu e-posta adresi zaten kayıtlı');
-    if (byTc) throw new ConflictException('Bu TC Kimlik numarası zaten kayıtlı');
+    if (byTc) throw new ConflictException(TC_CAKISMA_MESAJI);
     if (byPhone) throw new ConflictException('Bu telefon numarası zaten kayıtlı');
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     const token = generateToken();
-    const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const expiry = new Date(Date.now() + TOKEN_GECERLILIK_MS);
 
     // İlk 100 üyeye kalıcı "Kurucu Üye" rozeti. Erken gelmeyi dezavantaj
     // olmaktan çıkarıp ayrıcalığa çeviriyor; rozet profilde ve ilan
@@ -77,7 +84,12 @@ export class AuthService {
       throw new BadRequestException('Bu kullanıcı adı alınmış, başka bir tane deneyin');
     }
 
-    const user = await this.prisma.user.create({
+    // Yukaridaki benzersizlik kontrolleri ile bu yazma arasinda ayni
+    // e-posta/T.C./telefon ile ikinci bir kayit girebilir. Kolonlar UNIQUE
+    // oldugu icin veritabani ikincisini reddediyor, ama ham Prisma hatasi
+    // global filtreden 500 "Internal server error" olarak cikiyordu:
+    // kullanici neyin cakistigini anlamiyordu.
+    const user = await this.kullaniciOlustur({
       data: {
         email: dto.email,
         passwordHash: hashedPassword,
@@ -136,12 +148,59 @@ export class AuthService {
     };
   }
 
+  /**
+   * user.create'i sarmalar ve benzersizlik cakismasini anlasilir hataya
+   * cevirir. Hangi alanin cakistigi Prisma'nin meta.target'indan geliyor;
+   * cakisan hesabin kendisi hakkinda hicbir bilgi donmuyor.
+   */
+  private async kullaniciOlustur(args: Prisma.UserCreateArgs) {
+    try {
+      return await this.prisma.user.create(args);
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const alanlar = (e.meta?.target as string[] | undefined) ?? [];
+        if (alanlar.includes('tcKimlik')) throw new ConflictException(TC_CAKISMA_MESAJI);
+        if (alanlar.includes('email')) throw new ConflictException('Bu e-posta adresi zaten kayıtlı');
+        if (alanlar.includes('phone')) throw new ConflictException('Bu telefon numarası zaten kayıtlı');
+        throw new ConflictException('Bu bilgi zaten kayıtlı');
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * Dogrulama postasini yeniden gonderir.
+   *
+   * TUM yollarda ayni yanit donuyor. Onceden basarili gonderim "Doğrulama
+   * linki tekrar gönderildi", digerleri "İşlem tamamlandı" donuyordu: bu fark
+   * tek basina bir hesap sayim (enumeration) araciydi - bir adres listesini
+   * bu uca verip hangilerinin kayitli ve dogrulanmamis oldugunu ogrenmek
+   * mumkundu. Olculdu ve duzeltildi.
+   */
   async resendVerification(email: string): Promise<{ message: string }> {
+    // Hesap var/yok, dogrulanmis/dogrulanmamis, bekleme suresi dolmus/dolmamis
+    // - hepsinde ayni cumle.
+    const notrYanit = {
+      message: 'Hesabın doğrulanmayı bekliyorsa doğrulama linkini tekrar gönderdik.',
+    };
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user || user.emailVerifiedAt) return { message: 'İşlem tamamlandı.' };
+    // Hesap yok ya da zaten dogrulanmis: ayni yanit donuyor, boylece bu uc
+    // hesap varligini sizdirmiyor.
+    if (!user || user.emailVerifiedAt) return notrYanit;
+
+    // Hesap basina bekleme suresi. IP siniri tek basina yetmiyor: saldirgan
+    // IP degistirerek ayni adrese postayi yagdirabilir. Son gonderimin
+    // zamanini token suresinden geri hesapliyoruz; yeni kolon gerekmiyor.
+    if (user.emailVerificationExpiry) {
+      const sonGonderim = user.emailVerificationExpiry.getTime() - TOKEN_GECERLILIK_MS;
+      const gecenSn = (Date.now() - sonGonderim) / 1000;
+      if (gecenSn < YENIDEN_GONDERIM_BEKLEME_SN) {
+        return notrYanit;
+      }
+    }
 
     const token = generateToken();
-    const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const expiry = new Date(Date.now() + TOKEN_GECERLILIK_MS);
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -149,7 +208,7 @@ export class AuthService {
     });
 
     await this.mail.sendVerificationEmail(user.email, user.displayName, token);
-    return { message: 'Doğrulama linki tekrar gönderildi.' };
+    return notrYanit;
   }
 
   async login(dto: LoginDto, isAdminPanel = false, ip?: string, userAgent?: string): Promise<AuthResponseDto> {

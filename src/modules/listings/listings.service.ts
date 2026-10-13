@@ -385,6 +385,27 @@ export class ListingsService {
       rest.brandId ? this.prisma.brand.findUnique({ where: { id: rest.brandId } }) : null,
     ]);
 
+    // Kategori gercekten var ve yayinda mi? Once dogrulanmiyordu: gecersiz
+    // kimlik Prisma'nin yabanci anahtar hatasina, pasif kategori ise hicbir
+    // listede gorunmeyen bir ilana donusuyordu.
+    if (!category || !category.isActive) {
+      throw new BadRequestException('Geçersiz kategori seçimi.');
+    }
+
+    // Alt kategorisi olan bir ana kategoriye ilan verilemez.
+    //
+    // Arama ana kategoriyi alt kategorileriyle birlikte cozuyor, yani ana
+    // kategoriye yazilan ilan "Çantalar"a bakanda gorunuyor ama "Topcase"
+    // filtresinde HIC gorunmuyor - satici icin sessiz bir kayip. Istemci
+    // tarafi kontrol tek savunma olmamali; istek dogrudan API'ye de
+    // atilabiliyor.
+    const altKategoriSayisi = await this.prisma.category.count({
+      where: { parentId: category.id, isActive: true },
+    });
+    if (altKategoriSayisi > 0) {
+      throw new BadRequestException('Lütfen alt kategori seçin.');
+    }
+
     const tags = buildAutoTags({
       brandName: brand?.name,
       categoryName: category?.name,

@@ -7,7 +7,8 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
-import { gecerliTcKimlik } from '../../common/tc-kimlik';
+import { gecerliTcKimlik, TC_CAKISMA_MESAJI } from '../../common/tc-kimlik';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchService } from '../search/search.service';
 import { SocialService } from '../social/social.service';
@@ -277,7 +278,7 @@ export class UsersService {
         throw new BadRequestException('Geçersiz T.C. Kimlik numarası');
       }
       const existing = await this.prisma.user.findFirst({ where: { tcKimlik: dto.tcKimlik, id: { not: userId } } });
-      if (existing) throw new ConflictException('Bu TC Kimlik numarası başka bir hesapla ilişkili');
+      if (existing) throw new ConflictException(TC_CAKISMA_MESAJI);
     }
 
     // Bos string gelirse kayitli numara SILINMEMELI. Istemci bos alanlari
@@ -285,11 +286,27 @@ export class UsersService {
     // disariya aliyoruz ki yanlislikla null/'' yazilamasin.
     const { birthDate, displayName: _eskiIstemci, tcKimlik: _tc, ...rest } = dto;
     const tcYazilacak = dto.tcKimlik ? { tcKimlik: dto.tcKimlik } : {};
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { ...rest, ...tcYazilacak, ...gorunenAd, ...(birthDate !== undefined ? { birthDate: birthDate ? new Date(birthDate) : null } : {}) },
-      select: { id: true },
-    });
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { ...rest, ...tcYazilacak, ...gorunenAd, ...(birthDate !== undefined ? { birthDate: birthDate ? new Date(birthDate) : null } : {}) },
+        select: { id: true },
+      });
+    } catch (e) {
+      // Yukaridaki kontrol ile bu yazma arasinda baska bir istek ayni
+      // numarayi almis olabilir. Kolon UNIQUE oldugu icin veritabani
+      // engelliyor, ama ham Prisma hatasi global filtreden 500 "Internal
+      // server error" olarak cikiyordu: kullanici ne oldugunu anlamiyor,
+      // hata kaydi da gercek sunucu hatalariyla karisiyordu.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const alanlar = (e.meta?.target as string[] | undefined) ?? [];
+        if (alanlar.includes('tcKimlik')) throw new ConflictException(TC_CAKISMA_MESAJI);
+        if (alanlar.includes('phone')) throw new ConflictException('Bu telefon numarası başka bir hesapta kayıtlı.');
+        if (alanlar.includes('email')) throw new ConflictException('Bu e-posta adresi başka bir hesapta kayıtlı.');
+        throw new ConflictException('Bu bilgi başka bir hesapta kayıtlı.');
+      }
+      throw e;
+    }
 
     // Profilin TAMAMI donuyor. Daha once yalnizca duzenlenebilir alanlar
     // donuyordu ve istemci bunu oturumdaki kullanici nesnesinin yerine

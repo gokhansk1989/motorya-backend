@@ -14,6 +14,9 @@ import {
 import { Type } from 'class-transformer';
 import { ListingCondition, ListingGender, ListingStatus } from '@prisma/client';
 
+/** Fiyat ust siniri: Decimal(12,2) kolonuna sigacak, gercekci bir ust deger. */
+export const FIYAT_UST_SINIRI = 9_999_999;
+
 export class CreateListingDto {
   @IsString()
   @MinLength(5)
@@ -43,13 +46,18 @@ export class CreateListingDto {
   @IsString()
   sizeLabel?: string;
 
+  // @IsPositive sifir ve negatifi zaten reddediyor. Ust sinir eksikti:
+  // Decimal(12,2) kolonuna sigmayan bir sayi Postgres'te hata uretip 500'e
+  // donusuyordu. Sinir kolonun kapasitesinin altinda tutuluyor.
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
+  @Max(FIYAT_UST_SINIRI)
   price: number;
 
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
+  @Max(FIYAT_UST_SINIRI)
   originalPrice?: number;
 
   @IsOptional()
@@ -101,11 +109,13 @@ export class UpdateListingDto {
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
+  @Max(FIYAT_UST_SINIRI)
   price?: number;
 
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
+  @Max(FIYAT_UST_SINIRI)
   originalPrice?: number;
 
   @IsOptional()

@@ -50,3 +50,8 @@ test-results/
 # OS
 .DS_Store
 Thumbs.db
+
+# Yuklenen gorseller. Uretimde sunucudaki kalici dizinde duruyor; yerelde
+# calisirken burada birikiyorlar ve yanlislikla commit'lenirlerse repoya
+# kullanici fotograflari girer.
+uploads/

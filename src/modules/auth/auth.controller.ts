@@ -106,6 +106,13 @@ export class AuthController {
   }
 
   @Post('resend-verification')
+  // Bu uc tek throttle'siz auth ucuydu: global sinir dakikada 100 istek,
+  // yani tek IP'den herhangi bir adrese dakikada 100 dogrulama postasi
+  // gonderilebiliyordu. Bu hem o adresi postayla bombalar hem de gonderici
+  // itibarini dusurur - ki itibar dusunce postalar zaten gereksiz klasorune
+  // duser (bkz. 1. bulgu). IP sinirini servisteki hesap basina bekleme
+  // suresi tamamliyor; IP degistirerek ayni adresi bombalamak da kapali.
+  @Throttle({ default: { limit: 3, ttl: 300_000 } })
   resendVerification(@Body() dto: ResendVerificationDto) {
     return this.authService.resendVerification(dto.email);
   }

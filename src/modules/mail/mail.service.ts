@@ -3,6 +3,40 @@ import { Resend } from 'resend';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { ErrorLogsService } from '../error-logs/error-logs.service';
 
+
+/**
+ * HTML postanin duz metin karsiligini uretir.
+ *
+ * Amac birebir donusturme degil, okunabilir bir alternatif govde: baglantilar
+ * metnin yanina acik olarak yaziliyor, cunku duz metin surumunu okuyan
+ * istemcide <a> yok ve kullanici dogrulama linkine ulasamazsa posta ise
+ * yaramaz.
+ */
+export function duzMetne(html: string): string {
+  return html
+    // <a href="...">metin</a> -> metin (adres)
+    .replace(/<a\s[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_m, adres, metin) => {
+      const t = metin.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      return t && t !== adres ? `${t} (${adres})` : adres;
+    })
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<[^>]+>/g, '')
+    // HTML varliklari
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&ldquo;|&rdquo;/g, '"')
+    .replace(/&mdash;/g, '—')
+    // Fazla bosluklari topla
+    .split('\n').map((l) => l.replace(/[ \t]+/g, ' ').trim()).filter(Boolean).join('\n')
+    .trim();
+}
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
@@ -655,6 +689,15 @@ export class MailService {
         to: [to],
         subject,
         html,
+        // Duz metin surumu olmadan gonderilen tek parcali HTML postalar spam
+        // puani aliyor (SpamAssassin MIME_HTML_ONLY); aktivasyon postasinin
+        // gereksiz klasorune dusmesinin kodda gorulebilen nedenlerinden biri
+        // bu. Metin surumu HTML'den uretiliyor ki her sablon icin elle
+        // yazilmak zorunda kalinmasin ve ikisi birbirinden sapmasin.
+        text: duzMetne(html),
+        // Yanit adresi olmayan postalar da olumsuz puan aliyor ve kullanici
+        // "bu postaya cevap yazamiyorum" durumunda kaliyor.
+        replyTo: cfg.from,
       });
       if (error) throw new Error(`${error.name}: ${error.message}`);
     } catch (err: any) {

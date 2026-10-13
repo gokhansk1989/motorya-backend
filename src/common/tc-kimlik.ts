@@ -17,3 +17,15 @@ export function gecerliTcKimlik(tc: string): boolean {
   const toplam = d.slice(0, 10).reduce((a, b) => a + b, 0);
   return (toplam % 10) === d[10];
 }
+
+/**
+ * T.C. numarasi baska bir hesapta kayitliysa gosterilen mesaj.
+ *
+ * Numaranin kendisini, diger hesabin e-postasini ya da herhangi bir kullanici
+ * bilgisini icermiyor: bu uc kimlik dogrulamasi gerektirmiyor, dolayisiyla
+ * mesaj numaranin sahibi hakkinda bilgi sizdirmamali. Buna karsilik
+ * kullanicinin sikisip kalmamasi icin iki cikis yolu soyluyor.
+ */
+export const TC_CAKISMA_MESAJI =
+  'Bu T.C. kimlik numarası başka bir hesapta kayıtlı. Daha önce üye olduysan o hesapla giriş yapabilirsin; ' +
+  'numaranın size ait olduğunu düşünüyorsanız destek@motorya.com.tr adresine yazın.';
