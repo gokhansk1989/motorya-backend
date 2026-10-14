@@ -49,7 +49,13 @@ export class ShareService {
     const id = slugYaDaId.includes('-') ? slugYaDaId.split('-').pop()! : slugYaDaId;
 
     const ilan = await this.prisma.listing.findFirst({
-      where: { id, status: 'ACTIVE', deletedAt: null },
+      // Test ilanina kart uretilmiyor. Kart Instagram'a atilmak icin
+      // uretiliyor; test ilani aramada ve listelerde gorunmezken kartinin
+      // disariya cikabilmesi, isaretin amacini bosa cikarirdi.
+      //
+      // Onbellek bu kontrolden SONRA bakiliyor, yani ilan sonradan test
+      // isaretlenirse daha once uretilmis kart da servis edilmiyor.
+      where: { id, status: 'ACTIVE', deletedAt: null, isTest: false },
       select: {
         id: true,
         updatedAt: true,
