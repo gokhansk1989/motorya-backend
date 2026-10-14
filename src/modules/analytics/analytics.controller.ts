@@ -33,6 +33,7 @@ export class AnalyticsController {
     return this.analytics.kaydet(dto.olaylar, {
       userId: req.user?.id ?? null,
       role: req.user?.role ?? null,
+      isTestAccount: req.user?.isTestAccount ?? null,
       userAgent: req.headers?.['user-agent'] ?? null,
     });
   }

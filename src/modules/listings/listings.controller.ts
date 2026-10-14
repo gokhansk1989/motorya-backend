@@ -19,12 +19,16 @@ import { OptionalJwtGuard } from '../../common/guards/optional-jwt.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ListingsService } from './listings.service';
-import { CreateListingDto, UpdateListingDto, ListingsQueryDto } from './dto/listings.dto';
+import { CreateListingDto, UpdateListingDto, ListingsQueryDto, TaslakDto, TestIsaretiDto, BekleyenDuzenlemeDto } from './dto/listings.dto';
+import { TaslakService } from './taslak.service';
 import { CreateCategoryDto, UpdateCategoryDto, CreateBrandDto, UpdateBrandDto, SetFeaturedDto } from './dto/admin-category.dto';
 
 @Controller('listings')
 export class ListingsController {
-  constructor(private listingsService: ListingsService) {}
+  constructor(
+    private listingsService: ListingsService,
+    private taslak: TaslakService,
+  ) {}
 
   // Global sınır (100/dk) ilan spam'i için fazla gevşek: tek hesap dakikalar
   // içinde moderasyon kuyruğunu boğabilir. Gerçek kullanıcı saatte 10 ilandan
@@ -39,6 +43,76 @@ export class ListingsController {
   @Get('meta/categories')
   getCategories() {
     return this.listingsService.getCategories();
+  }
+
+  // ── Taslak ────────────────────────────────────────────────────────
+  // Taslak kullaniciya ait: userId jetondan geliyor, istekten DEGIL.
+  // Boylece baska bir hesabin taslagi okunamiyor ve cikis yapildiginda
+  // taslak baska hesapta gorunmuyor.
+  @Get('taslak')
+  @UseGuards(AuthGuard('jwt'))
+  taslakGetir(@Request() req) {
+    return this.taslak.getir(req.user.id);
+  }
+
+  @Put('taslak')
+  @UseGuards(AuthGuard('jwt'))
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  taslakKaydet(@Request() req, @Body() dto: TaslakDto) {
+    return this.taslak.kaydet(req.user.id, dto);
+  }
+
+  @Delete('taslak')
+  @UseGuards(AuthGuard('jwt'))
+  taslakSil(@Request() req) {
+    return this.taslak.sil(req.user.id);
+  }
+
+  // ── Bekleyen icerik duzenlemeleri (moderator) ─────────────────────
+  @Get('admin/bekleyen-duzenlemeler')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN', 'MODERATOR')
+  bekleyenDuzenlemeler() {
+    return this.listingsService.bekleyenDuzenlemeler();
+  }
+
+  @Post('admin/:id/duzenleme/onayla')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN', 'MODERATOR')
+  duzenlemeyiOnayla(@Param('id') id: string, @Body() dto: BekleyenDuzenlemeDto, @Request() req) {
+    return this.listingsService.bekleyenDuzenlemeyiOnayla(id, req.user.id, dto?.beklenenSurum);
+  }
+
+  @Post('admin/:id/duzenleme/reddet')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN', 'MODERATOR')
+  duzenlemeyiReddet(@Param('id') id: string, @Body() dto: BekleyenDuzenlemeDto, @Request() req) {
+    return this.listingsService.bekleyenDuzenlemeyiReddet(id, req.user.id, dto?.nedenKodu);
+  }
+
+  // ── Test isareti ──────────────────────────────────────────────────
+  // SUPER_ADMIN'e kisitli: isaret bir kaydi genel listelerden ve
+  // raporlardan cikardigi icin yanlislikla kullanilmasi, gercek bir
+  // ilani sessizce gizlemek demek olurdu.
+  @Get('admin/test-kayitlari')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  testKayitlari() {
+    return this.listingsService.testKayitlari();
+  }
+
+  @Put('admin/:id/test-isareti')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN')
+  testIsareti(@Param('id') id: string, @Body() dto: TestIsaretiDto, @Request() req) {
+    return this.listingsService.testIsaretiAyarla(id, dto.isTest, req.user.id);
+  }
+
+  @Put('admin/kullanici/:id/test-hesabi')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN')
+  testHesabi(@Param('id') id: string, @Body() dto: TestIsaretiDto, @Request() req) {
+    return this.listingsService.testHesabiAyarla(id, dto.isTest, req.user.id);
   }
 
   @Get('meta/brands')

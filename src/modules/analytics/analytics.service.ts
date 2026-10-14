@@ -43,14 +43,24 @@ export class AnalyticsService {
    */
   async kaydet(
     olaylar: OlayDto[],
-    baglam: { userId?: string | null; role?: string | null; userAgent?: string | null },
+    baglam: {
+      userId?: string | null;
+      role?: string | null;
+      isTestAccount?: boolean | null;
+      userAgent?: string | null;
+    },
   ): Promise<{ alinan: number }> {
     try {
       if (BOT_DESENI.test(baglam.userAgent ?? '')) return { alinan: 0 };
 
       const userId = baglam.userId ?? null;
+      // isStaff "normal donusum raporuna girmesin" demek. Uc kaynak:
+      // personel rolu, acikca isaretlenmis test hesabi ve ortamdaki
+      // haric listesi. Damga olay aninda vuruluyor; hesap sonradan test
+      // isaretini kaybederse gecmis sayilar kaymiyor.
       const isStaff =
         (!!baglam.role && PERSONEL_ROLLERI.has(baglam.role)) ||
+        !!baglam.isTestAccount ||
         (!!userId && this.haricKullanicilar.has(userId));
 
       const satirlar = olaylar

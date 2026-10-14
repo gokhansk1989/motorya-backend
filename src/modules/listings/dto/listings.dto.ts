@@ -9,8 +9,7 @@ import {
   Min,
   Max,
   IsInt,
-  IsBoolean,
-} from 'class-validator';
+  IsBoolean, IsObject, IsArray, ArrayMaxSize, IsISO8601} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ListingCondition, ListingGender, ListingStatus } from '@prisma/client';
 
@@ -201,4 +200,51 @@ export class ListingsQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   isFeatured?: boolean;
+}
+
+/**
+ * Taslak kaydetme. payload serbest bir nesne olarak geliyor ama sunucu
+ * onu beyaz listeye gore suzuyor (taslak-alanlari.ts) - istemciye
+ * sonradan eklenen bir alan, ornegin T.C. kimlik numarasi, buraya
+ * sizamasin.
+ */
+export class TaslakDto {
+  @IsOptional()
+  @IsObject()
+  payload?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsString({ each: true })
+  imageUrls?: string[];
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  step?: number;
+}
+
+/** Yonetici: test isareti. */
+export class TestIsaretiDto {
+  @IsBoolean()
+  isTest: boolean;
+}
+
+/** Yonetici: bekleyen duzenleme onayi. */
+export class BekleyenDuzenlemeDto {
+  /**
+   * Moderatorun gordugu surumun zaman damgasi. Satici inceleme sirasinda
+   * duzenlemesini revize etmis olabilir; damga tutmazsa islem
+   * reddediliyor, yoksa moderator gormedigi bir icerigi onaylamis olurdu.
+   */
+  @IsOptional()
+  @IsISO8601()
+  beklenenSurum?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  nedenKodu?: string;
 }

@@ -241,6 +241,13 @@ export class AdminService {
       }),
     ]);
 
+    // Test ilani onaylanabiliyor (moderasyon kurallari aynen isliyor) ama
+    // normal kullaniciya giden yan etkileri tetiklemiyor: takipci
+    // bildirimi, kayitli arama uyarisi ve arama indeksi. Isaret hicbir
+    // yetki ya da moderasyon kontrolunu devre disi birakmiyor, yalnizca
+    // dagitimi durduruyor.
+    const testIlani = listing.isTest;
+
     if (dto.action === 'ACTIVE') {
       const full = await this.prisma.listing.findFirst({
         where: { id },
@@ -270,9 +277,11 @@ export class AdminService {
       // fiilen ölüydü. Haber ilan ONAYLANDIĞINDA gidiyor, verildiğinde
       // değil: henüz moderasyondan geçmemiş bir ilanı duyurmak, reddedilen
       // içeriği takipçilere göstermek demek olurdu.
-      this.takipcilereYeniIlanBildir(listing.seller.id, id, listing.title, listingSlug).catch(() => null);
+      if (!testIlani) {
+        this.takipcilereYeniIlanBildir(listing.seller.id, id, listing.title, listingSlug).catch(() => null);
+      }
 
-      if (full) {
+      if (full && !testIlani) {
         this.search.indexListing({
           id: full.id,
           title: full.title,

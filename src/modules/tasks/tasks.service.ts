@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { TaslakService } from '../listings/taslak.service';
 import { buildListingSlug } from '../listings/listings.service';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class TasksService {
     private prisma: PrismaService,
     private mail: MailService,
     private analytics: AnalyticsService,
+    private taslak: TaslakService,
   ) {}
 
   // Her 30 dakikada süresi dolan rezervasyonları kontrol et
@@ -782,5 +784,21 @@ export class TasksService {
   @Cron('15 4 * * *')
   async analitikOlaylariTemizle() {
     await this.analytics.eskileriSil(180);
+  }
+  /**
+   * Sahipsiz yuklemeleri ve cok eski taslaklari temizler.
+   *
+   * Fotograf once sunucuya yukleniyor, ilan sonra olusuyor. Arada
+   * vazgecen kullanicinin dosyasi diskte kaliyordu ve hicbir sey onu
+   * silmiyordu. Taslaktaki fotograflar korunuyor - taslagin amaci zaten
+   * onlari saklamak.
+   *
+   * Gece yarisi degil 04:40: yedek 03:00'te, analitik temizligi
+   * 04:15'te calisiyor, ust uste binmesin.
+   */
+  @Cron('40 4 * * *')
+  async yuklemeVeTaslakTemizligi() {
+    await this.taslak.eskiTaslaklariSil(90);
+    await this.taslak.sahipsizYuklemeleriTemizle(30);
   }
 }

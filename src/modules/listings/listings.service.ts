@@ -3,8 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+  ServiceUnavailableException, ConflictException} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListingStatus } from '@prisma/client';
 import { CreateListingDto, UpdateListingDto, ListingsQueryDto } from './dto/listings.dto';
@@ -16,6 +15,8 @@ import { WebPushService } from '../users/webpush.service';
 import { FcmService } from '../users/fcm.service';
 import { AuditService } from '../audit/audit.service';
 import { SettingsService } from '../settings/settings.service';
+import { gorselleriDogrula, YUKLEME_TABANI } from './gorsel-dogrula';
+import { degisenIncelemeAlanlari, SERBEST_ALANLAR } from './moderasyon-alanlari';
 
 // Türkçe karakterleri latinize edip URL-safe slug üretir
 function toSlug(text: string): string {
@@ -30,23 +31,6 @@ function toSlug(text: string): string {
     .slice(0, 60);
 }
 
-// Ilan gorselleri yalnizca kendi yukleme ucumuzun urettigi adreslerden
-// gelebilir. Once yalnizca @IsString dogrulamasi vardi: kullanici kendi
-// sunucusundaki bir adresi gorsel olarak kaydedip ilani acan herkesin
-// IP'sini ve tarayici bilgisini toplayabiliyordu.
-const YUKLEME_TABANI = () =>
-  `${process.env.BASE_URL ?? 'https://motorya.com.tr/api-backend'}/uploads/`;
-
-function gorselleriDogrula(urls: string[]): void {
-  const taban = YUKLEME_TABANI();
-  for (const url of urls) {
-    if (!url.startsWith(taban)) {
-      throw new BadRequestException(
-        'Görseller yalnızca Motorya yükleme adresinden gelebilir',
-      );
-    }
-  }
-}
 
 // "Xl" ile "XL" ayni bedeni anlatir; arama tam eslesme yaptigi icin
 // yaziyi daima buyuk harfe sabitliyoruz.
@@ -293,6 +277,7 @@ export class ListingsService {
           categoryId: { in: altlar },
           status: 'ACTIVE',
           deletedAt: null,
+          isTest: false,
           brandId: { not: null },
         },
       }),
@@ -348,7 +333,7 @@ export class ListingsService {
   // kullanici hicbir zaman sonuc dondurmeyen bir beden/sehir secemez.
   async getFacets(categorySlug?: string) {
     const categoryIds = await this.resolveCategoryIds(undefined, categorySlug);
-    const where: any = { status: 'ACTIVE', deletedAt: null };
+    const where: any = { status: 'ACTIVE', deletedAt: null, isTest: false };
     if (categoryIds && categoryIds.length > 0) {
       where.categoryId = { in: categoryIds };
     }
@@ -404,6 +389,7 @@ export class ListingsService {
         categoryId: { in: categoryIds },
         status: 'ACTIVE',
         deletedAt: null,
+        isTest: false,
         brandId: { not: null },
       },
       _count: { id: true },
@@ -490,7 +476,7 @@ export class ListingsService {
 
     const seller = await this.prisma.user.findUnique({
       where: { id: sellerId },
-      select: { tcKimlik: true, displayName: true, realName: true },
+      select: { tcKimlik: true, displayName: true, realName: true, isTestAccount: true },
     });
     if (!seller?.tcKimlik) {
       throw new BadRequestException('İlan vermek için önce profilinden T.C. Kimlik numaranı tamamlaman gerekiyor.');
@@ -550,6 +536,9 @@ export class ListingsService {
         originalPrice: rest.originalPrice ?? null,
         sellerId,
         status: 'PENDING_REVIEW',
+        // Test hesabinin ilanlari isareti olusurken aliyor; moderator
+        // sonradan elle isaretlemek zorunda kalmasin.
+        isTest: seller.isTestAccount,
         tags,
         images: {
           create: imageUrls.map((url, i) => ({ url, sortOrder: i })),
@@ -693,6 +682,9 @@ export class ListingsService {
     const where: any = {
       status: ListingStatus.ACTIVE,
       deletedAt: null,
+      // Test ilanlari genel listelerde gorunmuyor. Sahibi kendi ilanini
+      // "ilanlarim" uzerinden gormeye devam ediyor.
+      isTest: false,
     };
 
     if (isFeatured) {
@@ -808,6 +800,7 @@ export class ListingsService {
         },
         category: { include: { parent: { select: { slug: true, name: true } } } },
         brand: true,
+        bekleyenDuzenleme: true,
       },
     });
 
@@ -845,13 +838,31 @@ export class ListingsService {
       isFavorited = !!fav;
     }
 
-    return { ...listing, slug: buildListingSlug(listing), isFavorited };
+    // Bekleyen duzenleme YALNIZCA sahibine gosteriliyor. Ziyaretci
+    // incelenmemis icerigi hicbir sekilde gormemeli - detay sayfasi da
+    // digerleri gibi onayli surumu okuyor.
+    const sahibi = listing.sellerId === viewerId;
+    const { bekleyenDuzenleme, ...kalan } = listing as typeof listing & {
+      bekleyenDuzenleme: unknown;
+    };
+
+    return {
+      ...kalan,
+      slug: buildListingSlug(listing),
+      isFavorited,
+      ...(sahibi
+        ? {
+            bekleyenDuzenleme: bekleyenDuzenleme ?? null,
+            degisiklikIncelemede: !!bekleyenDuzenleme,
+          }
+        : {}),
+    };
   }
 
   async getListingsByIds(ids: string[]) {
     if (ids.length === 0) return [];
     const listings = await this.prisma.listing.findMany({
-      where: { id: { in: ids }, status: 'ACTIVE', deletedAt: null },
+      where: { id: { in: ids }, status: 'ACTIVE', deletedAt: null, isTest: false },
       include: {
         images: { orderBy: { sortOrder: 'asc' }, take: 1 },
         seller: { select: { id: true, displayName: true } },
@@ -921,7 +932,7 @@ export class ListingsService {
 
   async getPriceDrops(limit = 12) {
     const candidates = await this.prisma.listing.findMany({
-      where: { status: 'ACTIVE', deletedAt: null, originalPrice: { not: null } },
+      where: { status: 'ACTIVE', deletedAt: null, isTest: false, originalPrice: { not: null } },
       orderBy: { updatedAt: 'desc' },
       take: Math.max(limit * 4, 60),
       include: {
@@ -981,7 +992,7 @@ export class ListingsService {
     for (const filter of tiers) {
       if (results.length >= limit) break;
       const batch = await this.prisma.listing.findMany({
-        where: { ...filter, status: 'ACTIVE', deletedAt: null, id: { notIn: [...seen] } },
+        where: { ...filter, status: 'ACTIVE', deletedAt: null, isTest: false, id: { notIn: [...seen] } },
         orderBy: { createdAt: 'desc' },
         take: limit - results.length,
         include,
@@ -1076,6 +1087,40 @@ export class ListingsService {
       title: rest.title ?? listing.title,
     });
 
+    // ── Yayindaki ilan: icerik ile fiyat ayri degerlendiriliyor ──────
+    //
+    // Onceden ACTIVE bir ilanda HERHANGI bir degisiklik ilani
+    // PENDING_REVIEW'a dusuruyor ve aramadan kaldiriyordu. Incelenmemis
+    // icerik yayina sizmiyordu (dogru) ama fiyatini indiren satici da
+    // ilanini yayindan indirmis oluyordu.
+    //
+    // Artik: icerik degisirse ONAYLI surum yayinda kaliyor, yeni surum
+    // ListingPendingEdit'te bekliyor. Arama, detay sayfasi ve Story karti
+    // her zaman Listing satirini okudugu icin incelenmemis icerik hicbir
+    // kanalda gorunmuyor.
+    if (listing.status === 'ACTIVE') {
+      const mevcutGorseller = (
+        await this.prisma.listingImage.findMany({
+          where: { listingId: id },
+          orderBy: { sortOrder: 'asc' },
+          select: { url: true },
+        })
+      ).map((g) => g.url);
+
+      const incelemelik = degisenIncelemeAlanlari(
+        dto as Record<string, unknown>,
+        listing as unknown as Record<string, unknown>,
+        mevcutGorseller,
+      );
+
+      if (incelemelik.length > 0) {
+        return this.bekleyenDuzenlemeOlustur(id, sellerId, dto, incelemelik, listing, tags);
+      }
+      // Yalnizca serbest alanlar degismis: dogrudan uygula, ilan yayinda
+      // kalsin.
+      return this.serbestAlanlariUygula(id, sellerId, dto, listing);
+    }
+
     return this.prisma.$transaction(async (tx) => {
       if (imageUrls !== undefined) {
         await tx.listingImage.deleteMany({ where: { listingId: id } });
@@ -1084,8 +1129,9 @@ export class ListingsService {
         });
       }
 
-      // ARCHIVED → düzenlenince tekrar moderasyona gönder; ACTIVE → yeniden moderasyon
-      const newStatus = ['ACTIVE', 'ARCHIVED'].includes(listing.status) ? 'PENDING_REVIEW' : listing.status;
+      // ARCHIVED → düzenlenince tekrar moderasyona gönder.
+      // ACTIVE buraya gelmiyor; yukarida ayri ele aliniyor.
+      const newStatus = listing.status === 'ARCHIVED' ? 'PENDING_REVIEW' : listing.status;
 
       const updated = await tx.listing.update({
         where: { id },
@@ -1100,10 +1146,6 @@ export class ListingsService {
         include: { images: { orderBy: { sortOrder: 'asc' } }, category: true, brand: true, seller: true },
       });
 
-      if (listing.status === 'ACTIVE') {
-        this.search.removeListing(id).catch(() => null);
-      }
-
       // Fiyat düştüyse favorileyen kullanıcılara bildirim
       if (rest.price !== undefined && Number(rest.price) < Number(listing.price)) {
         this.notifyFavorites(id, listing.title, 'price_drop', {
@@ -1116,6 +1158,441 @@ export class ListingsService {
 
       return updated;
     });
+  }
+
+  /**
+   * Yayindaki ilanda yalnizca serbest alanlar (fiyat, il, ilce) degisti:
+   * dogrudan uygula, ilan yayinda kalsin, arama indeksini tazele.
+   */
+  private async serbestAlanlariUygula(
+    id: string,
+    sellerId: string,
+    dto: UpdateListingDto,
+    listing: { title: string; price: unknown },
+  ) {
+    const veri: Record<string, unknown> = {};
+    for (const alan of SERBEST_ALANLAR) {
+      const deger = (dto as Record<string, unknown>)[alan];
+      if (deger === undefined) continue;
+      veri[alan] = deger === '' ? null : deger;
+    }
+
+    const updated = await this.prisma.listing.update({
+      where: { id },
+      data: veri,
+      include: {
+        images: { orderBy: { sortOrder: 'asc' } },
+        category: { include: { parent: { select: { slug: true, name: true } } } },
+        brand: true,
+        seller: true,
+      },
+    });
+
+    this.search.indexListing(this.toSearchDoc(updated)).catch(() => null);
+
+    if (dto.price !== undefined && Number(dto.price) < Number(listing.price)) {
+      this.notifyFavorites(id, listing.title, 'price_drop', {
+        oldPrice: Number(listing.price),
+        newPrice: Number(dto.price),
+      }).catch(() => null);
+    }
+
+    // Denetim kaydinda yalnizca HANGI alanlarin degistigi var; degerler
+    // yok. Fiyat kisisel veri degil ama denetim kaydi da bir fiyat
+    // gecmisi deposu degil.
+    this.audit.log({
+      actorId: sellerId,
+      action: 'listing.update.direct',
+      entity: 'Listing',
+      entityId: id,
+      meta: { alanlar: Object.keys(veri) },
+    });
+
+    return { ...updated, bekleyenDuzenleme: null };
+  }
+
+  /**
+   * Yayindaki ilanda icerik degisti: onayli surum yayinda kalir, yeni
+   * surum incelemeyi bekler.
+   *
+   * Bekleyen bir duzenleme zaten varsa UZERINE YAZILIYOR - satici
+   * duzenlemesini birkac kez revize edebilir, her seferinde kuyrukta yeni
+   * bir kayit birikmemeli.
+   */
+  private async bekleyenDuzenlemeOlustur(
+    id: string,
+    sellerId: string,
+    dto: UpdateListingDto,
+    degisenAlanlar: readonly string[],
+    listing: { title: string },
+    tags: string[],
+  ) {
+    const d = dto as Record<string, unknown>;
+    const gorsellerDegisti = degisenAlanlar.includes('imageUrls');
+
+    const veri = {
+      title: (d.title as string) ?? null,
+      description: (d.description as string) ?? null,
+      categoryId: (d.categoryId as string) || null,
+      brandId: (d.brandId as string) || null,
+      condition: (d.condition as any) ?? null,
+      gender: (d.gender as any) ?? null,
+      sizeLabel: d.sizeLabel ? bedenNormalle(d.sizeLabel as string) : null,
+      imageUrls: gorsellerDegisti ? ((d.imageUrls as string[]) ?? []) : [],
+      imagesChanged: gorsellerDegisti,
+    };
+
+    await this.prisma.listingPendingEdit.upsert({
+      where: { listingId: id },
+      create: { listingId: id, ...veri },
+      update: veri,
+    });
+
+    // Serbest alanlar (fiyat, konum) ayni istekte gelmis olabilir; onlar
+    // beklemeden uygulanmali, yoksa fiyat degisikligi icerik incelemesine
+    // takilmis olurdu.
+    const serbest: Record<string, unknown> = {};
+    for (const alan of SERBEST_ALANLAR) {
+      const deger = d[alan];
+      if (deger !== undefined) serbest[alan] = deger === '' ? null : deger;
+    }
+    if (Object.keys(serbest).length) {
+      await this.prisma.listing.update({ where: { id }, data: serbest });
+    }
+
+    this.bekleyenDuzenlemeyiModeratorlereBildir(id, listing.title).catch(() => null);
+
+    this.audit.log({
+      actorId: sellerId,
+      action: 'listing.edit.pending',
+      entity: 'Listing',
+      entityId: id,
+      meta: { alanlar: [...degisenAlanlar] },
+    });
+
+    const guncel = await this.prisma.listing.findUnique({
+      where: { id },
+      include: {
+        images: { orderBy: { sortOrder: 'asc' } },
+        category: { include: { parent: { select: { slug: true, name: true } } } },
+        brand: true,
+        seller: true,
+        bekleyenDuzenleme: true,
+      },
+    });
+
+    await this.prisma.notification.create({
+      data: {
+        userId: sellerId,
+        type: 'listing.edit.pending',
+        title: 'Değişikliklerin incelemede',
+        body: `"${listing.title}" ilanındaki değişiklikler inceleniyor. Onaylanana kadar ilanının önceki hali yayında kalmaya devam ediyor.`,
+        payload: { listingId: id },
+      },
+    }).catch(() => null);
+
+    return guncel;
+  }
+
+  /** Bekleyen duzenleme kuyruguna dustugunu moderatorlere haber verir. */
+  private async bekleyenDuzenlemeyiModeratorlereBildir(listingId: string, baslik: string) {
+    const moderatorler = await this.prisma.user.findMany({
+      where: { role: { in: ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'] }, deletedAt: null },
+      select: { id: true },
+    });
+    if (!moderatorler.length) return;
+    await this.prisma.notification.createMany({
+      data: moderatorler.map((m) => ({
+        userId: m.id,
+        type: 'moderation.edit.pending',
+        title: 'İlan düzenlemesi incelemede',
+        body: `"${baslik}" ilanında içerik değişikliği var.`,
+        payload: { listingId },
+      })),
+    });
+  }
+
+  // ── Bekleyen duzenleme: moderator tarafi ──────────────────────────
+
+  /** Inceleme bekleyen icerik duzenlemeleri. */
+  async bekleyenDuzenlemeler() {
+    const satirlar = await this.prisma.listingPendingEdit.findMany({
+      orderBy: { createdAt: 'asc' },
+      include: {
+        listing: {
+          select: {
+            id: true, title: true, description: true, status: true, isTest: true,
+            categoryId: true, brandId: true, condition: true, gender: true, sizeLabel: true,
+            images: { orderBy: { sortOrder: 'asc' }, select: { url: true } },
+            seller: { select: { id: true, displayName: true } },
+          },
+        },
+      },
+    });
+
+    // Onayli surum ile bekleyen surumu YAN YANA donuyoruz: moderator neyin
+    // degistigini gormeden karar veremez.
+    return satirlar.map((b) => ({
+      id: b.id,
+      listingId: b.listingId,
+      olusturuldu: b.createdAt,
+      guncellendi: b.updatedAt,
+      satici: b.listing.seller,
+      testIlani: b.listing.isTest,
+      yayindaki: {
+        title: b.listing.title,
+        description: b.listing.description,
+        categoryId: b.listing.categoryId,
+        brandId: b.listing.brandId,
+        condition: b.listing.condition,
+        gender: b.listing.gender,
+        sizeLabel: b.listing.sizeLabel,
+        imageUrls: b.listing.images.map((g) => g.url),
+      },
+      bekleyen: {
+        title: b.title,
+        description: b.description,
+        categoryId: b.categoryId,
+        brandId: b.brandId,
+        condition: b.condition,
+        gender: b.gender,
+        sizeLabel: b.sizeLabel,
+        imageUrls: b.imagesChanged ? b.imageUrls : null,
+      },
+    }));
+  }
+
+  /**
+   * Bekleyen duzenlemeyi onaylar: icerik yayindaki ilana isleniyor.
+   *
+   * beklenenSurum, moderatorun GORDUGU surumun zaman damgasi. Satici
+   * moderator inceleme yaparken duzenlemesini revize etmis olabilir;
+   * damga tutmazsa islem reddediliyor, yoksa moderator gormedigi bir
+   * icerigi onaylamis olurdu.
+   */
+  async bekleyenDuzenlemeyiOnayla(listingId: string, adminId: string, beklenenSurum?: string) {
+    const bekleyen = await this.prisma.listingPendingEdit.findUnique({
+      where: { listingId },
+      include: { listing: { select: { id: true, sellerId: true, title: true, status: true } } },
+    });
+    if (!bekleyen) throw new NotFoundException('Bekleyen düzenleme bulunamadı');
+
+    if (beklenenSurum && new Date(beklenenSurum).getTime() !== bekleyen.updatedAt.getTime()) {
+      throw new ConflictException(
+        'Bu düzenleme siz incelerken güncellendi. Sayfayı yenileyip yeni halini inceleyin.',
+      );
+    }
+
+    const veri: Record<string, unknown> = {};
+    for (const alan of ['title', 'description', 'categoryId', 'brandId', 'condition', 'gender', 'sizeLabel'] as const) {
+      const deger = bekleyen[alan];
+      if (deger !== null && deger !== undefined) veri[alan] = deger;
+    }
+
+    const guncel = await this.prisma.$transaction(async (tx) => {
+      if (bekleyen.imagesChanged) {
+        await tx.listingImage.deleteMany({ where: { listingId } });
+        await tx.listingImage.createMany({
+          data: bekleyen.imageUrls.map((url, i) => ({ listingId, url, sortOrder: i })),
+        });
+      }
+      await tx.listing.update({ where: { id: listingId }, data: veri });
+      await tx.listingPendingEdit.delete({ where: { listingId } });
+      return tx.listing.findUnique({
+        where: { id: listingId },
+        include: {
+          images: { orderBy: { sortOrder: 'asc' } },
+          category: { include: { parent: { select: { slug: true, name: true } } } },
+          brand: true,
+          seller: { select: { id: true, displayName: true } },
+        },
+      });
+    });
+
+    // Etiketler icerikten uretiliyor; icerik degistiyse tazelenmeli.
+    if (guncel) {
+      const tags = buildAutoTags({
+        brandName: guncel.brand?.name,
+        categoryName: guncel.category?.name,
+        city: guncel.city,
+        sizeLabel: guncel.sizeLabel,
+        condition: guncel.condition,
+        title: guncel.title,
+      });
+      await this.prisma.listing.update({ where: { id: listingId }, data: { tags } });
+      // Test ilani arama indeksine girmiyor.
+      if (guncel.status === 'ACTIVE' && !guncel.isTest) {
+        this.search.indexListing(this.toSearchDoc({ ...guncel, tags })).catch(() => null);
+      }
+    }
+
+    this.audit.log({
+      actorId: adminId,
+      action: 'listing.edit.approve',
+      entity: 'Listing',
+      entityId: listingId,
+      meta: { alanlar: Object.keys(veri), gorsellerDegisti: bekleyen.imagesChanged },
+    });
+
+    await this.prisma.notification.create({
+      data: {
+        userId: bekleyen.listing.sellerId,
+        type: 'listing.edit.approved',
+        title: 'Değişikliklerin yayında',
+        body: `"${bekleyen.listing.title}" ilanındaki değişiklikler onaylandı ve yayına alındı.`,
+        payload: { listingId },
+      },
+    }).catch(() => null);
+
+    return guncel;
+  }
+
+  /**
+   * Bekleyen duzenlemeyi reddeder: yayindaki onayli surum oldugu gibi
+   * kaliyor, yalnizca bekleyen icerik siliniyor. Ilan yayindan
+   * INMIYOR - reddedilen bir degisiklik, onaylanmis ilani cezalandirmamali.
+   */
+  async bekleyenDuzenlemeyiReddet(listingId: string, adminId: string, nedenKodu?: string) {
+    const bekleyen = await this.prisma.listingPendingEdit.findUnique({
+      where: { listingId },
+      include: { listing: { select: { sellerId: true, title: true } } },
+    });
+    if (!bekleyen) throw new NotFoundException('Bekleyen düzenleme bulunamadı');
+
+    await this.prisma.listingPendingEdit.delete({ where: { listingId } });
+
+    this.audit.log({
+      actorId: adminId,
+      action: 'listing.edit.reject',
+      entity: 'Listing',
+      entityId: listingId,
+      meta: { nedenKodu: nedenKodu ?? null },
+    });
+
+    await this.prisma.notification.create({
+      data: {
+        userId: bekleyen.listing.sellerId,
+        type: 'listing.edit.rejected',
+        title: 'Değişikliklerin onaylanmadı',
+        body: `"${bekleyen.listing.title}" ilanındaki değişiklikler onaylanmadı. İlanın önceki hali yayında kalmaya devam ediyor.`,
+        payload: { listingId },
+      },
+    }).catch(() => null);
+
+    return { reddedildi: true };
+  }
+
+  // ── Test isareti (yalnizca SUPER_ADMIN) ───────────────────────────
+
+  /**
+   * Ilani test olarak isaretler ya da isareti kaldirir.
+   *
+   * Isaret hicbir erisim ya da moderasyon kontrolunu devre disi
+   * birakmiyor: test ilani da onaydan geciyor, sahiplik kurallari aynen
+   * isliyor. Yaptigi tek sey genel listelerden ve raporlardan cikarmak.
+   *
+   * Basligi "test" iceren ilan OTOMATIK isaretlenmiyor: gercek bir
+   * "Test surusu yapilmis kask" ilanini yanlislikla gizlerdi. Isaret
+   * her zaman acik bir yonetici karari.
+   */
+  async testIsaretiAyarla(listingId: string, isTest: boolean, adminId: string) {
+    const listing = await this.prisma.listing.findFirst({
+      where: { id: listingId, deletedAt: null },
+      select: { id: true, status: true, isTest: true },
+    });
+    if (!listing) throw new NotFoundException('İlan bulunamadı');
+    if (listing.isTest === isTest) return { listingId, isTest, degisiklikYok: true };
+
+    await this.prisma.listing.update({ where: { id: listingId }, data: { isTest } });
+
+    // Arama indeksi isaretle birlikte degisiyor: test yapilan ilan
+    // indeksten cikmali, isaret kalkan yayindaki ilan geri girmeli.
+    if (isTest) {
+      this.search.removeListing(listingId).catch(() => null);
+    } else if (listing.status === 'ACTIVE') {
+      const tam = await this.prisma.listing.findUnique({
+        where: { id: listingId },
+        include: {
+          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          category: { include: { parent: { select: { slug: true, name: true } } } },
+          brand: true,
+          seller: { select: { id: true, displayName: true } },
+        },
+      });
+      if (tam) this.search.indexListing(this.toSearchDoc(tam)).catch(() => null);
+    }
+
+    this.audit.log({
+      actorId: adminId,
+      action: isTest ? 'listing.test.mark' : 'listing.test.unmark',
+      entity: 'Listing',
+      entityId: listingId,
+    });
+    return { listingId, isTest };
+  }
+
+  /**
+   * Hesabi test hesabi olarak isaretler.
+   *
+   * Hesabin MEVCUT ilanlari da isaretleniyor: aksi halde isaretten once
+   * verilmis test ilanlari genel listelerde kalmaya devam ederdi.
+   * Isaret kaldirilirsa ilanlar OTOMATIK geri alinmiyor - hangi ilanin
+   * gercekten test oldugunu yalnizca yonetici bilir, topluca geri almak
+   * gercek bir ilani yanlislikla yayina sokabilir.
+   */
+  async testHesabiAyarla(userId: string, isTest: boolean, adminId: string) {
+    const kullanici = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isTestAccount: true },
+    });
+    if (!kullanici) throw new NotFoundException('Kullanıcı bulunamadı');
+
+    const sonuc = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: userId }, data: { isTestAccount: isTest } });
+      if (!isTest) return { ilan: 0 };
+      const { count } = await tx.listing.updateMany({
+        where: { sellerId: userId, deletedAt: null, isTest: false },
+        data: { isTest: true },
+      });
+      return { ilan: count };
+    });
+
+    if (isTest) {
+      const ilanlar = await this.prisma.listing.findMany({
+        where: { sellerId: userId, deletedAt: null },
+        select: { id: true },
+      });
+      for (const l of ilanlar) this.search.removeListing(l.id).catch(() => null);
+    }
+
+    this.audit.log({
+      actorId: adminId,
+      action: isTest ? 'user.test.mark' : 'user.test.unmark',
+      entity: 'User',
+      entityId: userId,
+      meta: { etkilenenIlan: sonuc.ilan },
+    });
+    return { userId, isTestAccount: isTest, isaretlenenIlan: sonuc.ilan };
+  }
+
+  /** Yonetici raporu: test olarak isaretlenmis kayitlar. */
+  async testKayitlari() {
+    const [hesaplar, ilanlar] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { isTestAccount: true, deletedAt: null },
+        select: { id: true, displayName: true, role: true, createdAt: true,
+                  _count: { select: { listings: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.listing.findMany({
+        where: { isTest: true, deletedAt: null },
+        select: { id: true, title: true, status: true, createdAt: true, publishedAt: true,
+                  seller: { select: { id: true, displayName: true, isTestAccount: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      }),
+    ]);
+    return { hesaplar, ilanlar };
   }
 
   async toggleListingStatus(id: string, sellerId: string) {
@@ -1177,9 +1654,16 @@ export class ListingsService {
       include: {
         images: { orderBy: { sortOrder: 'asc' }, take: 1 },
         category: { include: { parent: { select: { slug: true, name: true } } } },
+        // Satici hangi ilanlarinda degisiklik bekledigini listede gormeli;
+        // tek tek acip bakmasi gerekmesin.
+        bekleyenDuzenleme: { select: { createdAt: true, updatedAt: true } },
       },
     });
-    return listings.map(l => ({ ...l, slug: buildListingSlug(l) }));
+    return listings.map(l => ({
+      ...l,
+      slug: buildListingSlug(l),
+      degisiklikIncelemede: !!l.bekleyenDuzenleme,
+    }));
   }
 
   async toggleFavorite(userId: string, listingId: string) {
@@ -1384,7 +1868,8 @@ export class ListingsService {
 
   async reindexAll() {
     const listings = await this.prisma.listing.findMany({
-      where: { status: ListingStatus.ACTIVE, deletedAt: null },
+      // Test ilanlari arama indeksine hic girmiyor.
+      where: { status: ListingStatus.ACTIVE, deletedAt: null, isTest: false },
       include: {
         images: { orderBy: { sortOrder: 'asc' }, take: 1 },
         category: true,
@@ -1644,6 +2129,9 @@ export class ListingsService {
       categoryId,
       deletedAt: null,
       status: { in: ['ACTIVE', 'SOLD'] },
+      // Test ilani piyasa fiyatini bozar: "1 TL test kask" ortalamayi
+      // asagi, "999.999 TL" yukari ceker ve satici yanlis fiyat belirler.
+      isTest: false,
     };
     if (brandId) where.brandId = brandId;
 
