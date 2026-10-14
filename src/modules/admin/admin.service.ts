@@ -610,6 +610,31 @@ export class AdminService {
       : [];
     const lastLoginByUser = new Map(loginRows.map((r) => [r.actorId, r._max.createdAt]));
 
+    // SON ETKINLIK, son girisin AYNISI DEGIL.
+    //
+    // lastLoginAt yalnizca kullanici parola (ya da Google / panel MFA)
+    // girdiginde yaziliyor. Oturumlar uzun yasiyor ve token yenilemesi
+    // damgayi guncellemiyor, dolayisiyla her gun siteye giren biri
+    // haftalarca "girmemis" gorunebiliyordu. Olculdu: canlida bir
+    // kullanicinin damgasi 26 Eylul'de kalmisken cihazi 8 Ekim'de aktifti -
+    // 12 gunluk kullanim gorunmuyordu. Uyuyan hesap taramasinda en yaniltici
+    // durum buydu.
+    //
+    // Device.lastSeenAt her token yenilemesinde zaten guncelleniyor, yani
+    // dogru veri elimizde vardi; panel onu kullanmiyordu. Yeni kolon ya da
+    // migration gerekmiyor.
+    //
+    // Iptal edilmis cihazlar haric: cikis yapilmis bir oturumun son
+    // kullanimi "kullanici hala aktif" anlamina gelmiyor.
+    const etkinlikRows = items.length
+      ? await this.prisma.device.groupBy({
+          by: ['userId'],
+          where: { userId: { in: items.map((u) => u.id) }, revokedAt: null },
+          _max: { lastSeenAt: true },
+        })
+      : [];
+    const sonEtkinlik = new Map(etkinlikRows.map((r) => [r.userId, r._max.lastSeenAt]));
+
     const statusGroups = await statusGroupsPromise;
     const byStatus = { ACTIVE: 0, PENDING: 0, SUSPENDED: 0, BANNED: 0 };
     for (const g of statusGroups) {
@@ -617,7 +642,11 @@ export class AdminService {
     }
 
     return {
-      items: enriched.map((u) => ({ ...u, lastLoginAt: u.lastLoginAt ?? lastLoginByUser.get(u.id) ?? null })),
+      items: enriched.map((u) => ({
+        ...u,
+        lastLoginAt: u.lastLoginAt ?? lastLoginByUser.get(u.id) ?? null,
+        sonEtkinlik: sonEtkinlik.get(u.id) ?? null,
+      })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit), byStatus },
     };
   }

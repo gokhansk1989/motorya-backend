@@ -483,6 +483,14 @@ export class AuthService {
       meta: { method: 'admin_mfa' }, ip, userAgent,
     });
 
+    // Panel girisi de damgalanmali. login() MFA dalinda ERKEN DONUYOR ve
+    // oradaki damga satirina hic ulasmiyor; burada da yazilmazsa yalnizca
+    // panelden giren bir yonetici "hic giris yapmamis" gorunuyordu.
+    // Olculdu: canlida dort SUPER_ADMIN'in ikisinde hic damga yoktu.
+    this.prisma.user
+      .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+      .catch(() => null);
+
     const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, 'WEB');
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });
     return {
