@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsString, IsOptional, IsDateString, IsIn, MinLength, Matches, Length, Equals, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsString, IsOptional, IsDateString, IsIn, MinLength, Matches, Length, Equals, MaxLength, IsObject} from 'class-validator';
 
 export class RegisterDto {
   @IsOptional()
@@ -35,6 +35,17 @@ export class RegisterDto {
   @Length(11, 11, { message: 'TC Kimlik numarası 11 haneli olmalıdır' })
   @Matches(/^[1-9][0-9]{10}$/, { message: 'Geçerli bir TC Kimlik numarası giriniz' })
   tcKimlik?: string;
+
+  /**
+   * Hesabi getiren kampanya. Istemci ziyaret boyunca bellekte tuttugu
+   * kampanyayi buraya koyuyor; sunucu normalize edip bir KEZ damgaliyor.
+   *
+   * Olcum bilgisi: hicbir yetki ya da erisim karari buna bakmiyor,
+   * kullanici istedigi degeri gonderebilir.
+   */
+  @IsOptional()
+  @IsObject()
+  kampanya?: Record<string, unknown>;
 
   // Opsiyonel.
   //

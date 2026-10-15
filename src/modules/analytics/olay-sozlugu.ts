@@ -25,12 +25,42 @@ export interface OlayTanimi {
   alanlar: Record<string, AlanTipi>;
 }
 
+/**
+ * Kampanya alanlari. Her olaya eklenebiliyor: kullanici kampanya
+ * baglantisindan geldiyse o ziyaretteki butun olaylar kaynagi tasiyor,
+ * boylece "Instagram'dan gelenler ilan detayina ne kadar geciyor"
+ * sorusu tek sorguyla cevaplanabiliyor.
+ *
+ * Degerler sunucuda ayrica normalize ediliyor (kampanya.ts): kucuk harf,
+ * 40 karakter siniri, yalnizca harf/rakam/alt tire/tire.
+ */
+const KAMPANYA_ALANLARI = {
+  utmKaynak: 'kod',
+  utmOrtam: 'kod',
+  utmKampanya: 'kod',
+  utmIcerik: 'kod',
+  utmYerlesim: 'kod',
+} as const;
+
 export const OLAYLAR = {
+  /**
+   * Kampanya baglantisiyla siteye giris.
+   *
+   * "Giris" burada ACILIS OLAYI demek - tekil kullanici ya da oturum
+   * DEGIL. Cihaz kimligi tutmadigimiz icin tekil kullanici sayamiyoruz;
+   * raporda da oyle adlandirilmiyor.
+   */
+  kampanya_acilisi: {
+    aciklama:
+      'Kampanya etiketli bir baglantiyla siteye girildi. Acilis olayidir; tekil kullanici ya da oturum degil.',
+    alanlar: { ...KAMPANYA_ALANLARI, yol: 'kod', yonlendiren: 'kod' },
+  },
+
   // ── Ilan verme akisi ──────────────────────────────────────────────────
   ilan_akis_basladi: {
     aciklama: 'Kullanici ilan verme formunu acti.',
     akisGerekli: true,
-    alanlar: {},
+    alanlar: { ...KAMPANYA_ALANLARI },
   },
   ilan_adim_tamamlandi: {
     aciklama:
@@ -58,20 +88,18 @@ export const OLAYLAR = {
     aciklama:
       'Sunucu ilani olusturdu ve kimligini dondurdu. Dugmeye tiklama degil, islemin tamamlanmasi sayiliyor.',
     akisGerekli: true,
-    alanlar: { listingId: 'kimlik' },
+    alanlar: { ...KAMPANYA_ALANLARI, listingId: 'kimlik'},
   },
 
   // ── Arama ve kesif ────────────────────────────────────────────────────
   arama_yapildi: {
     aciklama:
       'Arama sonucu sunucudan dondu. Serbest arama metni kaydedilmiyor; yalnizca sorgunun olup olmadigi, kategori, kullanilan filtre turleri ve sonuc sayisi.',
-    alanlar: {
-      sonucSayisi: 'tamsayi',
+    alanlar: { ...KAMPANYA_ALANLARI, sonucSayisi: 'tamsayi',
       sifirSonuc: 'bayrak',
       metinVar: 'bayrak',
       kategori: 'kod',
-      filtreler: 'kodListesi',
-    },
+      filtreler: 'kodListesi',},
   },
   arama_sonuc_tiklandi: {
     aciklama:
@@ -81,14 +109,14 @@ export const OLAYLAR = {
   ilan_detay_goruntulendi: {
     aciklama:
       'Ilan detay sayfasi goruntulendi. kaynak: arama, liste, dogrudan. kendiIlani true ise donusum hesaplarindan cikariliyor.',
-    alanlar: { listingId: 'kimlik', kaynak: 'kod', kendiIlani: 'bayrak' },
+    alanlar: { ...KAMPANYA_ALANLARI, listingId: 'kimlik', kaynak: 'kod', kendiIlani: 'bayrak'},
   },
 
   // ── Saticiya ulasma ───────────────────────────────────────────────────
   mesaj_butonu_tiklandi: {
     aciklama:
       'Ilan detayinda mesaj gonderme eylemine tiklandi. Gonderilmis mesaj DEGILDIR; mesajin kaydi Message tablosundan okunuyor.',
-    alanlar: { listingId: 'kimlik', kendiIlani: 'bayrak' },
+    alanlar: { ...KAMPANYA_ALANLARI, listingId: 'kimlik', kendiIlani: 'bayrak'},
   },
 } satisfies Record<string, OlayTanimi>;
 

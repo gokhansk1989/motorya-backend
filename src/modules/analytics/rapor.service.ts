@@ -129,13 +129,14 @@ export class RaporService {
     const simdi = new Date();
     const olgunSinir = new Date(simdi.getTime() - OLGUNLASMA_SA * 60 * 60 * 1000);
 
-    const [ilkOlay, ilanAkisi, arama, moderasyon, iletisim, teklif] = await Promise.all([
+    const [ilkOlay, ilanAkisi, arama, moderasyon, iletisim, teklif, sosyal] = await Promise.all([
       this.ilkOlayTarihi(),
       this.ilanAkisi(baslangic, bitis),
       this.aramaAkisi(baslangic, bitis),
       this.moderasyon(baslangic, bitis, olgunSinir),
       this.iletisimHazirla(baslangic, bitis, olgunSinir),
       this.teklifler(baslangic, bitis),
+      this.sosyalKaynaklar(baslangic, bitis, olgunSinir),
     ]);
 
     return {
@@ -166,6 +167,183 @@ export class RaporService {
         ],
       },
       bolumler: [ilanAkisi, moderasyon, arama, iletisim, teklif],
+      sosyal,
+    };
+  }
+
+  // ── Sosyal medya kaynaklari ───────────────────────────────────────
+
+  /**
+   * Instagram / Facebook kampanyalarinin urettigi hareket.
+   *
+   * IKI AYRI KAPSAM, bilerek ayri raporlaniyor:
+   *
+   *   ZIYARET  - olaylardan. Kampanya ziyaret boyunca bellekte tasiniyor
+   *              (cihazda saklama yok), son temas kazaniyor. Sayfa
+   *              yenilenince kaynak kayboluyor.
+   *   HESAP    - User.kampanya* damgasindan. Kayit aninda bir kez
+   *              yaziliyor (ilk temas), kalici.
+   *
+   * Oranlar yalnizca KENDI kapsami icinde hesaplaniyor. Ziyaret bazli bir
+   * payi hesap bazli bir paydaya bolmek anlamsiz bir sayi uretirdi - brief
+   * de bunu acikca yasakliyor.
+   *
+   * Bu bolum Instagram/Facebook ICINDEKI erisimi, gosterimi ya da profil
+   * goruntulemesini OLCMUYOR. Yalnizca siteye ulasan tiklamalari goruyor.
+   */
+  private async sosyalKaynaklar(baslangic: Date, bitis: Date, olgunSinir: Date) {
+    // ── Ziyaret kapsami: olaylar ────────────────────────────────────
+    const olayKirilimi = await this.prisma.$queryRaw<
+      {
+        kaynak: string;
+        yerlesim: string;
+        kampanya: string;
+        icerik: string;
+        acilis: bigint;
+        detay: bigint;
+        ilan_gonderimi: bigint;
+      }[]
+    >(Prisma.sql`
+      SELECT
+        COALESCE(props->>'utmKaynak', 'dogrudan')   AS kaynak,
+        COALESCE(props->>'utmYerlesim', 'bilinmiyor') AS yerlesim,
+        COALESCE(props->>'utmKampanya', 'bilinmiyor') AS kampanya,
+        COALESCE(props->>'utmIcerik', 'bilinmiyor')   AS icerik,
+        COUNT(*) FILTER (WHERE name = 'kampanya_acilisi')        AS acilis,
+        COUNT(*) FILTER (WHERE name = 'ilan_detay_goruntulendi'
+                           AND COALESCE((props->>'kendiIlani')::boolean, false) = false) AS detay,
+        COUNT(*) FILTER (WHERE name = 'ilan_gonderildi')         AS ilan_gonderimi
+      FROM "AnalyticsEvent"
+      WHERE NOT "isStaff"
+        AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+        AND props->>'utmKaynak' IS NOT NULL
+      GROUP BY 1, 2, 3, 4
+      ORDER BY acilis DESC, detay DESC
+      LIMIT 100
+    `);
+
+    // ── Hesap kapsami: ilk temas damgasi ────────────────────────────
+    const hesapKirilimi = await this.prisma.$queryRaw<
+      {
+        kaynak: string;
+        kampanya: string;
+        icerik: string;
+        uyelik: bigint;
+        ilk_mesaj: bigint;
+        teklif: bigint;
+      }[]
+    >(Prisma.sql`
+      WITH yeni AS (
+        SELECT u.id, u."kampanyaKaynak" AS kaynak,
+               COALESCE(u."kampanyaAdi",'bilinmiyor') AS kampanya,
+               COALESCE(u."kampanyaIcerik",'bilinmiyor') AS icerik
+        FROM "User" u
+        WHERE u."deletedAt" IS NULL
+          AND u."kampanyaKaynak" IS NOT NULL
+          AND NOT u."isTestAccount"
+          AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+          AND u."createdAt" >= ${ts(baslangic)} AND u."createdAt" < ${ts(bitis)}
+      )
+      SELECT y.kaynak, y.kampanya, y.icerik,
+        COUNT(*) AS uyelik,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM "Message" m
+          JOIN "Conversation" c ON c.id = m."conversationId"
+          JOIN "Listing" l ON l.id = c."listingId"
+          WHERE m."senderId" = y.id AND m."senderId" <> l."sellerId"
+        )) AS ilk_mesaj,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM "Offer" o WHERE o."buyerId" = y.id
+        )) AS teklif
+      FROM yeni y
+      GROUP BY 1, 2, 3
+      ORDER BY uyelik DESC
+      LIMIT 100
+    `);
+
+    const s = (v: bigint | null | undefined) => Number(v ?? 0);
+
+    // Kaynak bazinda topla (Instagram / Facebook / diger).
+    const kaynakToplami = new Map<string, { acilis: number; detay: number; ilan: number }>();
+    for (const r of olayKirilimi) {
+      const t = kaynakToplami.get(r.kaynak) ?? { acilis: 0, detay: 0, ilan: 0 };
+      t.acilis += s(r.acilis);
+      t.detay += s(r.detay);
+      t.ilan += s(r.ilan_gonderimi);
+      kaynakToplami.set(r.kaynak, t);
+    }
+    const hesapToplami = new Map<string, { uyelik: number; mesaj: number; teklif: number }>();
+    for (const r of hesapKirilimi) {
+      const t = hesapToplami.get(r.kaynak) ?? { uyelik: 0, mesaj: 0, teklif: 0 };
+      t.uyelik += s(r.uyelik);
+      t.mesaj += s(r.ilk_mesaj);
+      t.teklif += s(r.teklif);
+      hesapToplami.set(r.kaynak, t);
+    }
+
+    // Kaynagi belirlenemeyen acilislar: raporda ayri durmali, Instagram ya
+    // da Facebook sayilmamali.
+    const [kaynaksiz] = await this.prisma.$queryRaw<{ adet: bigint }[]>(Prisma.sql`
+      SELECT COUNT(*) AS adet FROM "AnalyticsEvent"
+      WHERE NOT "isStaff" AND name = 'ilan_detay_goruntulendi'
+        AND props->>'utmKaynak' IS NULL
+        AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+    `);
+
+    return {
+      baslik: 'Sosyal Medya Kaynakları',
+      aciklama:
+        'Instagram ve Facebook bağlantılarından siteye ulaşan hareketler. Bu bölüm ' +
+        'Instagram/Facebook İÇİNDEKİ erişimi, gösterimi veya profil görüntülemesini ÖLÇMEZ — ' +
+        'yalnızca siteye gelen tıklamaları ve sonrasını görür.',
+      kurallar: [
+        'Ziyaret kapsamı: kampanya ziyaret boyunca yalnızca bellekte taşınır (cihazda saklanmaz). Son açılan kampanya bağlantısı öncekinin yerini alır. Sayfa yenilenince kaynak kaybolur ve "belirlenemedi" olur.',
+        'Hesap kapsamı: kayıt anındaki kampanya User kaydına bir kez damgalanır (ilk temas) ve değişmez.',
+        'Oranlar yalnızca kendi kapsamı içinde hesaplanır; ziyaret bazlı pay hesap bazlı paydaya bölünmez.',
+        '"Açılış" bir OLAY sayısıdır — tekil kullanıcı ya da oturum değil. Cihaz kimliği tutulmadığı için tekil kullanıcı ölçülemiyor.',
+        'UTM etiketi olmayan ziyaretler Instagram/Facebook sayılmaz; "kaynak belirlenemedi" olarak durur.',
+        'Ölçümün başladığı tarihten önceki ziyaretlerin kaynağı bilinmiyor ve tahminle doldurulmuyor.',
+      ],
+      ziyaret: {
+        kapsam: 'ziyaret',
+        kaynaklar: [...kaynakToplami.entries()].map(([kaynak, t]) => ({
+          kaynak,
+          acilis: t.acilis,
+          ilanDetayi: t.detay,
+          ilanGonderimi: t.ilan,
+          detayOrani: t.acilis >= ASGARI_PAYDA ? t.detay / t.acilis : null,
+          yeterliVeri: t.acilis >= ASGARI_PAYDA,
+        })),
+        kirilim: olayKirilimi.map((r) => ({
+          kaynak: r.kaynak,
+          yerlesim: r.yerlesim,
+          kampanya: r.kampanya,
+          icerik: r.icerik,
+          acilis: s(r.acilis),
+          ilanDetayi: s(r.detay),
+          ilanGonderimi: s(r.ilan_gonderimi),
+        })),
+        kaynagiBelirsizDetayGoruntuleme: s(kaynaksiz?.adet),
+      },
+      hesap: {
+        kapsam: 'hesap',
+        kaynaklar: [...hesapToplami.entries()].map(([kaynak, t]) => ({
+          kaynak,
+          uyelik: t.uyelik,
+          ilkMesajGonderen: t.mesaj,
+          teklifVeren: t.teklif,
+          mesajOrani: t.uyelik >= ASGARI_PAYDA ? t.mesaj / t.uyelik : null,
+          yeterliVeri: t.uyelik >= ASGARI_PAYDA,
+        })),
+        kirilim: hesapKirilimi.map((r) => ({
+          kaynak: r.kaynak,
+          kampanya: r.kampanya,
+          icerik: r.icerik,
+          uyelik: s(r.uyelik),
+          ilkMesajGonderen: s(r.ilk_mesaj),
+          teklifVeren: s(r.teklif),
+        })),
+      },
     };
   }
 

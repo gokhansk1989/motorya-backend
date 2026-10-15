@@ -93,6 +93,23 @@ model User {
   /// dislardi.
   isTestAccount Boolean @default(false)
 
+  /// Hesabi getiren kampanya — ILK TEMAS, bir kez yaziliyor ve bir daha
+  /// degismiyor.
+  ///
+  /// Neden User uzerinde: ilk mesaj ve teklif gibi donusumler sunucu
+  /// tarafi gercekler (Message/Offer tablolari). Onlari bir kampanyayla
+  /// iliskilendirmenin tek yolu, hesabin hangi kampanyadan geldigini
+  /// bilmek. Olay akisinda tutsaydik, kaydolduktan haftalar sonra gelen
+  /// ilk mesaji hicbir kampanyaya baglayamazdik.
+  ///
+  /// Olcum bilgisi: hicbir yetki, erisim ya da fiyat karari buna bakmiyor.
+  /// Kullanici adres cubugundan istedigi degeri yazabilir.
+  kampanyaKaynak   String?
+  kampanyaOrtam    String?
+  kampanyaAdi      String?
+  kampanyaIcerik   String?
+  kampanyaIlkTemas DateTime?
+
   emailVerificationToken  String?   @unique
   emailVerificationExpiry DateTime?
   // Sifre degisim zamani: bu andan once uretilmis access token'lar

@@ -8,6 +8,7 @@ import { SettingsService } from '../settings/settings.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { gecerliTcKimlik, TC_CAKISMA_MESAJI } from '../../common/tc-kimlik';
+import { kampanyaCikar } from '../analytics/kampanya';
 import { Prisma } from '@prisma/client';
 
 function generateToken(): string {
@@ -31,6 +32,33 @@ const TOKEN_GECERLILIK_MS = 24 * 60 * 60 * 1000;
 
 /** Ayni hesaba iki dogrulama postasi arasindaki en kisa sure. */
 const YENIDEN_GONDERIM_BEKLEME_SN = 60;
+
+/**
+ * Kayit isteginden kampanya damgasini uretir.
+ *
+ * Kampanya yoksa BOS nesne doner - kolonlar null kalir ve raporda
+ * "kaynak belirlenemedi" olarak gorunur. Tahminle doldurmuyoruz.
+ */
+function kampanyaDamgasi(gelen: unknown) {
+  const k = kampanyaCikar(
+    (gelen && typeof gelen === 'object' && !Array.isArray(gelen)
+      ? {
+          utm_source: (gelen as any).kaynak ?? (gelen as any).utm_source,
+          utm_medium: (gelen as any).ortam ?? (gelen as any).utm_medium,
+          utm_campaign: (gelen as any).kampanya ?? (gelen as any).utm_campaign,
+          utm_content: (gelen as any).icerik ?? (gelen as any).utm_content,
+        }
+      : {}) as Record<string, string | undefined>,
+  );
+  if (!k) return {};
+  return {
+    kampanyaKaynak: k.kaynak,
+    kampanyaOrtam: k.ortam,
+    kampanyaAdi: k.kampanya,
+    kampanyaIcerik: k.icerik,
+    kampanyaIlkTemas: new Date(),
+  };
+}
 
 @Injectable()
 export class AuthService {
@@ -107,6 +135,11 @@ export class AuthService {
         isFounder,
         emailVerificationToken: token,
         emailVerificationExpiry: expiry,
+        // Hesabi getiren kampanya — ILK TEMAS, yalnizca kayitta yaziliyor
+        // ve bir daha degismiyor. Ziyaret kapsamindaki kampanya degisebilir
+        // (son temas kazanir) ama "bu hesabi hangi kampanya getirdi"
+        // sorusunun tek bir cevabi olmali.
+        ...kampanyaDamgasi(dto.kampanya),
       },
     });
 
