@@ -1015,20 +1015,142 @@ export class ListingsService {
     });
   }
 
-  async adminSetFeatured(id: string, dto: SetFeaturedDto) {
-    const listing = await this.prisma.listing.findFirst({ where: { id, deletedAt: null } });
-    if (!listing) throw new NotFoundException('Listing not found');
+  /** Vitrine eklenebilir ilan: yayinda, silinmemis, test degil. */
+  private static readonly VITRIN_UYGUN_DURUM = 'ACTIVE';
 
-    if (dto.isFeatured) {
-      const days = dto.days ?? 7;
-      const until = new Date();
-      until.setDate(until.getDate() + days);
-      const updated = await this.prisma.listing.update({
+  /**
+   * Cift gonderim koruması.
+   *
+   * Sure uzatma MATEMATIKSEL olarak birikimli: iki istek iki kez uzatir ve
+   * bu "dogru" sonuctur. Ama cift tiklama ya da aglin tekrar denemesi de
+   * ayni iki istegi uretiyor; kullanici 3 gun basip 6 gun aliyor ve bunu
+   * gosteren hicbir sey yok. Istemcide dugme kilitleniyor, ama istemci
+   * kontrolu tek basina yeterli degil.
+   *
+   * Cozum: ayni ilan + ayni gun sayisi icin kisa bir pencerede gelen
+   * ikinci istek YOK SAYILIYOR (mevcut durum donuyor, hata degil - cunku
+   * kullanicinin niyeti zaten gerceklesmis durumda).
+   *
+   * SINIR: bellekte tutuluyor, yani surec yeniden baslarsa sifirlanir ve
+   * cok ornekli bir kurulumda ornekler arasi paylasilmaz. Mevcut kurulum
+   * tek Docker ornegi oldugu icin yeterli; olceklenirse Redis'e tasinmali.
+   */
+  private static readonly CIFT_GONDERIM_PENCERE_MS = 8_000;
+  private readonly sonVitrinIstegi = new Map<string, number>();
+
+  private ciftGonderimMi(listingId: string, days: number): boolean {
+    const anahtar = `${listingId}:${days}`;
+    const simdi = Date.now();
+    const son = this.sonVitrinIstegi.get(anahtar);
+    if (son && simdi - son < ListingsService.CIFT_GONDERIM_PENCERE_MS) return true;
+    this.sonVitrinIstegi.set(anahtar, simdi);
+    // Harita sinirsiz buyumesin: eski kayitlari temizle.
+    if (this.sonVitrinIstegi.size > 500) {
+      for (const [k, t] of this.sonVitrinIstegi) {
+        if (simdi - t > ListingsService.CIFT_GONDERIM_PENCERE_MS) this.sonVitrinIstegi.delete(k);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Ilani vitrine ekler, suresini uzatir ya da vitrinden cikarir.
+   *
+   * UC KURAL buraya sonradan eklendi, cunku yoklugu sessiz hatalar
+   * uretiyordu:
+   *
+   * 1. UYGUNLUK SUNUCUDA DOGRULANIYOR. Onceden yalnizca "ilan var mi"
+   *    bakiliyordu; SOLD, PENDING_REVIEW, REJECTED ya da TEST bir ilan
+   *    vitrine alinabiliyordu. Vitrin sorgusu status=ACTIVE filtreledigi
+   *    icin ilan sitede gorunmuyor ama slot dolu sayiliyordu - panelde
+   *    "7 ilan vitrinde" yazarken sitede 5 tane cikiyordu.
+   *
+   * 2. SURE UZATMA MEVCUT BITISTEN BASLIYOR. Onceden her istek
+   *    `bugun + gun` yaziyordu; 30 gunluk bir ilana yanlislikla "3 gun"
+   *    basildiginda sure UZAMIYOR, 27 gun KISALIYORDU ve bunu gosteren
+   *    hicbir sey yoktu. Artik yeni bitis her zaman
+   *    max(simdi, mevcutBitis) + gun; yani islem suresi asla kisaltmiyor.
+   *
+   * 3. BILDIRIM YALNIZCA ILK EKLEMEDE. Cift tiklama ya da tekrarlanan
+   *    istek saticiya iki push gonderiyordu. Uzatma zaten saticiyi
+   *    ilgilendiren yeni bir olay degil.
+   */
+  async adminSetFeatured(id: string, dto: SetFeaturedDto, adminId?: string) {
+    const listing = await this.prisma.listing.findFirst({
+      where: { id, deletedAt: null },
+      select: {
+        id: true, title: true, sellerId: true, status: true, isTest: true,
+        isFeatured: true, featuredUntil: true, createdAt: true,
+      },
+    });
+    if (!listing) throw new NotFoundException('İlan bulunamadı');
+
+    if (!dto.isFeatured) {
+      // Cikarma her durumda serbest: satilmis ya da test olarak
+      // isaretlenmis bir ilanin bayragini temizleyebilmemiz gerekiyor.
+      const guncel = await this.prisma.listing.update({
         where: { id },
-        data: { isFeatured: true, featuredUntil: until },
+        data: { isFeatured: false, featuredUntil: null },
       });
+      if (listing.isFeatured) {
+        this.audit.log({
+          actorId: adminId ?? 'system',
+          action: 'listing.featured.remove',
+          entity: 'Listing',
+          entityId: id,
+        });
+      }
+      return guncel;
+    }
 
-      const listingSlug = buildListingSlug(listing);
+    if (listing.isTest) {
+      throw new BadRequestException(
+        'Test olarak işaretlenmiş ilan vitrine eklenemez. Önce test işaretini kaldırın.',
+      );
+    }
+    if (listing.status !== ListingsService.VITRIN_UYGUN_DURUM) {
+      throw new BadRequestException(
+        `Yalnızca yayındaki (aktif) ilanlar vitrine eklenebilir. Bu ilanın durumu: ${listing.status}`,
+      );
+    }
+
+    const days = dto.days ?? 7;
+
+    if (this.ciftGonderimMi(id, days)) {
+      // Ayni islem saniyeler icinde tekrar geldi: sureyi bir daha
+      // uzatmiyoruz. Hata DEGIL - istenen sonuc zaten gerceklesmis.
+      return { ...listing, mukerrerIstekYokSayildi: true } as any;
+    }
+
+    // Mevcut bitis gelecekteyse oradan devam; gecmisteyse ya da yoksa
+    // bugunden. Boylece islem hicbir kosulda sureyi kisaltmiyor.
+    const simdi = new Date();
+    const mevcutBitis = listing.featuredUntil;
+    const taban =
+      listing.isFeatured && mevcutBitis && mevcutBitis.getTime() > simdi.getTime()
+        ? new Date(mevcutBitis)
+        : simdi;
+    const until = new Date(taban);
+    until.setDate(until.getDate() + days);
+
+    const ilkEkleme = !(listing.isFeatured && mevcutBitis && mevcutBitis.getTime() > simdi.getTime());
+
+    const updated = await this.prisma.listing.update({
+      where: { id },
+      data: { isFeatured: true, featuredUntil: until },
+    });
+
+    this.audit.log({
+      actorId: adminId ?? 'system',
+      action: ilkEkleme ? 'listing.featured.add' : 'listing.featured.extend',
+      entity: 'Listing',
+      entityId: id,
+      // Kisisel veri yok: yalnizca sure bilgisi.
+      meta: { days, until: until.toISOString() },
+    });
+
+    if (ilkEkleme) {
+      const listingSlug = buildListingSlug(listing as any);
       const body = `"${listing.title}" ilanın ${days} gün boyunca vitrinde öne çıkacak.`;
       this.prisma.notification.create({
         data: {
@@ -1049,14 +1171,157 @@ export class ListingsService {
         body,
         data: { type: 'listing', listingId: id },
       }, 'listingStatus').catch(() => null);
-
-      return updated;
     }
 
-    return this.prisma.listing.update({
-      where: { id },
-      data: { isFeatured: false, featuredUntil: null },
-    });
+    return updated;
+  }
+
+  /** Sitedeki vitrin seridinin gosterdigi ilan sayisi — ana sayfa ile ayni kosul. */
+  private vitrinSitedeKosulu() {
+    return {
+      isFeatured: true,
+      featuredUntil: { gt: new Date() },
+      status: ListingStatus.ACTIVE,
+      deletedAt: null,
+      isTest: false,
+    };
+  }
+
+  /**
+   * Vitrin yonetim ekraninin verisi.
+   *
+   * Public /listings?isFeatured=true ile ayni sey DEGIL ve olmamali:
+   * orada yalnizca sitede GORUNEN ilanlar var. Panelin gormesi gereken
+   * sey ise bayragi acik olan HER ilan - cunku satilmis, pasife alinmis
+   * ya da suresi dolmus bir ilan sitede gorunmuyor ama bayragi acik
+   * kaldigi icin kimse farketmeden "vitrinde" sayiliyor. Bu kayitlar
+   * ayri bir "dikkat" listesi olarak donuyor.
+   *
+   * Siralama: sitedeki serit createdAt DESC ile donuyor (otomatik
+   * donen karusel, sabit sira yok). Panelde ise bitis tarihine gore
+   * siralıyoruz - "hangisi once bitiyor" sorusu gunluk isin ta kendisi.
+   */
+  async vitrinOzeti() {
+    const simdi = new Date();
+    const [hepsi, sitedeAdet] = await Promise.all([
+      this.prisma.listing.findMany({
+        where: { isFeatured: true, deletedAt: null },
+        orderBy: [{ featuredUntil: 'asc' }],
+        include: {
+          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          seller: { select: { id: true, displayName: true } },
+          category: { select: { id: true, name: true, slug: true, parentId: true, parent: { select: { slug: true } } } },
+        },
+      }),
+      this.prisma.listing.count({ where: this.vitrinSitedeKosulu() }),
+    ]);
+
+    const sorunNedeni = (l: (typeof hepsi)[number]): string | null => {
+      if (!l.featuredUntil || l.featuredUntil.getTime() <= simdi.getTime()) return 'sure_doldu';
+      if (l.isTest) return 'test_ilani';
+      if (l.status !== ListingStatus.ACTIVE) return 'yayinda_degil';
+      return null;
+    };
+
+    const items = hepsi.map((l) => ({
+      ...l,
+      slug: buildListingSlug(l),
+      sitedeGorunuyor: sorunNedeni(l) === null,
+      sorunNedeni: sorunNedeni(l),
+    }));
+
+    // Yakinda bitecek esigi 3 GUN. Sabit ve raporda aciklanmis olmasi
+    // gerekiyor; "yakinda" tanimsiz bir sayi uretirdi.
+    const yakindaBitenEsikGun = 3;
+    const esik = new Date(simdi.getTime() + yakindaBitenEsikGun * 86_400_000);
+
+    return {
+      items,
+      ozet: {
+        sitedeGorunen: sitedeAdet,
+        bayragiAcik: items.length,
+        yakindaBiten: items.filter(
+          (l) => l.sitedeGorunuyor && l.featuredUntil && l.featuredUntil <= esik,
+        ).length,
+        yakindaBitenEsikGun,
+        dikkatGerektiren: items.filter((l) => !l.sitedeGorunuyor).length,
+        // Vitrin gosterimi ve tiklamasi icin olcum KURULMADI. Sifir
+        // donmek yanlis olur: olculmedigini soylemek zorundayiz.
+        gosterim: null as number | null,
+        tiklama: null as number | null,
+        tiklamaOrani: null as number | null,
+        olcumNotu:
+          'Vitrin gösterimi ve vitrin tıklaması için ayrı bir ölçüm kurulmadı. ' +
+          'İlanın toplam detay görüntülenmesi vitrin gösterimi değildir; yerleşim ' +
+          'bazlı ayrım olmadan CTR hesaplanamaz.',
+        siralamaNotu:
+          'Sitedeki vitrin şeridi otomatik dönen bir karuseldir ve ilanları en yeni ' +
+          'ilandan başlayarak gösterir (en fazla 12 ilan). Elle sabit sıra için veri ' +
+          'modelinde sıra alanı yok.',
+      },
+    };
+  }
+
+  /**
+   * Vitrine eklenebilecek ilanlari arar.
+   *
+   * Public arama ucu yerine ayri bir admin ucu olmasinin nedeni: public
+   * uc test ilanlarini ve yayinda olmayanlari hic dondurmuyor, dolayisiyla
+   * "ilan neden bulunamiyor" sorusu panelden cevaplanamiyordu. Burada
+   * yayinda olmayan ilan da donuyor ama `uygun: false` ile - panel neden
+   * eklenemedigini soyleyebiliyor.
+   *
+   * Arama: baslik, satici adi, marka adi ve ilan ID'si. ID aramasi
+   * onemli; ilani sitede gorup panele gelen kullanici adresi yapistirip
+   * dogrudan bulabiliyor.
+   */
+  async vitrinAdaylari(search?: string, limit = 20) {
+    const q = (search ?? '').trim();
+    if (q.length < 2) return { items: [], meta: { total: 0, limit } };
+
+    // Yapistirilan adresten CUID cikar: ".../ilan/kask-xyz-cmv6l48x8001097aa32lp4eo1"
+    const cuid = q.match(/c[a-z0-9]{24}/)?.[0];
+
+    const where: any = {
+      deletedAt: null,
+      OR: [
+        { title: { contains: q, mode: 'insensitive' } },
+        { seller: { displayName: { contains: q, mode: 'insensitive' } } },
+        { brand: { name: { contains: q, mode: 'insensitive' } } },
+        ...(cuid ? [{ id: cuid }] : []),
+      ],
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.listing.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: Math.min(limit, 50),
+        include: {
+          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          seller: { select: { id: true, displayName: true } },
+          brand: { select: { id: true, name: true } },
+          category: { select: { id: true, name: true, slug: true, parentId: true, parent: { select: { slug: true } } } },
+        },
+      }),
+      this.prisma.listing.count({ where }),
+    ]);
+
+    const simdi = new Date();
+    return {
+      items: items.map((l) => ({
+        ...l,
+        slug: buildListingSlug(l),
+        vitrindeMi: l.isFeatured && !!l.featuredUntil && l.featuredUntil > simdi,
+        uygun: l.status === ListingStatus.ACTIVE && !l.isTest,
+        uygunsuzlukNedeni: l.isTest
+          ? 'test_ilani'
+          : l.status !== ListingStatus.ACTIVE
+            ? 'yayinda_degil'
+            : null,
+      })),
+      meta: { total, limit },
+    };
   }
 
   async updateListing(id: string, sellerId: string, dto: UpdateListingDto) {

@@ -124,8 +124,16 @@ export class AdminController {
   getPendingListings(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('testDahil') testDahil?: string,
+    @Request() req?,
   ) {
-    return this.adminService.getPendingListings(Number(page) || 1, Number(limit) || 20);
+    return this.adminService.getPendingListings(
+      Number(page) || 1,
+      Number(limit) || 20,
+      search,
+      this.testDahilMi(testDahil, req),
+    );
   }
 
   @Get('listings')
@@ -134,8 +142,30 @@ export class AdminController {
     @Query('limit') limit?: string,
     @Query('status') status?: string,
     @Query('search') search?: string,
+    @Query('testDahil') testDahil?: string,
+    @Request() req?,
   ) {
-    return this.adminService.getAllListings(Number(page) || 1, Number(limit) || 20, status, search);
+    return this.adminService.getAllListings(
+      Number(page) || 1,
+      Number(limit) || 20,
+      status,
+      search,
+      this.testDahilMi(testDahil, req),
+    );
+  }
+
+  /**
+   * Test kayitlarini listeye dahil etme yetkisi.
+   *
+   * Istemcinin gonderdigi bayrak tek basina yetmiyor: test isareti bir
+   * kaydi genel listelerden cikardigi icin onu geri getirmek de yetkiye
+   * bagli olmali. MODERATOR bu bayragi acsa bile yok sayiliyor - UI'daki
+   * kontrol tek basina bir yetki kontrolu degildir.
+   */
+  private testDahilMi(bayrak: string | undefined, req: any): boolean {
+    if (bayrak !== 'true' && bayrak !== '1') return false;
+    const rol = req?.user?.role;
+    return rol === 'ADMIN' || rol === 'SUPER_ADMIN';
   }
 
   @Patch('listings/:id/moderate')
@@ -179,7 +209,10 @@ export class AdminController {
     @Request() req,
     @Body() dto: ModerateUserDto,
   ) {
-    return this.adminService.moderateUser(id, req.user.id, dto);
+    // actorRole servise geciyor: personel hesabini askiya alma yetkisi
+    // SUPER_ADMIN'e ait. Controller seviyesindeki @Roles MODERATOR'u da
+    // iceriyor, yani kontrol servis tarafinda yapilmak zorunda.
+    return this.adminService.moderateUser(id, req.user.id, dto, req.user.role);
   }
 
   @Get('audit-log')

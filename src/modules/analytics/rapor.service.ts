@@ -181,8 +181,14 @@ export class RaporService {
    *   ZIYARET  - olaylardan. Kampanya ziyaret boyunca bellekte tasiniyor
    *              (cihazda saklama yok), son temas kazaniyor. Sayfa
    *              yenilenince kaynak kayboluyor.
-   *   HESAP    - User.kampanya* damgasindan. Kayit aninda bir kez
-   *              yaziliyor (ilk temas), kalici.
+   *   HESAP    - User.kampanya* damgasindan. KAYIT aninda bir kez
+   *              yaziliyor, kalici.
+   *
+   * DIKKAT: hesap kapsamindaki damga "ilk temas" DEGIL. Oyle
+   * adlandirilmisti ve yanlisti: gercek ilk ziyaret kaynagi hicbir yerde
+   * saklanmiyor (cihazda depolama yok). Damga, kayit aninda bellekte
+   * hangi kampanya varsa onu gosterir - yani o ziyaretin son temasi.
+   * Raporda adi "Kayit kampanyasi".
    *
    * Oranlar yalnizca KENDI kapsami icinde hesaplaniyor. Ziyaret bazli bir
    * payi hesap bazli bir paydaya bolmek anlamsiz bir sayi uretirdi - brief
@@ -196,6 +202,7 @@ export class RaporService {
     const olayKirilimi = await this.prisma.$queryRaw<
       {
         kaynak: string;
+        ortam: string;
         yerlesim: string;
         kampanya: string;
         icerik: string;
@@ -206,6 +213,10 @@ export class RaporService {
     >(Prisma.sql`
       SELECT
         COALESCE(props->>'utmKaynak', 'dogrudan')   AS kaynak,
+        -- utm_medium: ucretli/organik ayrimi. Olay sozlugu bu alani zaten
+        -- tasiyordu ama rapor onu hic gruplamiyordu; ayni kampanyanin
+        -- reklam ve organik hareketi TEK SATIRDA birlesiyordu.
+        COALESCE(props->>'utmOrtam', 'adsiz')         AS ortam,
         COALESCE(props->>'utmYerlesim', 'bilinmiyor') AS yerlesim,
         COALESCE(props->>'utmKampanya', 'bilinmiyor') AS kampanya,
         COALESCE(props->>'utmIcerik', 'bilinmiyor')   AS icerik,
@@ -217,15 +228,16 @@ export class RaporService {
       WHERE NOT "isStaff"
         AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
         AND props->>'utmKaynak' IS NOT NULL
-      GROUP BY 1, 2, 3, 4
+      GROUP BY 1, 2, 3, 4, 5
       ORDER BY acilis DESC, detay DESC
-      LIMIT 100
+      LIMIT 200
     `);
 
-    // ── Hesap kapsami: ilk temas damgasi ────────────────────────────
+    // ── Hesap kapsami: KAYIT kampanyasi damgasi ──────────────────────
     const hesapKirilimi = await this.prisma.$queryRaw<
       {
         kaynak: string;
+        ortam: string;
         kampanya: string;
         icerik: string;
         uyelik: bigint;
@@ -235,6 +247,10 @@ export class RaporService {
     >(Prisma.sql`
       WITH yeni AS (
         SELECT u.id, u."kampanyaKaynak" AS kaynak,
+               -- Hesap kapsaminda da ucretli/organik ayrimi: ayni
+               -- kampanyadan gelen reklam uyeligiyle organik uyelik ayni
+               -- satirda birlesmemeli.
+               COALESCE(u."kampanyaOrtam",'adsiz') AS ortam,
                COALESCE(u."kampanyaAdi",'bilinmiyor') AS kampanya,
                COALESCE(u."kampanyaIcerik",'bilinmiyor') AS icerik
         FROM "User" u
@@ -244,7 +260,7 @@ export class RaporService {
           AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
           AND u."createdAt" >= ${ts(baslangic)} AND u."createdAt" < ${ts(bitis)}
       )
-      SELECT y.kaynak, y.kampanya, y.icerik,
+      SELECT y.kaynak, y.ortam, y.kampanya, y.icerik,
         COUNT(*) AS uyelik,
         COUNT(*) FILTER (WHERE EXISTS (
           SELECT 1 FROM "Message" m
@@ -256,30 +272,72 @@ export class RaporService {
           SELECT 1 FROM "Offer" o WHERE o."buyerId" = y.id
         )) AS teklif
       FROM yeni y
-      GROUP BY 1, 2, 3
+      GROUP BY 1, 2, 3, 4
       ORDER BY uyelik DESC
       LIMIT 100
     `);
 
     const s = (v: bigint | null | undefined) => Number(v ?? 0);
 
-    // Kaynak bazinda topla (Instagram / Facebook / diger).
-    const kaynakToplami = new Map<string, { acilis: number; detay: number; ilan: number }>();
+    /**
+     * utm_medium -> trafik turu.
+     *
+     * Yalnizca bilinen iki deger etiketleniyor. Geriye kalan her sey
+     * "belirsiz": gecmis baglantilar tahminle yeniden etiketlenmiyor.
+     * Ozellikle organic_social yazilmis ama aslinda reklamda kullanilmis
+     * bir baglantiyi "ucretli" diye duzeltmek, olcumun kendisini
+     * uydurmak olurdu.
+     */
+    const trafikTuru = (ortam: string): 'ucretli' | 'organik' | 'belirsiz' => {
+      if (ortam === 'paid_social' || ortam === 'cpc' || ortam === 'paid') return 'ucretli';
+      if (ortam === 'organic_social' || ortam === 'social' || ortam === 'organic') return 'organik';
+      return 'belirsiz';
+    };
+
+    // Kaynak bazinda topla. Anahtar (kaynak + trafik turu) ikilisi:
+    // Instagram organik ile Instagram reklam ayni satira dusmemeli.
+    const kaynakToplami = new Map<
+      string,
+      { kaynak: string; trafik: string; acilis: number; detay: number; ilan: number }
+    >();
     for (const r of olayKirilimi) {
-      const t = kaynakToplami.get(r.kaynak) ?? { acilis: 0, detay: 0, ilan: 0 };
+      const trafik = trafikTuru(r.ortam);
+      const anahtar = `${r.kaynak}|${trafik}`;
+      const t = kaynakToplami.get(anahtar) ?? {
+        kaynak: r.kaynak, trafik, acilis: 0, detay: 0, ilan: 0,
+      };
       t.acilis += s(r.acilis);
       t.detay += s(r.detay);
       t.ilan += s(r.ilan_gonderimi);
-      kaynakToplami.set(r.kaynak, t);
+      kaynakToplami.set(anahtar, t);
     }
-    const hesapToplami = new Map<string, { uyelik: number; mesaj: number; teklif: number }>();
+    const hesapToplami = new Map<
+      string,
+      { kaynak: string; trafik: string; uyelik: number; mesaj: number; teklif: number }
+    >();
     for (const r of hesapKirilimi) {
-      const t = hesapToplami.get(r.kaynak) ?? { uyelik: 0, mesaj: 0, teklif: 0 };
+      const trafik = trafikTuru(r.ortam);
+      const anahtar = `${r.kaynak}|${trafik}`;
+      const t = hesapToplami.get(anahtar) ?? {
+        kaynak: r.kaynak, trafik, uyelik: 0, mesaj: 0, teklif: 0,
+      };
       t.uyelik += s(r.uyelik);
       t.mesaj += s(r.ilk_mesaj);
       t.teklif += s(r.teklif);
-      hesapToplami.set(r.kaynak, t);
+      hesapToplami.set(anahtar, t);
     }
+
+    // Kaynagi belirlenemeyen UYELIKLER. Hesap kapsaminin paydasi olmadan
+    // "kampanyadan 3 uyelik geldi" sayisi tek basina bir sey ifade
+    // etmiyor: ayni donemde 40 etiketsiz uyelik varsa resim bambaska.
+    const [kaynaksizUyelik] = await this.prisma.$queryRaw<{ adet: bigint }[]>(Prisma.sql`
+      SELECT COUNT(*) AS adet FROM "User" u
+      WHERE u."deletedAt" IS NULL
+        AND u."kampanyaKaynak" IS NULL
+        AND NOT u."isTestAccount"
+        AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+        AND u."createdAt" >= ${ts(baslangic)} AND u."createdAt" < ${ts(bitis)}
+    `);
 
     // Kaynagi belirlenemeyen acilislar: raporda ayri durmali, Instagram ya
     // da Facebook sayilmamali.
@@ -298,24 +356,32 @@ export class RaporService {
         'yalnızca siteye gelen tıklamaları ve sonrasını görür.',
       kurallar: [
         'Ziyaret kapsamı: kampanya ziyaret boyunca yalnızca bellekte taşınır (cihazda saklanmaz). Son açılan kampanya bağlantısı öncekinin yerini alır. Sayfa yenilenince kaynak kaybolur ve "belirlenemedi" olur.',
-        'Hesap kapsamı: kayıt anındaki kampanya User kaydına bir kez damgalanır (ilk temas) ve değişmez.',
+        'Hesap kapsamı — KAYIT KAMPANYASI: kullanıcı kayıt olurken bellekte hangi kampanya varsa o damgalanır ve değişmez. Bu kişinin siteyi İLK KEZ hangi kaynaktan bulduğu DEĞİLDİR: gerçek ilk ziyaret kaynağı hiçbir yerde saklanmıyor. Kullanıcı önce doğrudan gelip gezinmiş, günler sonra bir reklam bağlantısıyla dönüp kayıt olmuş olabilir; damga o son bağlantıyı gösterir.',
+        'Kampanya yalnızca bellekte taşındığı için kayıt akışı sırasında sayfa yenilenirse (ya da e-posta doğrulama bağlantısı yeni bir sekmede açılırsa) damga BOŞ kalır. Bu kayıtlar "kaynak belirlenemedi" olarak durur, tahminle doldurulmaz.',
         'Oranlar yalnızca kendi kapsamı içinde hesaplanır; ziyaret bazlı pay hesap bazlı paydaya bölünmez.',
+        'Trafik türü utm_medium etiketinden okunur: paid_social = ücretli, organic_social = organik. Tanınmayan ya da boş bir değer "belirsiz" olarak durur ve tahminle sınıflandırılmaz.',
+        'Sitenin TOPLAM açılış sayısı ölçülmüyor: genel bir sayfa görüntüleme olayı yok. Bu yüzden "kampanyaların trafiğin yüzde kaçını getirdiği" bu rapordan hesaplanamaz; yalnızca kampanya etiketli açılışlar ve kaynağı belirlenemeyen olaylar ayrı ayrı sayılır.',
         '"Açılış" bir OLAY sayısıdır — tekil kullanıcı ya da oturum değil. Cihaz kimliği tutulmadığı için tekil kullanıcı ölçülemiyor.',
         'UTM etiketi olmayan ziyaretler Instagram/Facebook sayılmaz; "kaynak belirlenemedi" olarak durur.',
         'Ölçümün başladığı tarihten önceki ziyaretlerin kaynağı bilinmiyor ve tahminle doldurulmuyor.',
       ],
       ziyaret: {
         kapsam: 'ziyaret',
-        kaynaklar: [...kaynakToplami.entries()].map(([kaynak, t]) => ({
-          kaynak,
-          acilis: t.acilis,
-          ilanDetayi: t.detay,
-          ilanGonderimi: t.ilan,
-          detayOrani: t.acilis >= ASGARI_PAYDA ? t.detay / t.acilis : null,
-          yeterliVeri: t.acilis >= ASGARI_PAYDA,
-        })),
+        kaynaklar: [...kaynakToplami.values()]
+          .sort((a, b) => b.acilis - a.acilis)
+          .map((t) => ({
+            kaynak: t.kaynak,
+            trafik: t.trafik,
+            acilis: t.acilis,
+            ilanDetayi: t.detay,
+            ilanGonderimi: t.ilan,
+            detayOrani: t.acilis >= ASGARI_PAYDA ? t.detay / t.acilis : null,
+            yeterliVeri: t.acilis >= ASGARI_PAYDA,
+          })),
         kirilim: olayKirilimi.map((r) => ({
           kaynak: r.kaynak,
+          ortam: r.ortam,
+          trafik: trafikTuru(r.ortam),
           yerlesim: r.yerlesim,
           kampanya: r.kampanya,
           icerik: r.icerik,
@@ -327,16 +393,23 @@ export class RaporService {
       },
       hesap: {
         kapsam: 'hesap',
-        kaynaklar: [...hesapToplami.entries()].map(([kaynak, t]) => ({
-          kaynak,
-          uyelik: t.uyelik,
-          ilkMesajGonderen: t.mesaj,
-          teklifVeren: t.teklif,
-          mesajOrani: t.uyelik >= ASGARI_PAYDA ? t.mesaj / t.uyelik : null,
-          yeterliVeri: t.uyelik >= ASGARI_PAYDA,
-        })),
+        // Ayni donemde kampanya damgasi OLMAYAN uyelik sayisi.
+        kaynagiBelirsizUyelik: s(kaynaksizUyelik?.adet),
+        kaynaklar: [...hesapToplami.values()]
+          .sort((a, b) => b.uyelik - a.uyelik)
+          .map((t) => ({
+            kaynak: t.kaynak,
+            trafik: t.trafik,
+            uyelik: t.uyelik,
+            ilkMesajGonderen: t.mesaj,
+            teklifVeren: t.teklif,
+            mesajOrani: t.uyelik >= ASGARI_PAYDA ? t.mesaj / t.uyelik : null,
+            yeterliVeri: t.uyelik >= ASGARI_PAYDA,
+          })),
         kirilim: hesapKirilimi.map((r) => ({
           kaynak: r.kaynak,
+          ortam: r.ortam,
+          trafik: trafikTuru(r.ortam),
           kampanya: r.kampanya,
           icerik: r.icerik,
           uyelik: s(r.uyelik),

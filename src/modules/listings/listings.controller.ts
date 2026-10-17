@@ -90,6 +90,23 @@ export class ListingsController {
     return this.listingsService.bekleyenDuzenlemeyiReddet(id, req.user.id, dto?.nedenKodu);
   }
 
+  // ── Vitrin yonetimi ──────────────────────────────────────────────
+  // Sabit yollar `admin/:id` kalibindan ONCE tanimlanmali; aksi halde
+  // Nest "vitrin" kelimesini bir ilan ID'si sanar.
+  @Get('admin/vitrin')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  vitrinOzeti() {
+    return this.listingsService.vitrinOzeti();
+  }
+
+  @Get('admin/vitrin-adaylari')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  vitrinAdaylari(@Query('search') search?: string) {
+    return this.listingsService.vitrinAdaylari(search);
+  }
+
   // ── Test isareti ──────────────────────────────────────────────────
   // SUPER_ADMIN'e kisitli: isaret bir kaydi genel listelerden ve
   // raporlardan cikardigi icin yanlislikla kullanilmasi, gercek bir
@@ -201,8 +218,8 @@ export class ListingsController {
   @Patch('admin/:id/feature')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('SUPER_ADMIN', 'ADMIN')
-  adminSetFeatured(@Param('id') id: string, @Body() dto: SetFeaturedDto) {
-    return this.listingsService.adminSetFeatured(id, dto);
+  adminSetFeatured(@Param('id') id: string, @Body() dto: SetFeaturedDto, @Request() req) {
+    return this.listingsService.adminSetFeatured(id, dto, req.user.id);
   }
 
   @Get()

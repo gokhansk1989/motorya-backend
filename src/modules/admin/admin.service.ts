@@ -131,56 +131,133 @@ export class AdminService {
   }
 
 
+  /** Personel rolleri — buyume metriklerinden cikarilir, operasyonel sayimlarda kalir. */
+  private static readonly PERSONEL_ROLLERI = ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'] as const;
+
+  /**
+   * Dashboard sayaclari.
+   *
+   * ONEMLI AYRIM: ayni veriden iki farkli soru cikiyor ve bunlar
+   * karistirilirsa her ikisi de yanlis cevaplanir.
+   *
+   *   OPERASYONEL  - "su an kac ilan onay bekliyor". Test kayitlari
+   *                  haric ama personel hesaplari dahil; moderatorun
+   *                  yapacagi is miktari bu.
+   *   BUYUME       - "kac gercek kullanicimiz var". Test hesaplari VE
+   *                  personel hesaplari haric.
+   *
+   * Onceden tek bir `totalUsers` vardi ve icinde test hesaplari da,
+   * dort super admin de sayiliyordu; "kullanici sayimiz" diye okunan
+   * sayi gercekte oyle degildi. Artik ikisi ayri alanda donuyor ve
+   * `haricTutulan` neyin cikarildigini sayiyla soyluyor - panel bunu
+   * kullaniciya yazabiliyor.
+   */
   async getMetrics() {
     const [
-      totalUsers,
+      gercekKullanici,
+      personelSayisi,
+      testHesabi,
       activeListings,
       pendingListings,
       soldListings,
+      testIlani,
     ] = await Promise.all([
-      this.prisma.user.count({ where: { deletedAt: null } }),
-      this.prisma.listing.count({ where: { status: 'ACTIVE', deletedAt: null } }),
-      this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null } }),
-      this.prisma.listing.count({ where: { status: 'SOLD', deletedAt: null } }),
+      this.prisma.user.count({
+        where: {
+          deletedAt: null,
+          isTestAccount: false,
+          role: { notIn: [...AdminService.PERSONEL_ROLLERI] },
+        },
+      }),
+      this.prisma.user.count({
+        where: { deletedAt: null, role: { in: [...AdminService.PERSONEL_ROLLERI] } },
+      }),
+      this.prisma.user.count({ where: { deletedAt: null, isTestAccount: true } }),
+      this.prisma.listing.count({ where: { status: 'ACTIVE', deletedAt: null, isTest: false } }),
+      this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null, isTest: false } }),
+      this.prisma.listing.count({ where: { status: 'SOLD', deletedAt: null, isTest: false } }),
+      this.prisma.listing.count({ where: { deletedAt: null, isTest: true } }),
     ]);
 
     return {
-      totalUsers,
+      // Geriye donuk uyum: eski alan adi duruyor ama artik personel ve
+      // test hesaplari haric. Panel yanindaki aciklamayi gosteriyor.
+      totalUsers: gercekKullanici,
       activeListings,
       pendingListings,
       soldListings,
+      haricTutulan: {
+        personelHesabi: personelSayisi,
+        testHesabi,
+        testIlani,
+        aciklama:
+          'Kullanıcı sayısı personel (ADMIN/SUPER_ADMIN/MODERATOR) ve test hesaplarını ' +
+          'içermez. İlan sayaçları test ilanlarını içermez.',
+      },
     };
   }
 
+  /**
+   * Gunluk yeni ilan sayisi.
+   *
+   * Metrik adi raporda acikca yazilmali: panelde uzun sure yalnizca
+   * "Son 7 Gun" basligiyla duruyordu ve neyin sayildigi belirsizdi
+   * (uyelik mi, ilan mi, goruntuleme mi). Donen nesne artik metrigi
+   * kendi icinde adlandiriyor.
+   *
+   * Gun siniri SUNUCUNUN yerel saatine gore degil, Europe/Istanbul'a
+   * gore olmali - sunucu UTC ve gece yarisindan sonraki ilk uc saatte
+   * verilen ilanlar yanlis gune dusuyordu.
+   */
   async getListingsTrend(days = 7) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Europe/Istanbul 2016'dan beri sabit UTC+3 (yaz saati uygulamasi yok),
+    // bu yuzden ofset sabit sayi olarak guvenli. Sunucu UTC calisiyor;
+    // setHours(0,0,0,0) sunucunun yerel gece yarisini verirdi ve TR
+    // saatiyle 00:00-03:00 arasinda verilen ilanlar bir onceki gune
+    // dusurdu.
+    const TR_OFSET_MS = 3 * 3_600_000;
+    const trGeceYarisi = new Date(Date.now() + TR_OFSET_MS);
+    trGeceYarisi.setUTCHours(0, 0, 0, 0);
+    const bugun = new Date(trGeceYarisi.getTime() - TR_OFSET_MS);
+
     const ranges = Array.from({ length: days }, (_, i) => {
-      const start = new Date(today);
-      start.setDate(start.getDate() - (days - 1 - i));
-      const end = new Date(start);
-      end.setDate(end.getDate() + 1);
+      const start = new Date(bugun.getTime() - (days - 1 - i) * 86_400_000);
+      const end = new Date(start.getTime() + 86_400_000);
       return { start, end };
     });
 
     const counts = await Promise.all(
       ranges.map(({ start, end }) =>
         this.prisma.listing.count({
-          where: { createdAt: { gte: start, lt: end }, deletedAt: null },
+          where: { createdAt: { gte: start, lt: end }, deletedAt: null, isTest: false },
         }),
       ),
     );
 
-    return ranges.map(({ start }, i) => ({
-      day: start.toLocaleDateString('tr-TR', { weekday: 'short' }),
-      date: start.toISOString().slice(0, 10),
-      ilanlar: counts[i],
-    }));
+    return {
+      metrik: 'Günlük yeni ilan',
+      birim: 'ilan',
+      zamanDilimi: 'Europe/Istanbul',
+      not: 'Oluşturulma tarihine göre sayılır; test ilanları hariç tutulmuştur. Onay durumuna bakılmaz.',
+      baslangic: ranges[0]?.start.toISOString() ?? null,
+      bitis: ranges[ranges.length - 1]?.end.toISOString() ?? null,
+      gunler: ranges.map(({ start }, i) => ({
+        day: start.toLocaleDateString('tr-TR', { weekday: 'short', timeZone: 'Europe/Istanbul' }),
+        // Gun etiketi de Europe/Istanbul takvim gunu olmali.
+        // toISOString() UTC gunu veriyor: TR gece yarisi UTC'de hala
+        // onceki gun oldugu icin her etiket bir gun geriye kayiyordu
+        // (bugun 17'siyken son sutun "2026-10-16" yaziyordu).
+        date: new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(start),
+        ilanlar: counts[i],
+      })),
+    };
   }
 
   async getNotificationSummary() {
     const [pendingListings, openReports] = await Promise.all([
-      this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null } }),
+      this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null, isTest: false } }),
       this.prisma.report.count({ where: { status: 'OPEN' } }),
     ]);
 
@@ -191,11 +268,21 @@ export class AdminService {
     };
   }
 
-  async getPendingListings(page = 1, limit = 20) {
+  /**
+   * Moderasyon kuyrugu.
+   *
+   * `search` parametresi sonradan eklendi: panel bu ucu "Onay Bekleyen"
+   * sekmesinde cagiriyor ve aramayi gonderiyordu ama uc onu YOK SAYIYORDU.
+   * Yani o sekmede arama kutusuna yazmak hicbir sey yapmiyor, kullanici da
+   * "bu ilan kuyrukta yok" sonucuna variyordu. Filtre mantigi
+   * getAllListings ile ayni olmali, iki yerde ayrismasin.
+   */
+  async getPendingListings(page = 1, limit = 20, search?: string, testDahil = false) {
     const skip = (page - 1) * limit;
+    const where = this.listingWhere('PENDING_REVIEW', search, testDahil);
     const [items, total] = await Promise.all([
       this.prisma.listing.findMany({
-        where: { status: 'PENDING_REVIEW', deletedAt: null },
+        where,
         orderBy: { createdAt: 'asc' },
         skip,
         take: limit,
@@ -205,7 +292,7 @@ export class AdminService {
           category: { select: { id: true, name: true } },
         },
       }),
-      this.prisma.listing.count({ where: { status: 'PENDING_REVIEW', deletedAt: null } }),
+      this.prisma.listing.count({ where }),
     ]);
 
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
@@ -360,14 +447,32 @@ export class AdminService {
     return { success: true };
   }
 
-  async getAllListings(page = 1, limit = 20, status?: string, search?: string) {
-    const skip = (page - 1) * limit;
+  /**
+   * Ilan listesi filtresi — pending kuyrugu ve genel liste icin ortak.
+   *
+   * `testDahil` varsayilan olarak KAPALI: test ilanlari normal moderasyon
+   * listesine karismamali. Ayri gormek isteyen `/test-kayitlari` ekranini
+   * ya da bu bayragi kullaniyor. Bayragi acma yetkisi ucta kisitli.
+   */
+  private listingWhere(status?: string, search?: string, testDahil = false) {
     const where: any = { deletedAt: null };
-    if (status) where.status = status;
-    if (search) where.OR = [
-      { title: { contains: search, mode: 'insensitive' } },
-      { seller: { displayName: { contains: search, mode: 'insensitive' } } },
-    ];
+    if (status && status !== 'ALL') where.status = status;
+    if (!testDahil) where.isTest = false;
+    if (search) {
+      const q = search.trim();
+      const cuid = q.match(/c[a-z0-9]{24}/)?.[0];
+      where.OR = [
+        { title: { contains: q, mode: 'insensitive' } },
+        { seller: { displayName: { contains: q, mode: 'insensitive' } } },
+        ...(cuid ? [{ id: cuid }] : []),
+      ];
+    }
+    return where;
+  }
+
+  async getAllListings(page = 1, limit = 20, status?: string, search?: string, testDahil = false) {
+    const skip = (page - 1) * limit;
+    const where = this.listingWhere(status, search, testDahil);
 
     const [items, total] = await Promise.all([
       this.prisma.listing.findMany({
@@ -394,9 +499,48 @@ export class AdminService {
     createdAt: true, updatedAt: true,
   } as const;
 
+  /**
+   * Yetki kaybi korumalari.
+   *
+   * Bu kontroller YOKTU ve yoklugu iki somut kilitlenme senaryosu
+   * uretiyordu:
+   *
+   * 1. SON SUPER ADMIN. Tek super admin kalmissa rolunu dusurmek
+   *    (ya da hesabini askiya almak) panele BIR DAHA super admin
+   *    yetkisiyle girilemez hale getiriyordu. Rol degistirme ucunun
+   *    kendisi SUPER_ADMIN'e kisitli oldugu icin geri donusu de yok.
+   *
+   * 2. MODERATOR -> PERSONEL HESABINI ASKIYA ALMA. `moderateUser`
+   *    uzerinde @Roles yok, yani controller seviyesindeki MODERATOR
+   *    yetkisi geciyordu. Bir moderator super admin hesabini
+   *    askiya alabiliyordu.
+   *
+   * Kontroller yalnizca ENGELLIYOR; hicbir hesabin rolunu ya da
+   * durumunu kendiliginden degistirmiyor.
+   */
+  private async aktifSuperAdminSayisi(): Promise<number> {
+    return this.prisma.user.count({
+      where: { role: 'SUPER_ADMIN', deletedAt: null, status: 'ACTIVE' },
+    });
+  }
+
   async changeUserRole(id: string, adminId: string, role: UserRole) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
+
+    if (id === adminId && role !== user.role) {
+      throw new BadRequestException(
+        'Kendi rolünüzü değiştiremezsiniz. Başka bir süper yöneticiden isteyin.',
+      );
+    }
+    if (user.role === 'SUPER_ADMIN' && role !== 'SUPER_ADMIN') {
+      if ((await this.aktifSuperAdminSayisi()) <= 1) {
+        throw new BadRequestException(
+          'Son aktif süper yöneticinin rolü düşürülemez; panele erişim tamamen kaybedilir. ' +
+          'Önce başka bir hesabı SUPER_ADMIN yapın.',
+        );
+      }
+    }
 
     const [updated] = await this.prisma.$transaction([
       this.prisma.user.update({ where: { id }, data: { role }, select: this.guvenliKullaniciAlanlari }),
@@ -421,9 +565,26 @@ export class AdminService {
     return updated;
   }
 
-  async moderateUser(id: string, adminId: string, dto: ModerateUserDto) {
+  async moderateUser(id: string, adminId: string, dto: ModerateUserDto, actorRole?: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
+
+    if (id === adminId && dto.status !== 'ACTIVE') {
+      throw new BadRequestException('Kendi hesabınızı askıya alamazsınız.');
+    }
+    const personel = (AdminService.PERSONEL_ROLLERI as readonly string[]).includes(user.role);
+    if (personel && dto.status !== 'ACTIVE' && actorRole !== 'SUPER_ADMIN') {
+      throw new BadRequestException(
+        'Personel hesaplarının durumunu yalnızca süper yönetici değiştirebilir.',
+      );
+    }
+    if (user.role === 'SUPER_ADMIN' && dto.status !== 'ACTIVE') {
+      if ((await this.aktifSuperAdminSayisi()) <= 1) {
+        throw new BadRequestException(
+          'Son aktif süper yönetici askıya alınamaz; panele erişim tamamen kaybedilir.',
+        );
+      }
+    }
 
     const [updated] = await this.prisma.$transaction([
       this.prisma.user.update({ where: { id }, data: { status: dto.status }, select: this.guvenliKullaniciAlanlari }),
