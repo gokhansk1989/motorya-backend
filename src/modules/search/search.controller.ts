@@ -47,7 +47,13 @@ export class SearchController {
     if (req.user?.id) {
       excludeSellerIds = await this.socialService.getBlockedUserIds(req.user.id).catch(() => []);
     }
-    return this.searchService.search({ ...query, excludeSellerIds });
+    // Kategori secimi ALT kategorileri de kapsamali. Cozumleme burada
+    // yapiliyor cunku kategori agaci Postgres'te; Meilisearch yalnizca
+    // duz bir kimlik listesi filtreleyebiliyor.
+    const categoryIds = query.categoryId
+      ? await this.listingsService.kategoriVeAltlari(query.categoryId)
+      : undefined;
+    return this.searchService.search({ ...query, categoryIds, excludeSellerIds });
   }
 
   @Post('reindex')

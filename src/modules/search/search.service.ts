@@ -87,6 +87,15 @@ export class SearchService implements OnModuleInit {
 
   async search(params: {
     q?: string;
+    /**
+     * Kategori ve TUM alt kategorileri. Tek bir kimlik degil dizi almasi
+     * bilincli: Meilisearch'te hiyerarsi yok, ilanlar yaprak kategorinin
+     * kimligiyle indeksleniyor. Tek kimlikle esitlik karsilastirmasi
+     * yapmak, bir ANA kategori secildiginde hicbir seyin eslesmemesine
+     * yol aciyordu. Soy listesini cagiran taraf (controller) cozuyor;
+     * boylece kural /listings ucuyla ayni kaynaktan geliyor.
+     */
+    categoryIds?: string[];
     categoryId?: string;
     brandId?: string;
     condition?: string;
@@ -102,6 +111,7 @@ export class SearchService implements OnModuleInit {
   }) {
     const {
       q = '',
+      categoryIds,
       categoryId,
       brandId,
       condition,
@@ -117,7 +127,15 @@ export class SearchService implements OnModuleInit {
     } = params;
 
     const filters: string[] = ['status = "ACTIVE"'];
-    if (categoryId) filters.push(`categoryId = "${filtreDegeri(categoryId)}"`);
+    // categoryIds verilmisse onu kullan; yoksa tek kimlige dus (geriye
+    // donuk uyum - bu servisi baska bir yerden tek kimlikle cagiran
+    // olursa davranis degismesin).
+    const katListesi = categoryIds?.length ? categoryIds : categoryId ? [categoryId] : [];
+    if (katListesi.length === 1) {
+      filters.push(`categoryId = "${filtreDegeri(katListesi[0])}"`);
+    } else if (katListesi.length > 1) {
+      filters.push(`categoryId IN [${katListesi.map((id) => `"${filtreDegeri(id)}"`).join(', ')}]`);
+    }
     if (brandId) filters.push(`brandId = "${filtreDegeri(brandId)}"`);
     if (condition) filters.push(`condition = "${filtreDegeri(condition)}"`);
     if (city) filters.push(`city = "${filtreDegeri(city)}"`);

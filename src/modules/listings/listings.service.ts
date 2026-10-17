@@ -180,6 +180,57 @@ export class ListingsService {
     return { category, children, grandchildren };
   }
 
+  /**
+   * Bir kategori ve TUM alt kategorilerinin kimlikleri.
+   *
+   * `resolveCategoryIds` ayni isi yapiyordu ama `private` idi; arama ucu
+   * (Meilisearch yolu) ona ulasamadigi icin kendi filtresini kurarken
+   * yalnizca secilen kategorinin kendisine bakiyordu. Sonuc: "Mont"
+   * secildiginde 0 ilan, "Mont > Kislik Mont" secildiginde 1 ilan - oysa
+   * ayni filtre /listings ucunda 4 donuyordu. Iki uc ayni kurali
+   * kullanmali, bu yuzden disari aciliyor.
+   *
+   * Kategori agaci neredeyse hic degismiyor ama her arama icin iki sorgu
+   * atmanin anlami yok; kisa omurlu bir bellek onbellegi yeterli.
+   */
+  private kategoriOnbellek: { veri: Map<string, string[]>; zaman: number } | null = null;
+  private static readonly KATEGORI_ONBELLEK_MS = 60_000;
+
+  async kategoriVeAltlari(categoryId: string): Promise<string[]> {
+    const simdi = Date.now();
+    if (!this.kategoriOnbellek || simdi - this.kategoriOnbellek.zaman > ListingsService.KATEGORI_ONBELLEK_MS) {
+      const hepsi = await this.prisma.category.findMany({ select: { id: true, parentId: true } });
+      const cocuklar = new Map<string, string[]>();
+      for (const c of hepsi) {
+        if (!c.parentId) continue;
+        const liste = cocuklar.get(c.parentId) ?? [];
+        liste.push(c.id);
+        cocuklar.set(c.parentId, liste);
+      }
+      // Her kategori icin kendisi + tum soyu. Agac sig (2-3 seviye) ama
+      // derinlik varsayimi yapmiyoruz; dongu korumasi da var.
+      const soy = new Map<string, string[]>();
+      for (const c of hepsi) {
+        const sonuc: string[] = [];
+        const gorulen = new Set<string>();
+        const yigin = [c.id];
+        while (yigin.length) {
+          const id = yigin.pop()!;
+          if (gorulen.has(id)) continue;
+          gorulen.add(id);
+          sonuc.push(id);
+          yigin.push(...(cocuklar.get(id) ?? []));
+        }
+        soy.set(c.id, sonuc);
+      }
+      this.kategoriOnbellek = { veri: soy, zaman: simdi };
+    }
+    // Bilinmeyen kimlik: kendisini dondur. Bos dizi dondurmek "filtre yok"
+    // ile karisirdi ve silinmis bir kategoriyle gelen baglanti aniden
+    // TUM ilanlari gosterirdi.
+    return this.kategoriOnbellek.veri.get(categoryId) ?? [categoryId];
+  }
+
   private async resolveCategoryIds(categoryId?: string, categorySlug?: string): Promise<string[] | null> {
     if (!categoryId && !categorySlug) return null;
     let rootId = categoryId;
