@@ -28,16 +28,45 @@ export class FcmService {
     }
 
     try {
+      /**
+       * MODULER API (firebase-admin v13+).
+       *
+       * Burada uzun sure v11/v12 soz dizimi duruyordu:
+       *
+       *   admin.apps.find(...)                  -> admin.apps UNDEFINED
+       *   admin.credential.cert(serviceAccount) -> admin.credential UNDEFINED
+       *
+       * Her ikisi de v13'te kaldirildi, bu projede ise firebase-admin
+       * ILK GUNDEN BERI ^14. Yani kurucu her acilista
+       * "Cannot read properties of undefined (reading 'find')" ile
+       * patliyor, `enabled` false kaliyor ve sendToUser/sendToMany
+       * sessizce hicbir sey yapmiyordu: native push altyapisi eklendigi
+       * gunden beri hic calismadi. Hata yalnizca acilis logunda
+       * goruldugu icin de farkedilmedi.
+       *
+       * Modul alt yollari (`firebase-admin/app`, `firebase-admin/messaging`)
+       * v14'te desteklenen giris noktalari.
+       */
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const admin = require('firebase-admin');
+      const { getApps, initializeApp, cert } = require('firebase-admin/app');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getMessaging } = require('firebase-admin/messaging');
+
       const serviceAccount = JSON.parse(
         raw.trim().startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8'),
       );
+
+      // Adlandirilmis uygulama: varsayilan ornegi baska bir yer
+      // kullanirsa catismasin. Sicak yeniden yuklemede ikinci kez
+      // initializeApp cagrilirsa hata verir, o yuzden once arıyoruz.
       const appName = 'motorya-fcm';
-      const app = admin.apps.find((a: any) => a?.name === appName)
-        ?? admin.initializeApp({ credential: admin.credential.cert(serviceAccount) }, appName);
-      this.messaging = admin.messaging(app);
+      const app =
+        getApps().find((a: any) => a?.name === appName) ??
+        initializeApp({ credential: cert(serviceAccount) }, appName);
+
+      this.messaging = getMessaging(app);
       this.enabled = true;
+      this.logger.log('Firebase (FCM) hazir — native push etkin');
     } catch (err: any) {
       this.logger.error(`Failed to init firebase-admin: ${err.message}`);
     }
@@ -81,14 +110,38 @@ export class FcmService {
         data: payload.data ?? {},
       });
 
+      /**
+       * DIKKAT: sendEachForMulticast basarisizlikta HATA FIRLATMIYOR;
+       * her jetonun sonucunu `res.responses` icinde donduruyor. Asagidaki
+       * try/catch yalnizca ag/istek seviyesindeki hatalari yakaliyor.
+       *
+       * Bu yuzden kimlik bilgisi sorunu (app/invalid-credential) gibi
+       * TUM gonderimleri olduren bir arıza hicbir iz birakmiyordu: her
+       * jeton basarisiz donuyor, hicbiri "kayitli degil" listesinde
+       * olmadigi icin de bir sey yapilmiyor ve log sessiz kaliyordu.
+       * Artik jetonla ilgili olmayan basarisizliklar ayrica loglaniyor.
+       */
       const invalid: string[] = [];
+      const JETON_HATALARI = [
+        'messaging/registration-token-not-registered',
+        'messaging/invalid-registration-token',
+      ];
+      const digerHatalar = new Set<string>();
+
       res.responses.forEach((r: any, i: number) => {
-        if (!r.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(r.error?.code)) {
-          invalid.push(tokens[i].token);
-        }
+        if (r.success) return;
+        const kod = r.error?.code;
+        if (JETON_HATALARI.includes(kod)) invalid.push(tokens[i].token);
+        else digerHatalar.add(kod ?? 'bilinmeyen');
       });
+
       if (invalid.length > 0) {
         await this.prisma.pushToken.updateMany({ where: { token: { in: invalid } }, data: { disabledAt: new Date() } });
+      }
+      if (digerHatalar.size > 0) {
+        this.logger.error(
+          `FCM gonderimi basarisiz (${res.failureCount}/${tokens.length} jeton) — kodlar: ${[...digerHatalar].join(', ')}`,
+        );
       }
     } catch (err: any) {
       this.logger.error(`FCM send failed for user ${userId}: ${err.message}`);
