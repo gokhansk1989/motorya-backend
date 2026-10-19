@@ -7,6 +7,7 @@ import { requiresCaptcha, recordFailed, resetAttempts } from '../../common/login
 import { RegisterDto, LoginDto, RefreshTokenDto, LogoutDeviceDto } from './dto/auth.dto';
 import { IsBoolean, IsEmail, IsOptional, IsString, MinLength, Equals } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
+import { devirKoduUret, devirKodunuTakasEt } from './oauth-devir';
 
 class ForgotPasswordDto {
   @IsEmail() email: string;
@@ -14,6 +15,8 @@ class ForgotPasswordDto {
 }
 class ResetPasswordDto { @IsString() token: string; @IsString() @MinLength(8) password: string; }
 class ResendVerificationDto { @IsEmail() email: string; }
+/** Google turunden donen tek kullanimlik devir kodu. */
+class GoogleExchangeDto { @IsString() @MinLength(16) code: string; }
 class AdminMfaVerifyDto { @IsEmail() email: string; @IsString() otp: string; }
 /**
  * Turnstile jetonu tasiyan istek govdeleri.
@@ -146,15 +149,47 @@ export class AuthController {
   @UseGuards(AuthGuard('google'))
   googleAuth() {}
 
+  /**
+   * Google turunun donus noktasi.
+   *
+   * Jetonlar ARTIK ADRESE KONMUYOR. Eskiden boyleydi:
+   *
+   *   /callback?token=<accessToken>&refreshToken=<...>&user=<...>
+   *
+   * ve bu, erisim ile yenileme jetonunu tarayici gecmisine, /callback
+   * sayfasindan yuklenen her ucuncu taraf kaynagin gorebilecegi Referer
+   * basligina ve ara sunucu kayitlarina birakiyordu.
+   *
+   * Yerine tek kullanimlik, 60 saniyelik bir kod uretiliyor; istemci onu
+   * POST /auth/google/exchange ile takas edip jetonlari yanit GOVDESINDE
+   * aliyor. Kod adrese dusse bile takas edildikten sonra olu.
+   */
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleCallback(@Request() req, @Res() res) {
     const { accessToken, refreshToken, deviceId, user, needsConsent } = req.user as any;
     const frontendUrl = this.config.get('FRONTEND_URL', 'https://motorya.com.tr');
-    const userEncoded = encodeURIComponent(JSON.stringify(user));
-    const rt = refreshToken ? `&refreshToken=${encodeURIComponent(refreshToken)}` : '';
-    const did = deviceId ? `&deviceId=${encodeURIComponent(deviceId)}` : '';
-    return res.redirect(`${frontendUrl}/callback?token=${accessToken}${rt}${did}&user=${userEncoded}&needsConsent=${!!needsConsent}`);
+    const kod = devirKoduUret({ accessToken, refreshToken, deviceId, user, needsConsent: !!needsConsent });
+    return res.redirect(`${frontendUrl}/callback?code=${encodeURIComponent(kod)}`);
+  }
+
+  /**
+   * Tek kullanimlik kodu oturumla takas eder.
+   *
+   * Oturum ACMIYOR, yalnizca Google turunde zaten acilmis oturumu
+   * istemciye teslim ediyor. Kod tek kullanimlik ve kisa omurlu;
+   * gecersiz kodda ayrintı verilmiyor ("suresi doldu mu yoksa hic var
+   * miydi" bilgisi saldirgana yarar).
+   *
+   * Hiz siniri: kod 256 bit rastgele, kaba kuvvet zaten pratik degil ama
+   * bu uc kimlik dogrulamasiz oldugu icin yine de sinirli.
+   */
+  @Post('google/exchange')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  googleExchange(@Body() dto: GoogleExchangeDto) {
+    const yuk = devirKodunuTakasEt(dto.code);
+    if (!yuk) throw new BadRequestException('Giriş tamamlanamadı, lütfen tekrar deneyin');
+    return yuk;
   }
 
   @Post('consents')
