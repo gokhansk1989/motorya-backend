@@ -384,6 +384,9 @@ model Listing {
   // Para kazandıran alanlar (vitrin / öne çıkarma)
   isFeatured    Boolean   @default(false)
   featuredUntil DateTime?
+  /// Vitrin icindeki elle verilen sira. Bos birakilan ilanlar sirali
+  /// olanlarin ardina, kendi aralarinda en yeniden eskiye dizilir.
+  featuredOrder Int?
 
   // Rezervasyon — teklif/mesaj üzerine satıcı rezerve edebilir, 48 saat sonra otomatik açılır
   reservedUntil DateTime?
@@ -426,6 +429,7 @@ model Listing {
   @@index([sellerId])
   @@index([sellerId, buyerConfirmedAt])
   @@index([isFeatured, featuredUntil])
+  @@index([featuredOrder])
 }
 
 model ListingImage {

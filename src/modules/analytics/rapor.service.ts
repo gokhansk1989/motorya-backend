@@ -147,6 +147,11 @@ export class RaporService {
       this.uyelikHunisi(baslangic, bitis, olgunSinir, null),
     ]);
 
+    // Karsilastirma ilkOlay'a bagli: olcumun kuruldugu tarihi bilmeden
+    // "onceki donemde sifirdi" ile "onceki donemde olculmuyordu" ayirt
+    // edilemez. Bu yuzden ilk turdan SONRA cagriliyor.
+    const karsilastirma = await this.donemKarsilastirmasi(baslangic, bitis, ilkOlay);
+
     /**
      * Olay tabanli bolumlere OLCUM DURUMU ekleniyor.
      *
@@ -181,6 +186,7 @@ export class RaporService {
       /** Olay tabanli metrikler bu tarihten oncesi icin bos; tahminle
        *  doldurulmuyor. */
       olayVerisiBaslangici: ilkOlay ? ilkOlay.toISOString() : null,
+      karsilastirma,
       kurallar: {
         asgariPayda: ASGARI_PAYDA,
         akisBoslukDk: AKIS_BOSLUK_DK,
@@ -892,6 +898,49 @@ export class RaporService {
       GROUP BY 1 ORDER BY adet DESC LIMIT 8
     `);
 
+    /**
+     * Form ONCESI adimlar.
+     *
+     * Eski huni formun acilmasiyla basliyordu; oysa "ilan ver"e basan
+     * kullanicinin onunde uc ayri kapi var: giris, T.C. kimlik ve yarim
+     * kalmis taslak. Bu kapilarda kaybedilenler olculmedigi surece
+     * tamamlama orani oldugundan iyi gorunuyordu - cunku paydaya hic
+     * girmiyorlardi.
+     *
+     * Olay bazli sayilar; girisim bazli DEGIL. Aralarinda yuzde
+     * basilmiyor cunku kapilar ayni kisiye hepsi birden uygulanmiyor:
+     * uye kullanici giris kapisini hic gormez, numarasi kayitli olan
+     * kimlik kapisini gormez.
+     */
+    const [on] = await this.prisma.$queryRaw<{
+      sayfa: bigint; sayfa_uye: bigint; sayfa_misafir: bigint;
+      giris_gerekti: bigint; girisden_donuldu: bigint;
+      kimlik_gerekti: bigint; kimlik_tamamlandi: bigint; kimlik_hatasi: bigint;
+      taslak_soruldu: bigint; form_acildi: bigint;
+      form_taslak: bigint; form_yeni: bigint; form_taslaksiz: bigint;
+    }[]>(Prisma.sql`
+      SELECT
+        COUNT(*) FILTER (WHERE name = 'ilan_sayfasi_acildi') AS sayfa,
+        COUNT(*) FILTER (WHERE name = 'ilan_sayfasi_acildi'
+                           AND COALESCE((props->>'uyeMi')::boolean, false) = true)  AS sayfa_uye,
+        COUNT(*) FILTER (WHERE name = 'ilan_sayfasi_acildi'
+                           AND COALESCE((props->>'uyeMi')::boolean, true)  = false) AS sayfa_misafir,
+        COUNT(*) FILTER (WHERE name = 'ilan_giris_gerekti')     AS giris_gerekti,
+        COUNT(*) FILTER (WHERE name = 'ilan_girisden_donuldu')  AS girisden_donuldu,
+        COUNT(*) FILTER (WHERE name = 'ilan_kimlik_gerekti')    AS kimlik_gerekti,
+        COUNT(*) FILTER (WHERE name = 'ilan_kimlik_tamamlandi') AS kimlik_tamamlandi,
+        COUNT(*) FILTER (WHERE name = 'ilan_kimlik_hatasi')     AS kimlik_hatasi,
+        COUNT(*) FILTER (WHERE name = 'ilan_taslak_soruldu')    AS taslak_soruldu,
+        COUNT(*) FILTER (WHERE name = 'ilan_form_acildi')       AS form_acildi,
+        COUNT(*) FILTER (WHERE name = 'ilan_form_acildi' AND props->>'kaynak' = 'taslak')    AS form_taslak,
+        COUNT(*) FILTER (WHERE name = 'ilan_form_acildi' AND props->>'kaynak' = 'yeni')      AS form_yeni,
+        COUNT(*) FILTER (WHERE name = 'ilan_form_acildi' AND props->>'kaynak' = 'taslaksiz') AS form_taslaksiz
+      FROM "AnalyticsEvent"
+      WHERE NOT "isStaff"
+        AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+    `);
+    const n = (v: bigint | undefined) => Number(v ?? 0);
+
     return {
       baslik: 'Ilan verme akisi',
       kaynak: 'olay' as MetrikKaynagi,
@@ -922,8 +971,140 @@ export class RaporService {
         sayiMetrigi('Form dogrulama hatasi (olay)', 'Donemdeki toplam dogrulama hatasi olayi sayisi.', Number(formHataSayisi), 'olay'),
       ],
       adimlar,
+      onAdimlar: {
+        sayfa: n(on?.sayfa),
+        sayfaUye: n(on?.sayfa_uye),
+        sayfaMisafir: n(on?.sayfa_misafir),
+        girisGerekti: n(on?.giris_gerekti),
+        girisdenDonuldu: n(on?.girisden_donuldu),
+        kimlikGerekti: n(on?.kimlik_gerekti),
+        kimlikTamamlandi: n(on?.kimlik_tamamlandi),
+        kimlikHatasi: n(on?.kimlik_hatasi),
+        taslakSoruldu: n(on?.taslak_soruldu),
+        formAcildi: n(on?.form_acildi),
+        taslakKirilimi: {
+          taslak: n(on?.form_taslak),
+          yeni: n(on?.form_yeni),
+          taslaksiz: n(on?.form_taslaksiz),
+        },
+        not:
+          'Olay bazli sayilar. Kapilar herkese uygulanmadigi icin (uye giris kapisini, numarasi kayitli olan kimlik kapisini gormez) aralarinda yuzde hesaplanmiyor.',
+      },
       hataKirilimi: hataKirilimi.map((h) => ({ alan: h.alan, adet: Number(h.adet) })),
       fotoKirilimi: fotoKirilimi.map((h) => ({ kod: h.kod, adet: Number(h.adet) })),
+    };
+  }
+
+
+  /**
+   * Onceki esit donemle karsilastirma.
+   *
+   * ── NEDEN AYRI BIR SORGU ──────────────────────────────────────────
+   *
+   * "Son 7 gunde 12 ilan" tek basina hicbir sey soylemiyor: cok mu az,
+   * iyi mi? Anlam kazanmasi icin bir onceki esit uzunluktaki donem
+   * gerekiyor. Esit uzunluk sart - 7 gunu 30 gunle karsilastirmak
+   * sayilari oldugundan kotu gosterirdi.
+   *
+   * ── NEDEN YALNIZCA BIRKAC SAYI ────────────────────────────────────
+   *
+   * Her metrigin yanina yuzde koymak cazip ama yaniltici: payda kucukken
+   * (bu sitede cogu zaman oyle) "%200 artis" iki olaydan alti olaya
+   * cikmak demek. Bu yuzden yalnizca basliga cikan, veritabanindan
+   * gelen ve payda buyudukce anlamlanan sayilar karsilastiriliyor;
+   * ASGARI_PAYDA'nin altinda kalan degisim orani `null` donuyor ve
+   * panelde yuzde yerine ham fark gosteriliyor.
+   *
+   * Olay tabanli satirlar, ONCEKI donem olcumun kuruldugu tarihten
+   * onceyse "olculemez" isaretleniyor - sifir gibi gosterip "her sey
+   * dusmus" dedirtmek, en kotu rapor hatasi olurdu.
+   */
+  private async donemKarsilastirmasi(baslangic: Date, bitis: Date, ilkOlay: Date | null) {
+    const uzunlukMs = bitis.getTime() - baslangic.getTime();
+    const oncekiBaslangic = new Date(baslangic.getTime() - uzunlukMs);
+    const oncekiBitis = baslangic;
+
+    /** Olay tabanli satir, onceki donemde olculebilir miydi? */
+    const olayOlculebilir = !!ilkOlay && ilkOlay.getTime() <= oncekiBaslangic.getTime();
+
+    const pencere = async (b: Date, s: Date) => {
+      const [[r], [a]] = await Promise.all([
+        this.prisma.$queryRaw<{ hesap: bigint; ilan: bigint; mesaj: bigint }[]>(Prisma.sql`
+          SELECT
+            (SELECT COUNT(*) FROM "User" u
+               WHERE u."deletedAt" IS NULL AND NOT u."isTestAccount"
+                 AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+                 AND u."createdAt" >= ${ts(b)} AND u."createdAt" < ${ts(s)}) AS hesap,
+            (SELECT COUNT(*) FROM "Listing" l
+               JOIN "User" u ON u.id = l."sellerId"
+               WHERE NOT u."isTestAccount"
+                 AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+                 AND l."createdAt" >= ${ts(b)} AND l."createdAt" < ${ts(s)}) AS ilan,
+            (SELECT COUNT(*) FROM "Message" m
+               JOIN "User" u ON u.id = m."senderId"
+               WHERE NOT u."isTestAccount"
+                 AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+                 AND m."createdAt" >= ${ts(b)} AND m."createdAt" < ${ts(s)}) AS mesaj
+        `),
+        this.prisma.$queryRaw<{ arama: bigint; ilan_sayfasi: bigint }[]>(Prisma.sql`
+          SELECT
+            COUNT(*) FILTER (WHERE name = 'arama_yapildi')       AS arama,
+            COUNT(*) FILTER (WHERE name = 'ilan_sayfasi_acildi') AS ilan_sayfasi
+          FROM "AnalyticsEvent"
+          WHERE NOT "isStaff"
+            AND "occurredAt" >= ${ts(b)} AND "occurredAt" < ${ts(s)}
+        `),
+      ]);
+      return {
+        hesap: Number(r?.hesap ?? 0),
+        ilan: Number(r?.ilan ?? 0),
+        mesaj: Number(r?.mesaj ?? 0),
+        arama: Number(a?.arama ?? 0),
+        ilanSayfasi: Number(a?.ilan_sayfasi ?? 0),
+      };
+    };
+
+    const [simdi, onceki] = await Promise.all([
+      pencere(baslangic, bitis),
+      pencere(oncekiBaslangic, oncekiBitis),
+    ]);
+
+    const satir = (
+      anahtar: keyof typeof simdi,
+      etiket: string,
+      kaynak: MetrikKaynagi,
+    ) => {
+      const olculebilir = kaynak === 'olay' ? olayOlculebilir : true;
+      const s = simdi[anahtar];
+      const o = onceki[anahtar];
+      return {
+        etiket,
+        kaynak,
+        simdi: s,
+        onceki: olculebilir ? o : null,
+        fark: olculebilir ? s - o : null,
+        // Yuzde yalnizca payda anlamliyken; kucuk sayilarda ham fark
+        // dogruyu daha iyi anlatiyor.
+        degisim: olculebilir && o >= ASGARI_PAYDA ? (s - o) / o : null,
+        olculebilir,
+      };
+    };
+
+    return {
+      onceki: { baslangic: oncekiBaslangic.toISOString(), bitis: oncekiBitis.toISOString() },
+      gun: Math.round(uzunlukMs / 86_400_000),
+      satirlar: [
+        satir('hesap', 'Yeni hesap', 'veritabani'),
+        satir('ilan', 'Yayinlanan ilan', 'veritabani'),
+        satir('mesaj', 'Gonderilen mesaj', 'veritabani'),
+        satir('arama', 'Arama', 'olay'),
+        satir('ilanSayfasi', 'Ilan verme sayfasi acilisi', 'olay'),
+      ],
+      not: olayOlculebilir
+        ? 'Onceki donem esit uzunlukta ve hemen oncesinde. Yuzde yalnizca onceki donem degeri ' +
+          ASGARI_PAYDA +
+          "'den buyukse hesaplaniyor; altinda ham fark gosteriliyor."
+        : 'Olay tabanli satirlar onceki donemde henuz olculmuyordu; sifir gibi gosterilmiyor, "olculemez" isaretleniyor.',
     };
   }
 

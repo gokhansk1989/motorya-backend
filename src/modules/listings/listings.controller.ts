@@ -21,7 +21,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { ListingsService } from './listings.service';
 import { CreateListingDto, UpdateListingDto, ListingsQueryDto, TaslakDto, TestIsaretiDto, BekleyenDuzenlemeDto } from './dto/listings.dto';
 import { TaslakService } from './taslak.service';
-import { CreateCategoryDto, UpdateCategoryDto, CreateBrandDto, UpdateBrandDto, SetFeaturedDto } from './dto/admin-category.dto';
+import { CreateCategoryDto, UpdateCategoryDto, CreateBrandDto, UpdateBrandDto, SetFeaturedDto, VitrinSirasiDto } from './dto/admin-category.dto';
 
 @Controller('listings')
 export class ListingsController {
@@ -98,6 +98,15 @@ export class ListingsController {
   @Roles('ADMIN', 'SUPER_ADMIN')
   vitrinOzeti() {
     return this.listingsService.vitrinOzeti();
+  }
+
+  // Sira ucu ayri: `feature` uzerinden kaydetmek vitrin suresini de
+  // uzatirdi (bkz. vitrinSirasiniKaydet).
+  @Patch('admin/vitrin-sirasi')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  vitrinSirasi(@Request() req: any, @Body() dto: VitrinSirasiDto) {
+    return this.listingsService.vitrinSirasiniKaydet(dto.sira, req.user?.id);
   }
 
   @Get('admin/vitrin-adaylari')

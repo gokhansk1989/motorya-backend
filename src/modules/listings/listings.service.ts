@@ -769,12 +769,27 @@ export class ListingsService {
       if (maxPrice !== undefined) where.price.lte = maxPrice;
     }
 
-    const orderBy = {
+    const siralama = {
       price_asc: { price: 'asc' as const },
       price_desc: { price: 'desc' as const },
       newest: { createdAt: 'desc' as const },
       oldest: { createdAt: 'asc' as const },
     }[sort];
+
+    /**
+     * Vitrinde elle verilen sira one geciyor - ama YALNIZCA kullanici
+     * kendi bir siralama secmediyse. Fiyata gore siralamak isteyen
+     * birine vitrin sirasini dayatmak, sectigi seyi sessizce yok saymak
+     * olurdu.
+     *
+     * Sira verilmemis ilanlar (NULL) sona dusuyor: boylece hic sira
+     * atanmadiginda vitrin bugunku haliyle, en yeniden eskiye dizili
+     * kaliyor.
+     */
+    const orderBy =
+      isFeatured && sort === 'newest'
+        ? [{ featuredOrder: { sort: 'asc' as const, nulls: 'last' as const } }, siralama]
+        : siralama;
 
     const skip = (page - 1) * limit;
 
@@ -1141,7 +1156,10 @@ export class ListingsService {
       // isaretlenmis bir ilanin bayragini temizleyebilmemiz gerekiyor.
       const guncel = await this.prisma.listing.update({
         where: { id },
-        data: { isFeatured: false, featuredUntil: null },
+        // Vitrinden cikarilan ilanin sirasi da temizleniyor: geri
+        // eklendiginde eski sirasinin kendiliginden geri gelmesi,
+        // yoneticinin kurdugu dizilisi sessizce bozardi.
+        data: { isFeatured: false, featuredUntil: null, featuredOrder: null },
       });
       if (listing.isFeatured) {
         this.audit.log({
@@ -1188,7 +1206,13 @@ export class ListingsService {
 
     const updated = await this.prisma.listing.update({
       where: { id },
-      data: { isFeatured: true, featuredUntil: until },
+      // `sira` HIC gonderilmediyse mevcut deger korunuyor; yalnizca
+      // acikca gonderildiginde (sayi ya da null) degisiyor.
+      data: {
+        isFeatured: true,
+        featuredUntil: until,
+        ...(dto.sira !== undefined ? { featuredOrder: dto.sira } : {}),
+      },
     });
 
     this.audit.log({
@@ -1252,12 +1276,55 @@ export class ListingsService {
    * donen karusel, sabit sira yok). Panelde ise bitis tarihine gore
    * siralıyoruz - "hangisi once bitiyor" sorusu gunluk isin ta kendisi.
    */
+  /**
+   * Vitrin sirasini topluca kaydeder.
+   *
+   * Sure ve sira bilerek AYRI: sirayi degistirmek icin "vitrine ekle"
+   * ucunu cagirmak, her surukleme isleminde ilanin vitrin suresini de
+   * uzatirdi. Burada yalnizca `featuredOrder` yaziliyor; tarihe
+   * dokunulmuyor.
+   *
+   * Yalnizca bayragi ACIK ilanlar siralanabiliyor. Aksi halde vitrinde
+   * olmayan bir ilana sira verilir, sonra vitrine eklendiginde kimsenin
+   * beklemedigi bir yerde belirirdi.
+   */
+  async vitrinSirasiniKaydet(sira: { id: string; sira: number }[], adminId?: string) {
+    const idler = sira.map((x) => x.id);
+    const uygun = await this.prisma.listing.findMany({
+      where: { id: { in: idler }, isFeatured: true, deletedAt: null },
+      select: { id: true },
+    });
+    const uygunIdler = new Set(uygun.map((u) => u.id));
+    const yazilacak = sira.filter((x) => uygunIdler.has(x.id));
+
+    await this.prisma.$transaction(
+      yazilacak.map((x) =>
+        this.prisma.listing.update({ where: { id: x.id }, data: { featuredOrder: x.sira } }),
+      ),
+    );
+
+    this.audit.log({
+      actorId: adminId ?? 'system',
+      action: 'listing.featured.reorder',
+      entity: 'Listing',
+      entityId: yazilacak.map((x) => x.id).join(','),
+      meta: { adet: yazilacak.length, atlanan: idler.length - yazilacak.length },
+    });
+
+    return { kaydedilen: yazilacak.length, atlanan: idler.length - yazilacak.length };
+  }
+
   async vitrinOzeti() {
     const simdi = new Date();
     const [hepsi, sitedeAdet] = await Promise.all([
       this.prisma.listing.findMany({
         where: { isFeatured: true, deletedAt: null },
-        orderBy: [{ featuredUntil: 'asc' }],
+        // Elle sira verilmisse panel de o dizilisi gosteriyor; aksi
+        // halde "hangisi once bitiyor" sorusu one geciyor.
+        orderBy: [
+          { featuredOrder: { sort: 'asc', nulls: 'last' } },
+          { featuredUntil: 'asc' },
+        ],
         include: {
           images: { orderBy: { sortOrder: 'asc' }, take: 1 },
           seller: { select: { id: true, displayName: true } },

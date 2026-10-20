@@ -57,6 +57,52 @@ export const OLAYLAR = {
   },
 
   // ── Ilan verme akisi ──────────────────────────────────────────────────
+  // Form oncesi adimlar. Huninin en karanlik kismi buydu: "ilan ver"e
+  // basan kac kisi forma kadar gelebiliyor, nerede duvara carpiyor
+  // olculemiyordu. Her biri ayri bir kapi: giris, T.C. kimlik, taslak.
+  ilan_sayfasi_acildi: {
+    aciklama:
+      'Ilan verme sayfasi acildi. Tiklamanin kendisi degil varis olculuyor; her "ilan ver" dugmesi buraya dustugu icin tek nokta yetiyor.',
+    akisGerekli: true,
+    alanlar: { ...KAMPANYA_ALANLARI, uyeMi: 'bayrak' },
+  },
+  ilan_giris_gerekti: {
+    aciklama: 'Misafir oldugu icin giris ekranina yonlendirildi.',
+    akisGerekli: true,
+    alanlar: {},
+  },
+  ilan_girisden_donuldu: {
+    aciklama:
+      'Giris/kayit sonrasi ilan verme sayfasina geri donuldu. Adresteki donus isaretinden okunuyor; isaret okunur okunmaz siliniyor.',
+    akisGerekli: true,
+    alanlar: {},
+  },
+  ilan_kimlik_gerekti: {
+    aciklama: 'T.C. kimlik kapisi gosterildi: numara kayitli olmadan form acilmiyor.',
+    akisGerekli: true,
+    alanlar: {},
+  },
+  ilan_kimlik_tamamlandi: {
+    aciklama: 'T.C. kimlik numarasi kaydedildi ve kapi gecildi. Numaranin kendisi analitige GITMIYOR.',
+    akisGerekli: true,
+    alanlar: {},
+  },
+  ilan_kimlik_hatasi: {
+    aciklama: 'T.C. kimlik adimi basarisiz. Yalnizca kaba kod: bicim, sunucu, ag.',
+    akisGerekli: true,
+    alanlar: { kod: 'kod' },
+  },
+  ilan_taslak_soruldu: {
+    aciklama: 'Yarim kalmis taslak bulundu ve "devam et / yeni basla" soruldu.',
+    akisGerekli: true,
+    alanlar: {},
+  },
+  ilan_form_acildi: {
+    aciklama:
+      'Form gercekten acildi. kaynak: taslak (kaldigi yerden), yeni (taslak silindi), taslaksiz (hic taslak yoktu).',
+    akisGerekli: true,
+    alanlar: { kaynak: 'kod' },
+  },
   ilan_akis_basladi: {
     aciklama: 'Kullanici ilan verme formunu acti.',
     akisGerekli: true,
