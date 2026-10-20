@@ -44,6 +44,18 @@ export class AralikDto {
   bitis?: string;
 
   /**
+   * Kontrollu test kampanyalarini rapora DAHIL et.
+   *
+   * Varsayilan davranis bunlari dislamak; bu bayrak yalnizca yonetici
+   * "kendi testlerimiz dahil nasil gorunuyor" demek istediginde
+   * geciyor. DTO'da tanimli olmasi gerekiyor cunku dogrulama katmani
+   * whitelist disi alanlari reddediyor.
+   */
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  kontrolDahil?: string;
+
+  /**
    * Aralik cozumlemesi. Bitis haric (half-open): bugunun tamami dahil olsun
    * diye yarinin gun basi kullaniliyor, boylece gun icindeki saatler eksik
    * kalmiyor.

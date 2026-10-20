@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { KONTROL_ICERIKLERI, KONTROL_KAMPANYALARI, kontrolAciklamasi } from './kontrol-kampanyalari';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -125,7 +126,13 @@ export class RaporService {
 
   constructor(private prisma: PrismaService) {}
 
-  async rapor(baslangic: Date, bitis: Date) {
+  /**
+   * `kontrolDahil`: kontrollu test kampanyalarini da dahil et. Yalnizca
+   * yoneticinin acikca istemesiyle true oluyor; varsayilan is raporu
+   * bunlari DISLIYOR. Ham veriye dokunulmuyor, yalnizca bu sorgunun
+   * suzgeci degisiyor.
+   */
+  async rapor(baslangic: Date, bitis: Date, kontrolDahil = false) {
     const simdi = new Date();
     const olgunSinir = new Date(simdi.getTime() - OLGUNLASMA_SA * 60 * 60 * 1000);
 
@@ -136,8 +143,27 @@ export class RaporService {
       this.moderasyon(baslangic, bitis, olgunSinir),
       this.iletisimHazirla(baslangic, bitis, olgunSinir),
       this.teklifler(baslangic, bitis),
-      this.sosyalKaynaklar(baslangic, bitis, olgunSinir),
+      this.sosyalKaynaklar(baslangic, bitis, olgunSinir, kontrolDahil),
     ]);
+
+    /**
+     * Olay tabanli bolumlere OLCUM DURUMU ekleniyor.
+     *
+     * Promise.all'dan SONRA yapiliyor cunku `ilkOlay` de ayni turda
+     * cozuluyor; bolumlerin icinden erisilemiyordu.
+     *
+     * Veritabani kaynakli bolumler (moderasyon, teklifler) disarida:
+     * onlar olay kaydina bagli degil, olcum oncesi donemler icin de
+     * dogrular - "olcum calisiyor mu" sorusu onlara uygulanmiyor.
+     */
+    const [ilanOlcum, aramaOlcum, iletisimOlcum] = await Promise.all([
+      this.olcumDurumu(['ilan_akis_basladi', 'ilan_adim_tamamlandi', 'ilan_gonderildi'], baslangic, bitis, ilkOlay),
+      this.olcumDurumu(['arama_yapildi'], baslangic, bitis, ilkOlay),
+      this.olcumDurumu(['mesaj_butonu_tiklandi'], baslangic, bitis, ilkOlay),
+    ]);
+    (ilanAkisi as any).olcum = ilanOlcum;
+    (arama as any).olcum = aramaOlcum;
+    (iletisim as any).olcum = iletisimOlcum;
 
     return {
       donem: {
@@ -197,7 +223,45 @@ export class RaporService {
    * Bu bolum Instagram/Facebook ICINDEKI erisimi, gosterimi ya da profil
    * goruntulemesini OLCMUYOR. Yalnizca siteye ulasan tiklamalari goruyor.
    */
-  private async sosyalKaynaklar(baslangic: Date, bitis: Date, olgunSinir: Date) {
+  private async sosyalKaynaklar(
+    baslangic: Date,
+    bitis: Date,
+    olgunSinir: Date,
+    kontrolDahil = false,
+  ) {
+    /**
+     * Kontrollu test kampanyalari.
+     *
+     * `isStaff` kullaniciya bagli oldugu icin MISAFIR olarak yapilan
+     * kendi testlerimizi yakalamiyor. Bunlari burada, RAPOR ANINDA
+     * cikariyoruz; ham veri oldugu gibi duruyor.
+     *
+     * `kontrolDahil` yalnizca yoneticinin acikca istemesiyle true olur.
+     */
+    const kontrolIcerik = [...KONTROL_ICERIKLERI];
+    const kontrolKampanya = [...KONTROL_KAMPANYALARI];
+    const kontrolVar = kontrolIcerik.length > 0 || kontrolKampanya.length > 0;
+
+    // Prisma.sql ile parcali kosul: liste bossa kosul hic eklenmiyor.
+    const kontrolSuzgeci =
+      kontrolVar && !kontrolDahil
+        ? Prisma.sql`
+          AND LOWER(COALESCE(props->>'utmIcerik','')) <> ALL(${kontrolIcerik}::text[])
+          AND LOWER(COALESCE(props->>'utmKampanya','')) <> ALL(${kontrolKampanya}::text[])`
+        : Prisma.empty;
+
+    // Kac kayit cikariliyor? Sessiz dislama olcume guveni bitirir.
+    const [kontrolSayim] = kontrolVar
+      ? await this.prisma.$queryRaw<{ adet: bigint }[]>(Prisma.sql`
+          SELECT COUNT(*) AS adet FROM "AnalyticsEvent"
+          WHERE NOT "isStaff"
+            AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+            AND (
+              LOWER(COALESCE(props->>'utmIcerik','')) = ANY(${kontrolIcerik}::text[])
+              OR LOWER(COALESCE(props->>'utmKampanya','')) = ANY(${kontrolKampanya}::text[])
+            )`)
+      : [{ adet: BigInt(0) }];
+
     // ── Ziyaret kapsami: olaylar ────────────────────────────────────
     const olayKirilimi = await this.prisma.$queryRaw<
       {
@@ -228,6 +292,7 @@ export class RaporService {
       WHERE NOT "isStaff"
         AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
         AND props->>'utmKaynak' IS NOT NULL
+        ${kontrolSuzgeci}
       GROUP BY 1, 2, 3, 4, 5
       ORDER BY acilis DESC, detay DESC
       LIMIT 200
@@ -346,6 +411,7 @@ export class RaporService {
       WHERE NOT "isStaff" AND name = 'ilan_detay_goruntulendi'
         AND props->>'utmKaynak' IS NULL
         AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+        ${kontrolSuzgeci}
     `);
 
     return {
@@ -354,6 +420,16 @@ export class RaporService {
         'Instagram ve Facebook bağlantılarından siteye ulaşan hareketler. Bu bölüm ' +
         'Instagram/Facebook İÇİNDEKİ erişimi, gösterimi veya profil görüntülemesini ÖLÇMEZ — ' +
         'yalnızca siteye gelen tıklamaları ve sonrasını görür.',
+      /**
+       * Dislama seffafligi: kac kayit, hangi gerekceyle cikarildi.
+       * Panelde gorunuyor; yonetici isterse dahil edip bakabiliyor.
+       */
+      kontrol: {
+        uygulandi: kontrolVar && !kontrolDahil,
+        dahilEdildi: kontrolDahil,
+        cikarilanOlay: Number(kontrolSayim?.adet ?? 0),
+        aciklama: kontrolAciklamasi(),
+      },
       kurallar: [
         'Ziyaret kapsamı: kampanya ziyaret boyunca yalnızca bellekte taşınır (cihazda saklanmaz). Son açılan kampanya bağlantısı öncekinin yerini alır. Sayfa yenilenince kaynak kaybolur ve "belirlenemedi" olur.',
         'Hesap kapsamı — KAYIT KAMPANYASI: kullanıcı kayıt olurken bellekte hangi kampanya varsa o damgalanır ve değişmez. Bu kişinin siteyi İLK KEZ hangi kaynaktan bulduğu DEĞİLDİR: gerçek ilk ziyaret kaynağı hiçbir yerde saklanmıyor. Kullanıcı önce doğrudan gelip gezinmiş, günler sonra bir reklam bağlantısıyla dönüp kayıt olmuş olabilir; damga o son bağlantıyı gösterir.',
@@ -375,7 +451,18 @@ export class RaporService {
             acilis: t.acilis,
             ilanDetayi: t.detay,
             ilanGonderimi: t.ilan,
-            detayOrani: t.acilis >= ASGARI_PAYDA ? t.detay / t.acilis : null,
+            /**
+             * DIKKAT: bu bir DONUSUM DEGIL, OLAY ORANI.
+             *
+             * Pay ve payda ayri olay turleri; ikisi de ziyaret ya da
+             * kullanici bazinda birlestirilmiyor (cihaz kimligi
+             * tutmuyoruz, oturum kimligi de yok). Tek bir ziyaret
+             * birden cok ilan detayi acabilir, dolayisiyla bu oran
+             * %100'u ASABILIR. "Acilanlarin su kadari ilana bakti"
+             * diye okunamaz; "her acilis basina kac detay
+             * goruntulemesi dustu" diye okunur.
+             */
+            detayOlayOrani: t.acilis >= ASGARI_PAYDA ? t.detay / t.acilis : null,
             yeterliVeri: t.acilis >= ASGARI_PAYDA,
           })),
         kirilim: olayKirilimi.map((r) => ({
@@ -429,6 +516,77 @@ export class RaporService {
   }
 
   // ── 1. Ilan verme akisi (olay) ────────────────────────────────────────
+  /**
+   * Bir bolumun OLCUM DURUMU.
+   *
+   * ── NEDEN GEREKLI ─────────────────────────────────────────────────
+   *
+   * Panelde "0" ucu birden anlama geliyordu ve ayirt edilemiyordu:
+   *
+   *   a) gercekten hic olmadi
+   *   b) olcum bozuk / olay hic gonderilmiyor
+   *   c) bu donem olcum baslamadan oncesine ait
+   *
+   * Canlida olculdu: `ilan_%` olaylarinin TAMAMI isStaff=true (189 olay,
+   * hepsi personel). Yani ilan verme akisindaki 0 "bozuk olcum" degil,
+   * "olcum calisiyor ama gercek kullanici hic denememis" demek. Bu ikisi
+   * tamamen farkli kararlar gerektiriyor: biri hata ayiklama, digeri
+   * urun/pazarlama isi.
+   *
+   * Ayrimi su sekilde kuruyoruz: ayni olay turunden HIC personel kaydi
+   * var mi? Varsa olcum hatti calisiyor demektir.
+   */
+  private async olcumDurumu(
+    olayAdlari: string[],
+    baslangic: Date,
+    bitis: Date,
+    ilkOlay: Date | null,
+  ) {
+    const [satir] = await this.prisma.$queryRaw<
+      { donem_gercek: bigint; donem_personel: bigint; hic_toplam: bigint }[]
+    >(Prisma.sql`
+      SELECT
+        COUNT(*) FILTER (WHERE NOT "isStaff"
+          AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}) AS donem_gercek,
+        COUNT(*) FILTER (WHERE "isStaff"
+          AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}) AS donem_personel,
+        COUNT(*) AS hic_toplam
+      FROM "AnalyticsEvent"
+      WHERE name = ANY(${olayAdlari}::text[])
+    `);
+
+    const gercek = Number(satir?.donem_gercek ?? 0);
+    const personel = Number(satir?.donem_personel ?? 0);
+    const hicToplam = Number(satir?.hic_toplam ?? 0);
+
+    // Donem tamamen olcum baslangicindan onceyse hicbir sey beklenemez.
+    const donemOncesi = !!ilkOlay && bitis <= ilkOlay;
+
+    let durum: 'veri_var' | 'gercek_sifir' | 'olcum_dogrulanamadi' | 'donem_oncesi';
+    let aciklama: string;
+
+    if (donemOncesi) {
+      durum = 'donem_oncesi';
+      aciklama = 'Bu dönem ölçümün başladığı tarihten önce. Veri yokluğu bir sonuç değil.';
+    } else if (gercek > 0) {
+      durum = 'veri_var';
+      aciklama = `Dönemde ${gercek} gerçek kullanıcı olayı kaydedildi.`;
+    } else if (personel > 0 || hicToplam > 0) {
+      durum = 'gercek_sifir';
+      aciklama =
+        `Ölçüm çalışıyor — bu olay türünden toplam ${hicToplam} kayıt var` +
+        (personel > 0 ? ` (dönemde ${personel}'i personel/test)` : '') +
+        `. Dönemde gerçek kullanıcıdan hiç gelmedi: bu GERÇEK bir sıfır, bozuk ölçüm değil.`;
+    } else {
+      durum = 'olcum_dogrulanamadi';
+      aciklama =
+        'Bu olay türünden hiç kayıt yok — ne gerçek kullanıcıdan ne personelden. ' +
+        'Ölçümün çalıştığı doğrulanamıyor; sıfır olarak yorumlanmamalı.';
+    }
+
+    return { durum, aciklama, donemdeGercek: gercek, donemdePersonel: personel, hicZamanToplam: hicToplam };
+  }
+
   private async ilanAkisi(baslangic: Date, bitis: Date) {
     // Akislar once girisimlere katlaniyor (AKIS_BOSLUK_DK), sonra her
     // girisimin ulastigi en yuksek adim ve gonderip gonderemedigi cikariliyor.
@@ -680,9 +838,106 @@ export class RaporService {
       GROUP BY 1 ORDER BY adet DESC LIMIT 12
     `);
 
+    /**
+     * SONUCSUZ ARAMA KIRILIMLARI.
+     *
+     * Olay zaten `kategori`, `filtreler` ve `sonucSayisi` tasiyordu; eksik
+     * olan yalnizca raporlamaydi. Serbest arama METNI hicbir yerde
+     * saklanmiyor - mevcut gizlilik yaklasimi aynen korunuyor.
+     *
+     * Her kirilimda TOPLAM arama ve SONUCSUZ arama birlikte donuyor:
+     * tek basina "bu kategoride 5 sonucsuz arama" bir sey ifade etmiyor,
+     * o kategoride toplam 6 arama mi yoksa 600 mu oldugu belirleyici.
+     */
+    const kategoriKirilimi = await this.prisma.$queryRaw<
+      { kategori: string; toplam: bigint; sifir: bigint }[]
+    >(Prisma.sql`
+      SELECT COALESCE(NULLIF(props->>'kategori',''), '(kategorisiz)') AS kategori,
+             COUNT(*) AS toplam,
+             COUNT(*) FILTER (WHERE (props->>'sifirSonuc')::boolean) AS sifir
+      FROM "AnalyticsEvent"
+      WHERE name = 'arama_yapildi' AND NOT "isStaff"
+        AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+      GROUP BY 1 HAVING COUNT(*) FILTER (WHERE (props->>'sifirSonuc')::boolean) > 0
+      ORDER BY sifir DESC, toplam DESC LIMIT 15
+    `);
+
+    /** Filtre turu bazinda: hangi filtreler sonucu bosaltiyor? */
+    const filtreSifir = await this.prisma.$queryRaw<
+      { filtre: string; toplam: bigint; sifir: bigint }[]
+    >(Prisma.sql`
+      SELECT f AS filtre,
+             COUNT(*) AS toplam,
+             COUNT(*) FILTER (WHERE (e.props->>'sifirSonuc')::boolean) AS sifir
+      FROM "AnalyticsEvent" e,
+           LATERAL jsonb_array_elements_text(COALESCE(e.props->'filtreler', '[]'::jsonb)) AS f
+      WHERE e.name = 'arama_yapildi' AND NOT e."isStaff"
+        AND e."occurredAt" >= ${ts(baslangic)} AND e."occurredAt" < ${ts(bitis)}
+      GROUP BY 1 HAVING COUNT(*) FILTER (WHERE (e.props->>'sifirSonuc')::boolean) > 0
+      ORDER BY sifir DESC LIMIT 12
+    `);
+
+    /**
+     * Filtreli / filtresiz ayrimi ve sonuc sayisi araligi.
+     * "0 sonuc" ile "1-3 sonuc" ayri sorunlar: ilki envanter yoklugu,
+     * ikincisi secenek darligi.
+     */
+    const [bicimler] = await this.prisma.$queryRaw<
+      {
+        filtresiz_toplam: bigint; filtresiz_sifir: bigint;
+        filtreli_toplam: bigint; filtreli_sifir: bigint;
+        metinli_toplam: bigint; metinli_sifir: bigint;
+        az_sonuc: bigint; bol_sonuc: bigint;
+      }[]
+    >(Prisma.sql`
+      SELECT
+        COUNT(*) FILTER (WHERE COALESCE(jsonb_array_length(props->'filtreler'),0) = 0) AS filtresiz_toplam,
+        COUNT(*) FILTER (WHERE COALESCE(jsonb_array_length(props->'filtreler'),0) = 0
+                           AND (props->>'sifirSonuc')::boolean) AS filtresiz_sifir,
+        COUNT(*) FILTER (WHERE COALESCE(jsonb_array_length(props->'filtreler'),0) > 0) AS filtreli_toplam,
+        COUNT(*) FILTER (WHERE COALESCE(jsonb_array_length(props->'filtreler'),0) > 0
+                           AND (props->>'sifirSonuc')::boolean) AS filtreli_sifir,
+        COUNT(*) FILTER (WHERE (props->>'metinVar')::boolean) AS metinli_toplam,
+        COUNT(*) FILTER (WHERE (props->>'metinVar')::boolean
+                           AND (props->>'sifirSonuc')::boolean) AS metinli_sifir,
+        COUNT(*) FILTER (WHERE COALESCE((props->>'sonucSayisi')::int, -1) BETWEEN 1 AND 3) AS az_sonuc,
+        COUNT(*) FILTER (WHERE COALESCE((props->>'sonucSayisi')::int, -1) > 3) AS bol_sonuc
+      FROM "AnalyticsEvent"
+      WHERE name = 'arama_yapildi' AND NOT "isStaff"
+        AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+    `);
+
+    const n = (v: bigint | null | undefined) => Number(v ?? 0);
+
     const arama = Number(satir?.arama ?? 0);
 
     return {
+      /**
+       * Sonucsuz arama kirilimlari. Her satirda toplam ve sonucsuz
+       * birlikte; az ornekten kesin sonuc cikarilmasin diye ham adetler
+       * gorunur tutuluyor ve oran hesaplanmiyor.
+       */
+      sifirKirilimi: {
+        kategori: kategoriKirilimi.map((k) => ({
+          ad: k.kategori, toplam: n(k.toplam), sifir: n(k.sifir),
+        })),
+        filtre: filtreSifir.map((f) => ({
+          ad: f.filtre, toplam: n(f.toplam), sifir: n(f.sifir),
+        })),
+        bicim: [
+          { ad: 'Filtresiz arama', toplam: n(bicimler?.filtresiz_toplam), sifir: n(bicimler?.filtresiz_sifir) },
+          { ad: 'Filtreli arama',  toplam: n(bicimler?.filtreli_toplam),  sifir: n(bicimler?.filtreli_sifir) },
+          { ad: 'Metin girilmiş',  toplam: n(bicimler?.metinli_toplam),   sifir: n(bicimler?.metinli_sifir) },
+        ],
+        sonucAraligi: [
+          { ad: '0 sonuç',    adet: Number(satir?.sifir ?? 0) },
+          { ad: '1-3 sonuç',  adet: n(bicimler?.az_sonuc) },
+          { ad: '4+ sonuç',   adet: n(bicimler?.bol_sonuc) },
+        ],
+        not:
+          'Serbest arama metni kaydedilmiyor. Her satırda toplam ve sonuçsuz birlikte verilir; ' +
+          'az örnekten kesin sonuç çıkarmamak için oran hesaplanmaz.',
+      },
       baslik: 'Arama ve kesif',
       kaynak: 'olay' as MetrikKaynagi,
       aciklama:

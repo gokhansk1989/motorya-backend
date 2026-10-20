@@ -58,8 +58,11 @@ export class AnalyticsController {
   @Get('rapor')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN', 'SUPER_ADMIN')
-  async raporGetir(@Query() q: AralikDto) {
+  async raporGetir(@Query() q: AralikDto, @Query('kontrolDahil') kontrolDahil?: string) {
     const { baslangic, bitis } = q.coz();
-    return this.rapor.rapor(baslangic, bitis);
+    // Kontrollu test kayitlarini dahil etme YALNIZCA acik istekle.
+    // Uc zaten ADMIN/SUPER_ADMIN'e kisitli; ayrica bir rol kontrolu
+    // gerekmiyor ama varsayilan her zaman DISLAMA.
+    return this.rapor.rapor(baslangic, bitis, kontrolDahil === 'true');
   }
 }
