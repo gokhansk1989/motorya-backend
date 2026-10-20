@@ -115,8 +115,53 @@ export const OLAYLAR = {
   // ── Saticiya ulasma ───────────────────────────────────────────────────
   mesaj_butonu_tiklandi: {
     aciklama:
-      'Ilan detayinda mesaj gonderme eylemine tiklandi. Gonderilmis mesaj DEGILDIR; mesajin kaydi Message tablosundan okunuyor.',
-    alanlar: { ...KAMPANYA_ALANLARI, listingId: 'kimlik', kendiIlani: 'bayrak'},
+      'Ilan detayinda mesaj gonderme eylemine tiklandi. Gonderilmis mesaj DEGILDIR; mesajin kaydi Message tablosundan okunuyor. uyeMi: tiklama anindaki oturum durumu - misafir ve uye akislari ayri olculuyor.',
+    alanlar: { ...KAMPANYA_ALANLARI, listingId: 'kimlik', kendiIlani: 'bayrak', uyeMi: 'bayrak' },
+  },
+
+  /**
+   * Misafir mesaj gondermek istedi ve giris ekranina yonlendirildi.
+   *
+   * `mesaj_butonu_tiklandi` ile ayni anda uretiliyor ama AYRI bir olay:
+   * boylece "kac tiklama giris duvarina carpti" sorusu, uyelerin
+   * tiklamalarini paydaya katmadan cevaplanabiliyor.
+   */
+  mesaj_giris_gerekti: {
+    aciklama: 'Misafir mesaj gondermek istedi, giris/kayit ekranina yonlendirildi.',
+    alanlar: { ...KAMPANYA_ALANLARI, listingId: 'kimlik' },
+  },
+
+  /**
+   * Kimlik dogrulamasindan sonra ILANA geri donuldu.
+   *
+   * Giris/kayit/e-posta dogrulama/Google turu bittikten sonra kullanici
+   * mesaj niyetiyle ayni ilana dondugunde uretiliyor. Bu adim olmadan
+   * "giriste mi kaybediyoruz yoksa donuste mi" sorusu cevaplanamiyordu.
+   */
+  mesaj_girisden_donuldu: {
+    aciklama: 'Kimlik dogrulamasi sonrasi mesaj niyetiyle ilana geri donuldu.',
+    alanlar: { ...KAMPANYA_ALANLARI, listingId: 'kimlik' },
+  },
+
+  /**
+   * Gonderme denendi — BASARI DEGIL.
+   *
+   * Basarinin tek kaniti sunucuda kaydedilmis Message satiri. Bu olay
+   * yalnizca denemeyi sayiyor; ikisinin farki "yazdi ama gonderemedi"
+   * grubunu gosteriyor.
+   */
+  mesaj_gonderim_denendi: {
+    aciklama: 'Mesaj gonderme islemi baslatildi. Basari DEGILDIR; basari Message tablosundan okunuyor.',
+    alanlar: { listingId: 'kimlik' },
+  },
+
+  /**
+   * Gonderim basarisiz. Yalnizca HATA KODU tasiyor; mesaj metni, sunucu
+   * hata mesaji ya da kisisel veri hicbir kosulda girmiyor.
+   */
+  mesaj_gonderim_hatasi: {
+    aciklama: 'Mesaj gonderilemedi. Yalnizca kaba hata kodu tasir; mesaj metni ve sunucu mesaji gonderilmez.',
+    alanlar: { listingId: 'kimlik', kod: 'kod' },
   },
 } satisfies Record<string, OlayTanimi>;
 

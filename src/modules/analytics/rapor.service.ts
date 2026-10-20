@@ -979,15 +979,39 @@ export class RaporService {
 
   private async iletisim(baslangic: Date, bitis: Date, olgunSinir: Date, ilkOlay: Date | null) {
     // Olay tarafi: kendi ilanini goruntuleyen satici donusum hesabinda yok.
-    const [olaySatir] = await this.prisma.$queryRaw<{ detay: bigint; buton: bigint }[]>(Prisma.sql`
+    const [olaySatir] = await this.prisma.$queryRaw<{
+      detay: bigint; buton: bigint; buton_uye: bigint; buton_misafir: bigint;
+      giris_gerekti: bigint; girisden_donuldu: bigint;
+      gonderim_denendi: bigint; gonderim_hatasi: bigint;
+    }[]>(Prisma.sql`
       SELECT
         COUNT(*) FILTER (WHERE name = 'ilan_detay_goruntulendi'
                            AND COALESCE((props->>'kendiIlani')::boolean, false) = false) AS detay,
         COUNT(*) FILTER (WHERE name = 'mesaj_butonu_tiklandi'
-                           AND COALESCE((props->>'kendiIlani')::boolean, false) = false) AS buton
+                           AND COALESCE((props->>'kendiIlani')::boolean, false) = false) AS buton,
+        -- Misafir / uye ayrimi: misafirin onunde giris duvari var.
+        COUNT(*) FILTER (WHERE name = 'mesaj_butonu_tiklandi'
+                           AND COALESCE((props->>'kendiIlani')::boolean, false) = false
+                           AND COALESCE((props->>'uyeMi')::boolean, false) = true) AS buton_uye,
+        COUNT(*) FILTER (WHERE name = 'mesaj_butonu_tiklandi'
+                           AND COALESCE((props->>'kendiIlani')::boolean, false) = false
+                           AND COALESCE((props->>'uyeMi')::boolean, true) = false) AS buton_misafir,
+        COUNT(*) FILTER (WHERE name = 'mesaj_giris_gerekti')     AS giris_gerekti,
+        COUNT(*) FILTER (WHERE name = 'mesaj_girisden_donuldu')  AS girisden_donuldu,
+        COUNT(*) FILTER (WHERE name = 'mesaj_gonderim_denendi')  AS gonderim_denendi,
+        COUNT(*) FILTER (WHERE name = 'mesaj_gonderim_hatasi')   AS gonderim_hatasi
       FROM "AnalyticsEvent"
       WHERE NOT "isStaff"
         AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+    `);
+
+    /** Gonderim hatalarinin kaba kodlari — kisisel veri icermez. */
+    const hataKodlari = await this.prisma.$queryRaw<{ kod: string; adet: bigint }[]>(Prisma.sql`
+      SELECT COALESCE(props->>'kod','bilinmiyor') AS kod, COUNT(*) AS adet
+      FROM "AnalyticsEvent"
+      WHERE name = 'mesaj_gonderim_hatasi' AND NOT "isStaff"
+        AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+      GROUP BY 1 ORDER BY adet DESC LIMIT 8
     `);
 
     // Veritabani tarafi: ilan uzerinden acilmis konusmada alicinin ilk
@@ -1073,7 +1097,61 @@ export class RaporService {
     const olgun = Number(konusma?.olgun ?? 0);
     const yanitlanan = Number(konusma?.olgunyanitlanan ?? 0);
 
+    const n = (v: bigint | null | undefined) => Number(v ?? 0);
+    const butonUye = n(olaySatir?.buton_uye);
+    const butonMisafir = n(olaySatir?.buton_misafir);
+    const girisGerekti = n(olaySatir?.giris_gerekti);
+    const girisdenDonuldu = n(olaySatir?.girisden_donuldu);
+    const gonderimDenendi = n(olaySatir?.gonderim_denendi);
+    const gonderimHatasi = n(olaySatir?.gonderim_hatasi);
+
+    /**
+     * MESAJLASMA ADIMLARI.
+     *
+     * Her adim AYRI bir olay sayisi; ziyaret ya da kullanici bazinda
+     * birlestirilmiyor. Bu yuzden adimlar arasinda yuzde HESAPLANMIYOR -
+     * "su kadari dustu" demek icin ayni kisileri adimdan adima takip
+     * etmek gerekirdi, bunun icin de cihaz/oturum kimligi; tutmuyoruz.
+     * Ham adetler yan yana duruyor, dusus GOZLE okunuyor.
+     *
+     * Son adim (kaydedilmis ilk mesaj) VERITABANINDAN geliyor - gonderme
+     * dugmesine basmak basari sayilmiyor.
+     *
+     * "Devami iliskilendirilemedi": giris duvarina carpip geri donusu
+     * olculemeyenler. Bu kisiler BIRAKTI demek DEGIL - baska bir
+     * cihazda/sekmede tamamlamis ya da olcum isareti kaybolmus olabilir.
+     */
+    const adimlar = [
+      { adim: 1, etiket: 'İlan detayı görüntülendi', adet: detay, kapsam: 'olay' },
+      { adim: 2, etiket: 'Mesaj düğmesine tıklandı', adet: buton, kapsam: 'olay',
+        alt: [
+          { etiket: 'üye', adet: butonUye },
+          { etiket: 'misafir', adet: butonMisafir },
+        ] },
+      { adim: 3, etiket: 'Giriş/kayıt ekranına yönlendirildi (yalnızca misafir)', adet: girisGerekti, kapsam: 'olay' },
+      { adim: 4, etiket: 'Kimlik doğrulaması sonrası ilana döndü', adet: girisdenDonuldu, kapsam: 'olay' },
+      { adim: 5, etiket: 'Gönderme denendi', adet: gonderimDenendi, kapsam: 'olay' },
+      { adim: 6, etiket: 'Sunucuda kaydedilmiş ilk mesaj', adet: ilkMesaj, kapsam: 'veritabanı' },
+    ];
+
     return {
+      mesajAkisi: {
+        adimlar,
+        gonderimHatasi,
+        hataKodlari: hataKodlari.map((h) => ({ kod: h.kod, adet: Number(h.adet) })),
+        /**
+         * Giris duvarina carpip donusu gorulemeyenler. "Biraktilar"
+         * DEMEK DEGIL: baska cihazda tamamlamis ya da olcum isareti
+         * kaybolmus olabilir. Ayri gosteriliyor, dusus gibi sayilmiyor.
+         */
+        iliskilendirilemeyen: Math.max(0, girisGerekti - girisdenDonuldu),
+        not:
+          'Adımlar ayrı olay sayılarıdır; ziyaret ya da kullanıcı bazında birleştirilmez. ' +
+          'Bu yüzden aralarında yüzde hesaplanmaz — aynı kişileri adımdan adıma takip etmek ' +
+          'cihaz/oturum kimliği gerektirirdi, tutulmuyor. Son adım veritabanından gelir: ' +
+          'gönderme düğmesine basmak başarı sayılmaz. Aynı konuşmadaki sonraki mesajlar ' +
+          'yeni iletişim sayılmaz.',
+      },
       baslik: 'Saticiya ulasma',
       kaynak: 'karma' as MetrikKaynagi,
       aciklama:
