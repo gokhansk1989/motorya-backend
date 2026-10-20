@@ -62,7 +62,7 @@ export class MailService {
 
   async sendVerificationEmail(email: string, name: string, token: string) {
     const link = `${this.appUrl}/email-dogrula?token=${token}`;
-    await this.send(email, 'E-posta adresinizi doğrulayın — Motorya', `
+    return this.send(email, 'E-posta adresinizi doğrulayın — Motorya', `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
         <h2 style="color:#D83E13">Motorya'ya Hoş Geldin, ${name}!</h2>
         <p>Hesabını aktifleştirmek için aşağıdaki butona tıkla. Link <strong>24 saat</strong> geçerlidir.</p>
@@ -665,11 +665,27 @@ export class MailService {
     return ayrilmis.includes(alan) || ayrilmisSonEk.some(s => alan.endsWith(s));
   }
 
-  private async send(to: string, subject: string, html: string) {
+  /**
+   * Gonderim sonucu — cagiran taraf olcum icin kullaniyor.
+   *
+   *   atlandi : hic denenmedi (test alan adi ya da saglayici
+   *             yapilandirilmamis). HATA DEGIL ama BASARI da degil.
+   *   kabul   : saglayici istegi kabul etti. TESLIM EDILDI DEMEK DEGIL;
+   *             teslim/bounce/sikayet icin webhook gerekiyor, kurulu
+   *             degil, dolayisiyla teslim durumu BILINMIYOR.
+   *   hata    : gonderilemedi.
+   *
+   * Donus degerini yok sayan mevcut cagiranlar etkilenmiyor.
+   */
+  private async send(
+    to: string,
+    subject: string,
+    html: string,
+  ): Promise<{ durum: 'atlandi' | 'kabul' | 'hata'; kod?: string }> {
     if (this.gonderilemezAdres(to)) {
       // Hata günlüğüne yazmıyoruz: bu bir arıza değil, beklenen bir durum.
       this.logger.debug(`Test alan adı, mail atlandı (${to})`);
-      return;
+      return { durum: 'atlandi', kod: 'gonderilemez_adres' };
     }
 
     const cfg = await this.getMailConfig();
@@ -680,7 +696,7 @@ export class MailService {
         message: `Resend yapılandırılmamış — mail gönderilemedi: "${subject}"`,
         context: { provider: 'resend', to, subject },
       });
-      return;
+      return { durum: 'atlandi', kod: 'saglayici_yapilandirilmamis' };
     }
     try {
       // Resend hatayı fırlatmaz, { data, error } döner — error'ı elle kontrol et.
@@ -700,6 +716,7 @@ export class MailService {
         replyTo: cfg.from,
       });
       if (error) throw new Error(`${error.name}: ${error.message}`);
+      return { durum: 'kabul' };
     } catch (err: any) {
       this.logger.error(`Mail gönderilemedi (${to}): ${err?.message}`);
       this.errorLogs.log({
@@ -708,6 +725,7 @@ export class MailService {
         stack: err?.stack ?? null,
         context: { provider: 'resend', to, subject },
       });
+      return { durum: 'hata' };
     }
   }
 }

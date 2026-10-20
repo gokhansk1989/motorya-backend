@@ -136,7 +136,7 @@ export class RaporService {
     const simdi = new Date();
     const olgunSinir = new Date(simdi.getTime() - OLGUNLASMA_SA * 60 * 60 * 1000);
 
-    const [ilkOlay, ilanAkisi, arama, moderasyon, iletisim, teklif, sosyal] = await Promise.all([
+    const [ilkOlay, ilanAkisi, arama, moderasyon, iletisim, teklif, sosyal, uyelik] = await Promise.all([
       this.ilkOlayTarihi(),
       this.ilanAkisi(baslangic, bitis),
       this.aramaAkisi(baslangic, bitis),
@@ -144,6 +144,7 @@ export class RaporService {
       this.iletisimHazirla(baslangic, bitis, olgunSinir),
       this.teklifler(baslangic, bitis),
       this.sosyalKaynaklar(baslangic, bitis, olgunSinir, kontrolDahil),
+      this.uyelikHunisi(baslangic, bitis, olgunSinir, null),
     ]);
 
     /**
@@ -156,14 +157,19 @@ export class RaporService {
      * onlar olay kaydina bagli degil, olcum oncesi donemler icin de
      * dogrular - "olcum calisiyor mu" sorusu onlara uygulanmiyor.
      */
-    const [ilanOlcum, aramaOlcum, iletisimOlcum] = await Promise.all([
+    const [ilanOlcum, aramaOlcum, iletisimOlcum, uyelikOlcum] = await Promise.all([
       this.olcumDurumu(['ilan_akis_basladi', 'ilan_adim_tamamlandi', 'ilan_gonderildi'], baslangic, bitis, ilkOlay),
       this.olcumDurumu(['arama_yapildi'], baslangic, bitis, ilkOlay),
       this.olcumDurumu(['mesaj_butonu_tiklandi'], baslangic, bitis, ilkOlay),
+      this.olcumDurumu(
+        ['uyelik_ekran_goruntulendi', 'uyelik_hesap_olusturuldu', 'uyelik_eposta_dogrulandi'],
+        baslangic, bitis, ilkOlay,
+      ),
     ]);
     (ilanAkisi as any).olcum = ilanOlcum;
     (arama as any).olcum = aramaOlcum;
     (iletisim as any).olcum = iletisimOlcum;
+    (uyelik as any).olcum = uyelikOlcum;
 
     return {
       donem: {
@@ -192,7 +198,7 @@ export class RaporService {
           `Teklifin kabul edilmesi gerceklesmis satis anlamina gelmez.`,
         ],
       },
-      bolumler: [ilanAkisi, moderasyon, arama, iletisim, teklif],
+      bolumler: [uyelik, ilanAkisi, moderasyon, arama, iletisim, teklif],
       sosyal,
     };
   }
@@ -536,6 +542,202 @@ export class RaporService {
    * Ayrimi su sekilde kuruyoruz: ayni olay turunden HIC personel kaydi
    * var mi? Varsa olcum hatti calisiyor demektir.
    */
+  /**
+   * UYELIK HUNISI.
+   *
+   * IKI AYRI GORUNUM, bilerek karistirilmiyor:
+   *
+   *   GIRISIM HUNISI  - secilen donemde BASLAYAN kayit girisimleri ve
+   *                     onlarin nereye kadar gittigi. Donemden sonra
+   *                     tamamlanan adimlar gozlem suresi icinde ayni
+   *                     girisime baglaniyor.
+   *   DONEM HAREKETI  - secilen tarihlerde GERCEKLESEN hesap olusturma
+   *                     ve dogrulama sayilari. Bunlar ayni kohortun
+   *                     donusumu DEGIL ve oyle sunulmuyor.
+   *
+   * Tarih siniri: baslangic DAHIL, bitis HARIC (half-open), Europe/
+   * Istanbul. Boylece ardisik donemler ne bosluk birakiyor ne de
+   * ustusuyor.
+   */
+  private async uyelikHunisi(baslangic: Date, bitis: Date, olgunSinir: Date, ilkOlay: Date | null) {
+    // ── GIRISIM HUNISI ──────────────────────────────────────────────
+    // Girisim = flowId. Donemde EKRAN GORUNTULEME olayi olan girisimler
+    // kohortu olusturuyor; sonraki adimlar gozlem suresi icinde ayni
+    // flowId ile bagleniyor.
+    const [girisim] = await this.prisma.$queryRaw<{
+      ekran: bigint; basladi: bigint; gonderildi: bigint;
+      hesap: bigint; dogrulandi: bigint; olgunlasmamis: bigint;
+    }[]>(Prisma.sql`
+      WITH kohort AS (
+        SELECT DISTINCT "flowId", MIN("occurredAt") AS ilk
+        FROM "AnalyticsEvent"
+        WHERE name = 'uyelik_ekran_goruntulendi' AND NOT "isStaff" AND "flowId" IS NOT NULL
+          AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+        GROUP BY "flowId"
+      ),
+      adim AS (
+        SELECT k."flowId", k.ilk,
+          BOOL_OR(e.name = 'uyelik_basladi')             AS basladi,
+          BOOL_OR(e.name = 'uyelik_gonderildi')          AS gonderildi,
+          BOOL_OR(e.name = 'uyelik_hesap_olusturuldu')   AS hesap,
+          BOOL_OR(e.name = 'uyelik_eposta_dogrulandi')   AS dogrulandi
+        FROM kohort k
+        LEFT JOIN "AnalyticsEvent" e
+          ON e."flowId" = k."flowId" AND NOT e."isStaff"
+         -- Gozlem suresi: girisimden sonraki OLGUNLASMA_SA saat.
+         AND e."occurredAt" >= k.ilk
+         AND e."occurredAt" < k.ilk + (${OLGUNLASMA_SA} || ' hours')::interval
+        GROUP BY k."flowId", k.ilk
+      )
+      SELECT COUNT(*) AS ekran,
+             COUNT(*) FILTER (WHERE basladi)    AS basladi,
+             COUNT(*) FILTER (WHERE gonderildi) AS gonderildi,
+             COUNT(*) FILTER (WHERE hesap)      AS hesap,
+             COUNT(*) FILTER (WHERE dogrulandi) AS dogrulandi,
+             -- Gozlem suresini henuz doldurmamis girisimler: "birakti"
+             -- denemez, daha vakti var.
+             COUNT(*) FILTER (WHERE ilk > ${ts(olgunSinir)}) AS olgunlasmamis
+      FROM adim
+    `);
+
+    // ── DONEM HAREKETLERI (veritabani gercegi) ──────────────────────
+    const [hareket] = await this.prisma.$queryRaw<{
+      hesap: bigint; dogrulama_gerekli: bigint; dogrulanan: bigint;
+      bekleyen: bigint; iliskisiz: bigint;
+      medyan_saat: number | null; ornek: bigint;
+    }[]>(Prisma.sql`
+      WITH yeni AS (
+        SELECT id, "createdAt", "emailVerifiedAt", "kayitYontemi", "kayitGirisimId"
+        FROM "User"
+        WHERE "deletedAt" IS NULL
+          AND NOT "isTestAccount"
+          AND role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+          AND "createdAt" >= ${ts(baslangic)} AND "createdAt" < ${ts(bitis)}
+      )
+      SELECT
+        COUNT(*) AS hesap,
+        -- Google hesaplari ayrica dogrulama GEREKTIRMIYOR; huni kaybi
+        -- gibi sayilmamalari icin paydadan cikariliyor.
+        COUNT(*) FILTER (WHERE COALESCE("kayitYontemi",'form') <> 'google') AS dogrulama_gerekli,
+        COUNT(*) FILTER (WHERE COALESCE("kayitYontemi",'form') <> 'google'
+                           AND "emailVerifiedAt" IS NOT NULL) AS dogrulanan,
+        COUNT(*) FILTER (WHERE COALESCE("kayitYontemi",'form') <> 'google'
+                           AND "emailVerifiedAt" IS NULL) AS bekleyen,
+        COUNT(*) FILTER (WHERE "kayitGirisimId" IS NULL) AS iliskisiz,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM ("emailVerifiedAt" - "createdAt")) / 3600.0
+        ) FILTER (WHERE "emailVerifiedAt" IS NOT NULL) AS medyan_saat,
+        COUNT(*) FILTER (WHERE "emailVerifiedAt" IS NOT NULL) AS ornek
+      FROM yeni
+    `);
+
+    /** Dogrulama bekleyenlerin yas araliklari. */
+    const bekleyenYas = await this.prisma.$queryRaw<{ aralik: string; adet: bigint }[]>(Prisma.sql`
+      SELECT CASE
+               WHEN now() - "createdAt" < interval '1 hour'  THEN '0-1 saat'
+               WHEN now() - "createdAt" < interval '24 hours' THEN '1-24 saat'
+               WHEN now() - "createdAt" < interval '7 days'   THEN '1-7 gün'
+               ELSE '7+ gün'
+             END AS aralik,
+             COUNT(*) AS adet
+      FROM "User"
+      WHERE "deletedAt" IS NULL AND NOT "isTestAccount"
+        AND role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+        AND "emailVerifiedAt" IS NULL
+        AND COALESCE("kayitYontemi",'form') <> 'google'
+      GROUP BY 1
+    `);
+
+    /** Mail durumlari ve yeniden gonderim. */
+    const mailDurum = await this.prisma.$queryRaw<{ durum: string; tekrar: boolean; adet: bigint }[]>(Prisma.sql`
+      SELECT COALESCE(props->>'durum','bilinmiyor') AS durum,
+             COALESCE((props->>'tekrar')::boolean, false) AS tekrar,
+             COUNT(*) AS adet
+      FROM "AnalyticsEvent"
+      WHERE name = 'uyelik_dogrulama_maili' AND NOT "isStaff"
+        AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+      GROUP BY 1,2 ORDER BY adet DESC
+    `);
+
+    /** Kampanya ve yontem kirilimi — hesap bazinda, VERITABANINDAN. */
+    const kirilim = await this.prisma.$queryRaw<{
+      kaynak: string; ortam: string; kampanya: string; icerik: string;
+      yontem: string; hesap: bigint; dogrulanan: bigint;
+    }[]>(Prisma.sql`
+      SELECT COALESCE("kampanyaKaynak",'(belirlenemedi)') AS kaynak,
+             COALESCE("kampanyaOrtam",'-')   AS ortam,
+             COALESCE("kampanyaAdi",'-')     AS kampanya,
+             COALESCE("kampanyaIcerik",'-')  AS icerik,
+             COALESCE("kayitYontemi",'form') AS yontem,
+             COUNT(*) AS hesap,
+             COUNT(*) FILTER (WHERE "emailVerifiedAt" IS NOT NULL) AS dogrulanan
+      FROM "User"
+      WHERE "deletedAt" IS NULL AND NOT "isTestAccount"
+        AND role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+        AND "createdAt" >= ${ts(baslangic)} AND "createdAt" < ${ts(bitis)}
+      GROUP BY 1,2,3,4,5 ORDER BY hesap DESC LIMIT 30
+    `);
+
+    const n = (v: bigint | null | undefined) => Number(v ?? 0);
+    const hataKodlari = await this.prisma.$queryRaw<{ kod: string; adet: bigint }[]>(Prisma.sql`
+      SELECT COALESCE(props->>'kod','bilinmiyor') AS kod, COUNT(*) AS adet
+      FROM "AnalyticsEvent"
+      WHERE name = 'uyelik_hatasi' AND NOT "isStaff"
+        AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}
+      GROUP BY 1 ORDER BY adet DESC LIMIT 8
+    `);
+
+    return {
+      baslik: 'Üyelik hunisi',
+      kaynak: 'karma' as MetrikKaynagi,
+      aciklama:
+        'İki ayrı görünüm: GİRİŞİM HUNİSİ dönemde başlayan kayıt girişimlerini izler; ' +
+        'DÖNEM HAREKETİ seçilen tarihlerde gerçekleşen hesap/doğrulama sayılarıdır. ' +
+        'İkisi aynı kohort değildir ve birbirine bölünmez. Tarih sınırı: başlangıç dahil, ' +
+        'bitiş hariç, Europe/Istanbul.',
+      girisimHunisi: {
+        adimlar: [
+          { adim: 1, etiket: 'Kayıt ekranı görüntülendi', adet: n(girisim?.ekran), kapsam: 'girişim' },
+          { adim: 2, etiket: 'Kayıt başladı (ilk anlamlı etkileşim)', adet: n(girisim?.basladi), kapsam: 'girişim' },
+          { adim: 3, etiket: 'Form gönderildi', adet: n(girisim?.gonderildi), kapsam: 'girişim' },
+          { adim: 4, etiket: 'Hesap oluşturuldu (sunucu)', adet: n(girisim?.hesap), kapsam: 'girişim' },
+          { adim: 5, etiket: 'E-posta doğrulandı (sunucu)', adet: n(girisim?.dogrulandi), kapsam: 'girişim' },
+        ],
+        olgunlasmamis: n(girisim?.olgunlasmamis),
+        gozlemSaati: OLGUNLASMA_SA,
+        not:
+          `Girişim = tek bir kayıt denemesi (flowId). Sonraki adımlar girişimden itibaren ` +
+          `${OLGUNLASMA_SA} saatlik gözlem süresi içinde aynı girişime bağlanır. Gözlem süresini ` +
+          `doldurmamış girişimler "henüz tamamlanmadı"dır; "bıraktı" DEĞİLDİR.`,
+      },
+      donemHareketi: {
+        hesap: n(hareket?.hesap),
+        dogrulamaGerekli: n(hareket?.dogrulama_gerekli),
+        dogrulanan: n(hareket?.dogrulanan),
+        bekleyen: n(hareket?.bekleyen),
+        iliskilendirilemeyen: n(hareket?.iliskisiz),
+        medyanSaat: hareket?.medyan_saat ?? null,
+        medyanOrnek: n(hareket?.ornek),
+        bekleyenYas: bekleyenYas.map((b) => ({ aralik: b.aralik, adet: n(b.adet) })),
+        not:
+          'Bu sayılar seçilen tarihlerde GERÇEKLEŞEN hareketlerdir; aynı dönem kohortunun ' +
+          'dönüşümü değildir. Google ile açılan hesaplar ayrıca e-posta doğrulaması ' +
+          'gerektirmediği için doğrulama paydasına girmez — huni kaybı sayılmazlar.',
+      },
+      mailDurumlari: mailDurum.map((m) => ({ durum: m.durum, tekrar: m.tekrar, adet: n(m.adet) })),
+      mailNotu:
+        'Sağlayıcının kabul etmesi TESLİM EDİLDİ demek değildir. Resend webhook\'u kurulu ' +
+        'olmadığı için teslim, bounce ve şikâyet durumu BİLİNMİYOR. Açılma pikseli yok; ' +
+        'spam klasörüne düşmeyi bu olaylardan ölçtüğümüzü iddia etmiyoruz.',
+      hataKodlari: hataKodlari.map((h) => ({ kod: h.kod, adet: n(h.adet) })),
+      kirilim: kirilim.map((k) => ({
+        kaynak: k.kaynak, ortam: k.ortam, kampanya: k.kampanya, icerik: k.icerik,
+        yontem: k.yontem, hesap: n(k.hesap), dogrulanan: n(k.dogrulanan),
+      })),
+      metrikler: [] as Metrik[],
+    };
+  }
+
   private async olcumDurumu(
     olayAdlari: string[],
     baslangic: Date,

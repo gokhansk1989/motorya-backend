@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { OlayDto } from './dto/olay.dto';
 import { olayTanimli, propsTemizle, OLAYLAR } from './olay-sozlugu';
@@ -41,6 +42,69 @@ export class AnalyticsService {
    * Istemci de zaten yaniti beklemiyor; burada bir sey patlarsa log'a dusuyor
    * ve kullanici bunu hic gormuyor.
    */
+  /**
+   * SUNUCU TARAFI OLAY.
+   *
+   * Istemciden gelen "basardim" iddiasina guvenmeden, gercekten olmus
+   * bir seyi kaydetmek icin. Hesap olusturma, mail gonderimi ve e-posta
+   * dogrulama bu yolu kullaniyor: ucu de veritabani gercegi.
+   *
+   * `isStaff` burada da sunucuda hesaplaniyor - cagiran taraf rol ya da
+   * test isareti GONDERMIYOR, kullanici kimliginden okunuyor.
+   *
+   * ASLA HATA FIRLATMAZ. Olcumun bozulmasi kayit olmayi ya da e-posta
+   * dogrulamayi engellememeli; cagiran taraf await etse bile basarisizlik
+   * sessizce yutuluyor.
+   */
+  async sunucuOlayi(
+    name: string,
+    opts: {
+      /** Olayi tekil kilan anahtar. Ayni anahtar iki kez yazilmaz. */
+      benzersizAnahtar: string;
+      flowId?: string | null;
+      userId?: string | null;
+      props?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    try {
+      if (!olayTanimli(name)) {
+        this.logger.warn(`Tanimsiz sunucu olayi: ${name}`);
+        return;
+      }
+
+      // isStaff SUNUCUDA, kullanici kaydindan. Cagiran taraf soyleyemez.
+      let isStaff = false;
+      if (opts.userId) {
+        const u = await this.prisma.user
+          .findUnique({ where: { id: opts.userId }, select: { role: true, isTestAccount: true } })
+          .catch(() => null);
+        isStaff =
+          (!!u?.role && PERSONEL_ROLLERI.has(u.role)) ||
+          !!u?.isTestAccount ||
+          this.haricKullanicilar.has(opts.userId);
+      }
+
+      // eventId bicimi istemci olaylariyla ayni dogrulamadan geciyor:
+      // [A-Za-z0-9-]{8,64}. Anahtari sabit bir onek + hash ile uretiyoruz
+      // ki hesap kimligi gibi degerler dogrudan alana yazilmasin.
+      const eventId = `s-${createHash('sha256').update(`${name}:${opts.benzersizAnahtar}`).digest('hex').slice(0, 40)}`;
+
+      await this.prisma.analyticsEvent.createMany({
+        data: [{
+          eventId,
+          name,
+          flowId: opts.flowId ?? null,
+          userId: opts.userId ?? null,
+          isStaff,
+          props: propsTemizle(name as keyof typeof OLAYLAR, opts.props ?? {}) as object,
+        }],
+        skipDuplicates: true,
+      });
+    } catch (err: any) {
+      this.logger.warn(`Sunucu olayi yazilamadi (${name}): ${err?.message}`);
+    }
+  }
+
   async kaydet(
     olaylar: OlayDto[],
     baglam: {

@@ -104,10 +104,17 @@ model User {
   ///
   /// Olcum bilgisi: hicbir yetki, erisim ya da fiyat karari buna bakmiyor.
   /// Kullanici adres cubugundan istedigi degeri yazabilir.
-  kampanyaKaynak   String?
-  kampanyaOrtam    String?
-  kampanyaAdi      String?
-  kampanyaIcerik   String?
+  kampanyaKaynak String?
+  kampanyaOrtam  String?
+  kampanyaAdi    String?
+  kampanyaIcerik String?
+
+  /// Kayit girisimini olusan hesaba baglayan olcum kimligi (flowId).
+  /// Yetki ya da oturum araci DEGIL; kalici cihazlar arasi takip
+  /// kimligi de degil. Yalnizca sunucuda iliskilendiriliyor.
+  kayitGirisimId   String?
+  /// 'form' | 'google'. Dogrulama yonteminden AYRI bir alan.
+  kayitYontemi     String?
   kampanyaIlkTemas DateTime?
 
   emailVerificationToken  String?   @unique
@@ -159,6 +166,7 @@ model User {
 
   @@index([status, createdAt])
   @@index([city])
+  @@index([kayitGirisimId])
 }
 
 enum Gender {

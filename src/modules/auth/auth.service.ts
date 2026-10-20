@@ -5,6 +5,7 @@ import { RegisterDto, LoginDto, AuthResponseDto } from './dto/auth.dto';
 import { MailService } from '../mail/mail.service';
 import { AuditService } from '../audit/audit.service';
 import { SettingsService } from '../settings/settings.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { gecerliTcKimlik, TC_CAKISMA_MESAJI } from '../../common/tc-kimlik';
@@ -39,6 +40,21 @@ const YENIDEN_GONDERIM_BEKLEME_SN = 60;
  * Kampanya yoksa BOS nesne doner - kolonlar null kalir ve raporda
  * "kaynak belirlenemedi" olarak gorunur. Tahminle doldurmuyoruz.
  */
+/**
+ * E-posta gonderim hatasini SABIT bir koda cevirir.
+ *
+ * Saglayicinin ham hata mesaji kaydedilmiyor: icinde alici adresi ya da
+ * baska kisisel veri gecebilir. Yalnizca kaba sinif.
+ */
+function mailHataKodu(e: any): string {
+  const m = String(e?.message ?? '').toLowerCase();
+  if (m.includes('rate') || m.includes('429')) return 'hiz_siniri';
+  if (m.includes('invalid') || m.includes('validation')) return 'gecersiz_adres';
+  if (m.includes('auth') || m.includes('api key') || m.includes('unauthorized')) return 'saglayici_yetki';
+  if (m.includes('timeout') || m.includes('network') || m.includes('fetch')) return 'ag';
+  return 'saglayici';
+}
+
 function kampanyaDamgasi(gelen: unknown) {
   const k = kampanyaCikar(
     (gelen && typeof gelen === 'object' && !Array.isArray(gelen)
@@ -68,6 +84,7 @@ export class AuthService {
     private mail: MailService,
     private audit: AuditService,
     private settings: SettingsService,
+    private analytics: AnalyticsService,
   ) {}
 
   async register(dto: RegisterDto, ip?: string): Promise<{ message: string }> {
@@ -140,7 +157,26 @@ export class AuthService {
         // (son temas kazanir) ama "bu hesabi hangi kampanya getirdi"
         // sorusunun tek bir cevabi olmali.
         ...kampanyaDamgasi(dto.kampanya),
+        // Kayit girisimini olusan hesaba bagla. YALNIZCA sunucuda
+        // kuruluyor; istemci bu bagi iddia edemiyor.
+        kayitGirisimId: dto.girisimId ?? null,
+        kayitYontemi: 'form',
       },
+    });
+
+    /**
+     * SUNUCU OLAYI: hesap gercekten olustu.
+     *
+     * Istemcinin "gonderdim" olayindan AYRI: gonderim basari degil.
+     * Benzersiz anahtar hesabin kimligi - ayni hesap iki kez
+     * sayilamiyor. Olcum hatasi kaydi bozmasin diye await edilse bile
+     * sunucuOlayi hicbir kosulda firlatmiyor.
+     */
+    await this.analytics.sunucuOlayi('uyelik_hesap_olusturuldu', {
+      benzersizAnahtar: user.id,
+      flowId: dto.girisimId ?? null,
+      userId: user.id,
+      props: { yontem: 'form', dogrulamaGerekli: true },
     });
 
     // Onay kayıtları — değişmez log, ileride hukuki ispat için kullanılır.
@@ -152,7 +188,39 @@ export class AuthService {
       ],
     });
 
-    await this.mail.sendVerificationEmail(user.email, user.displayName, token);
+    /**
+     * Dogrulama e-postasi. UC AYRI DURUM olculuyor:
+     *   istendi          - gonderim talebi yapildi
+     *   saglayici_kabul  - Resend istegi kabul etti
+     *   hata             - gonderilemedi
+     *
+     * "saglayici kabul etti" TESLIM EDILDI DEMEK DEGIL. Resend webhook'u
+     * kurulu olmadigi icin teslim/bounce/sikayet BILINMIYOR ve raporda
+     * oyle gosteriliyor. Acilma pikseli yok.
+     */
+    await this.analytics.sunucuOlayi('uyelik_dogrulama_maili', {
+      benzersizAnahtar: `${user.id}:istendi:1`,
+      flowId: dto.girisimId ?? null,
+      userId: user.id,
+      props: { durum: 'istendi', tekrar: false },
+    });
+    // Gonderim sonucu dogrudan mail katmanindan okunuyor; "atlandi"
+    // (test alan adi ya da saglayici yapilandirilmamis) basari gibi
+    // gosterilmiyor - bu ayrim olmadan olcum yanlis pozitif uretiyordu.
+    const mailSonuc = await this.mail
+      .sendVerificationEmail(user.email, user.displayName, token)
+      .catch((e: any) => ({ durum: 'hata' as const, kod: mailHataKodu(e) }));
+    await this.analytics.sunucuOlayi('uyelik_dogrulama_maili', {
+      benzersizAnahtar: `${user.id}:sonuc:1`,
+      flowId: dto.girisimId ?? null,
+      userId: user.id,
+      props:
+        mailSonuc.durum === 'kabul'
+          ? { durum: 'saglayici_kabul', tekrar: false }
+          : mailSonuc.durum === 'atlandi'
+            ? { durum: 'atlandi', tekrar: false, kod: mailSonuc.kod ?? 'bilinmiyor' }
+            : { durum: 'hata', tekrar: false, kod: (mailSonuc as any).kod ?? 'bilinmiyor' },
+    });
 
     return { message: 'Kayıt başarılı. E-posta adresinize doğrulama linki gönderdik.' };
   }
@@ -172,6 +240,27 @@ export class AuthService {
         emailVerificationToken: null,
         emailVerificationExpiry: null,
       },
+    });
+
+    /**
+     * SUNUCU OLAYI: dogrulama GERCEKTEN tamamlandi.
+     *
+     * Dogrulama sayfasinin acilmasi ya da baglantinin e-posta guvenlik
+     * tarayicisi tarafindan ziyaret edilmesi buraya ULASMIYOR - token
+     * tuketilmeden bu satira gelinmiyor.
+     *
+     * Benzersiz anahtar hesabin kimligi: tekrar acilan baglanti ayni
+     * hesabi ikinci kez dogrulanmis saymiyor (zaten token silindigi
+     * icin ikinci cagri 'Gecersiz dogrulama linki' aliyor).
+     *
+     * flowId hesaptan okunuyor, ADRESTEN DEGIL: dogrulama baglantisindaki
+     * hicbir parametre kayit kampanyasini ya da girisimi degistiremiyor.
+     */
+    await this.analytics.sunucuOlayi('uyelik_eposta_dogrulandi', {
+      benzersizAnahtar: user.id,
+      flowId: user.kayitGirisimId ?? null,
+      userId: user.id,
+      props: { yontem: 'baglanti' },
     });
 
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email });
@@ -240,7 +329,37 @@ export class AuthService {
       data: { emailVerificationToken: token, emailVerificationExpiry: expiry },
     });
 
-    await this.mail.sendVerificationEmail(user.email, user.displayName, token);
+    /**
+     * YENIDEN GONDERIM — ilk gonderimden AYRI isaretleniyor (`tekrar: true`).
+     *
+     * Benzersiz anahtar her seferinde degisiyor (zaman damgali) cunku
+     * tekrar gonderimler gercekten birden cok kez olabilir; ilk gonderim
+     * ise hesap basina bir kez.
+     *
+     * flowId hesaptan okunuyor: yeniden gonderim istegi kayit
+     * girisiminden saatler sonra, baska bir sekmeden gelebiliyor.
+     */
+    const damga = Date.now();
+    await this.analytics.sunucuOlayi('uyelik_dogrulama_maili', {
+      benzersizAnahtar: `${user.id}:istendi:${damga}`,
+      flowId: user.kayitGirisimId ?? null,
+      userId: user.id,
+      props: { durum: 'istendi', tekrar: true },
+    });
+    const tekrarSonuc = await this.mail
+      .sendVerificationEmail(user.email, user.displayName, token)
+      .catch((e: any) => ({ durum: 'hata' as const, kod: mailHataKodu(e) }));
+    await this.analytics.sunucuOlayi('uyelik_dogrulama_maili', {
+      benzersizAnahtar: `${user.id}:sonuc:${damga}`,
+      flowId: user.kayitGirisimId ?? null,
+      userId: user.id,
+      props:
+        tekrarSonuc.durum === 'kabul'
+          ? { durum: 'saglayici_kabul', tekrar: true }
+          : tekrarSonuc.durum === 'atlandi'
+            ? { durum: 'atlandi', tekrar: true, kod: tekrarSonuc.kod ?? 'bilinmiyor' }
+            : { durum: 'hata', tekrar: true, kod: (tekrarSonuc as any).kod ?? 'bilinmiyor' },
+    });
     return notrYanit;
   }
 
@@ -420,6 +539,14 @@ export class AuthService {
     const { googleId, email, displayName, avatarUrl } = profile;
 
     let user = await this.prisma.user.findUnique({ where: { googleId } });
+    /**
+     * MEVCUT hesabin Google ile girmesi YENI UYELIK DEGIL.
+     *
+     * Bayrak yalnizca gercekten yeni bir satir olusturuldugunda true
+     * oluyor; e-posta eslesmesiyle baglanan mevcut hesap da yeni
+     * sayilmiyor.
+     */
+    let yeniHesap = false;
 
     if (!user) {
       // e-posta eşleşmesi varsa mevcut hesabı bağla
@@ -433,6 +560,7 @@ export class AuthService {
         // Yeni Google kullanıcısı oluştur — e-posta kaydıyla aynı kurucu
         // rozeti kuralına tabi.
         const founderCount = await this.prisma.user.count({ where: { isFounder: true } });
+        yeniHesap = true;
         user = await this.prisma.user.create({
           data: {
             email,
@@ -442,7 +570,12 @@ export class AuthService {
             passwordHash: null,
             status: 'ACTIVE',
             isFounder: founderCount < FOUNDER_LIMIT,
+            // Google e-postayi kendisi dogrulamis sayiyor. Bu, MOTORYA'nin
+            // dogrulama baglantisina tiklanmasiyla AYNI SEY DEGIL; rapor
+            // ikisini ayri yontem olarak gosteriyor ve Google hesaplarini
+            // "dogrulanmamis" diye huni kaybi gibi SAYMIYOR.
             emailVerifiedAt: new Date(),
+            kayitYontemi: 'google',
           },
         });
       }
@@ -467,6 +600,35 @@ export class AuthService {
     this.prisma.user
       .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
       .catch(() => null);
+
+    /**
+     * SUNUCU OLAYI — yalnizca GERCEKTEN yeni hesap olustuysa.
+     *
+     * Mevcut hesabin Google ile girmesi ya da e-posta eslesmesiyle
+     * baglanmasi yeni uyelik DEGIL ve buraya girmiyor.
+     *
+     * `dogrulamaGerekli: false` — Google e-postayi kendisi dogrulanmis
+     * veriyor, Motorya'nin dogrulama baglantisi gonderilmiyor. Rapor bu
+     * hesaplari "dogrulanmamis" diye huni kaybi gibi SAYMIYOR.
+     *
+     * flowId yok: Google turu siteden ayrilip donuyor, istemcideki kayit
+     * girisimi kimligi bu noktada elimizde degil. Iliskilendirilemeyen
+     * olarak gorunuyor - uydurulmuyor.
+     */
+    if (yeniHesap) {
+      await this.analytics.sunucuOlayi('uyelik_hesap_olusturuldu', {
+        benzersizAnahtar: user.id,
+        userId: user.id,
+        props: { yontem: 'google', dogrulamaGerekli: false },
+      });
+      await this.analytics.sunucuOlayi('uyelik_eposta_dogrulandi', {
+        benzersizAnahtar: user.id,
+        userId: user.id,
+        // Google'in dogrulanmis e-postasi — Motorya baglantisina
+        // tiklanmasiyla AYNI SEY DEGIL, ayri yontem olarak isaretli.
+        props: { yontem: 'google_saglayici' },
+      });
+    }
 
     const { deviceId, refreshToken } = await this.issueDeviceSession(user.id, 'WEB');
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });

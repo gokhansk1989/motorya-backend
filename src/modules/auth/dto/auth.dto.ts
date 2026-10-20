@@ -47,6 +47,21 @@ export class RegisterDto {
   @IsObject()
   kampanya?: Record<string, unknown>;
 
+  /**
+   * Kayit girisimi kimligi (olcum). Istemci kayit ekrani acildiginda
+   * uretiyor ve akis boyunca tasiyor; sunucu olusan hesaba bagliyor ki
+   * e-posta dogrulamasi saatler sonra baska bir cihazda yapilsa bile
+   * dogru girisime baglanabilsin.
+   *
+   * YETKI ARACI DEGIL: hicbir karar buna bakmiyor, yalnizca iki olayin
+   * ayni girisime ait oldugunu soyluyor. Bicimi olay kimligiyle ayni
+   * dogrulamadan geciyor.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9-]{8,64}$/, { message: 'girisimId bicimi gecersiz' })
+  girisimId?: string;
+
   // Opsiyonel.
   //
   // App Store incelemesi 5.1.1(v) ile reddetti: "uygulamanin cekirdek

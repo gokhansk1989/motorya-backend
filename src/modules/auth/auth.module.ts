@@ -7,6 +7,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { GoogleStrategy } from './google.strategy';
 import { PrismaModule } from '../prisma/prisma.module';
 import { MailModule } from '../mail/mail.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { getJwtSecret } from '../../common/jwt-secret';
 
 @Module({
@@ -14,6 +15,10 @@ import { getJwtSecret } from '../../common/jwt-secret';
     PrismaModule,
     PassportModule,
     MailModule,
+    // AuthService sunucu tarafi uyelik olaylarini yaziyor. Bu import
+    // OLMADAN TypeScript derleniyor ama NestJS calisma aninda bagimliligi
+    // cozemeyip uygulamayi hic ayaga kaldirmiyor.
+    AnalyticsModule,
     JwtModule.register({
       secret: getJwtSecret(),
       signOptions: { expiresIn: '2h' },

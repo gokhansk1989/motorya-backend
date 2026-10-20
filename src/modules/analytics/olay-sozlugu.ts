@@ -163,6 +163,102 @@ export const OLAYLAR = {
     aciklama: 'Mesaj gonderilemedi. Yalnizca kaba hata kodu tasir; mesaj metni ve sunucu mesaji gonderilmez.',
     alanlar: { listingId: 'kimlik', kod: 'kod' },
   },
+
+  // ── Uyelik hunisi ─────────────────────────────────────────────────
+  //
+  // GIRISIM KIMLIGI: bu olaylarin hepsi `flowId` tasiyor ve ayni kayit
+  // girisimini birbirine bagliyor. Mevcut ilan verme akisindaki
+  // altyapinin aynisi - yeni bir mekanizma icat edilmedi.
+  //
+  // flowId kisa omurlu ve tahmin edilemez (crypto.randomUUID), YALNIZCA
+  // olcum icin. Hicbir yetki, oturum ya da kimlik karari ona bakmiyor;
+  // cihazlar arasi kalici bir takip kimligi DEGIL, tek bir kayit
+  // girisimi boyunca yasiyor.
+
+  /**
+   * Kayit formu gercekten goruntulendi.
+   *
+   * Cift sayim korumasi iki katmanli: istemci her GERCEK sayfa acilisi
+   * icin bir kez uretiyor (React StrictMode cift calistirsa da ayni
+   * eventId gidiyor) ve sunucu eventId benzersizligiyle ikincisini
+   * dusuruyor. "Gercek acilis" = yeni bir girisim kimligi uretilmesi.
+   */
+  uyelik_ekran_goruntulendi: {
+    aciklama: 'Kayit formu goruntulendi. Yeni bir kayit girisimi baslatildi (flowId uretildi).',
+    akisGerekli: true,
+    alanlar: { ...KAMPANYA_ALANLARI },
+  },
+
+  /**
+   * Formda ILK ANLAMLI etkilesim.
+   *
+   * Sayfaya gelmek ya da bir alana odaklanmak baslangic SAYILMIYOR;
+   * kullanicinin gercekten bir deger girmesi gerekiyor. Girilen
+   * degerler hicbir kosulda gonderilmiyor - yalnizca "basladi" bilgisi.
+   * Girisim basina bir kez.
+   */
+  uyelik_basladi: {
+    aciklama: 'Kayit formunda ilk anlamli etkilesim. Girilen degerler kaydedilmez. yontem: form | google.',
+    akisGerekli: true,
+    alanlar: { ...KAMPANYA_ALANLARI, yontem: 'kod' },
+  },
+
+  /**
+   * Gecerli form sunucuya gonderildi. HESAP OLUSTU DEMEK DEGIL.
+   * Tekrarlanan tiklama ve ag tekrarlari ayni eventId ile gidiyor,
+   * yeni girisim sayilmiyor.
+   */
+  uyelik_gonderildi: {
+    aciklama: 'Kayit formu sunucuya gonderildi. Hesap olustugu anlamina GELMEZ.',
+    akisGerekli: true,
+    alanlar: { ...KAMPANYA_ALANLARI },
+  },
+
+  /**
+   * SUNUCU OLAYI. Yalnizca veritabaninda kullanici satiri olustuktan
+   * sonra yaziliyor; istemciden gelen hicbir basari iddiasina
+   * guvenilmiyor. Ayni hesap iki kez sayilmaz: eventId hesabin
+   * kimliginden turetiliyor.
+   */
+  uyelik_hesap_olusturuldu: {
+    aciklama: 'SUNUCU: kullanici kaydi veritabaninda olusturuldu. yontem: form | google.',
+    alanlar: { yontem: 'kod', dogrulamaGerekli: 'bayrak' },
+  },
+
+  /**
+   * SUNUCU OLAYI. Dogrulama e-postasinin durumu.
+   *
+   * durum: istendi | saglayici_kabul | atlandi | hata
+   *   atlandi = hic denenmedi (test alan adi / saglayici yok)
+   * Saglayicinin kabul etmesi TESLIM EDILDI DEMEK DEGIL. Resend
+   * webhook'u kurulu olmadigi icin teslim/bounce/sikayet durumu
+   * BILINMIYOR ve raporda oyle gosteriliyor. Acilma pikseli yok.
+   */
+  uyelik_dogrulama_maili: {
+    aciklama: 'SUNUCU: dogrulama e-postasi. durum: istendi | saglayici_kabul | atlandi | hata. Saglayici kabulu TESLIM DEGIL; webhook yok, teslim durumu BILINMIYOR.',
+    alanlar: { durum: 'kod', tekrar: 'bayrak', kod: 'kod' },
+  },
+
+  /**
+   * SUNUCU OLAYI. Yalnizca dogrulama islemi basarili oldugunda.
+   * Dogrulama sayfasinin acilmasi ya da baglantinin e-posta guvenlik
+   * tarayicisi tarafindan ziyaret edilmesi basari SAYILMIYOR. Tekrar
+   * acilan baglanti ayni hesabi ikinci kez dogrulanmis saymaz.
+   */
+  uyelik_eposta_dogrulandi: {
+    aciklama: 'SUNUCU: e-posta dogrulama islemi basariyla tamamlandi.',
+    alanlar: { yontem: 'kod' },
+  },
+
+  /**
+   * Kayit akisindaki hatalar. YALNIZCA sabit kod; parola, e-posta,
+   * telefon, kimlik numarasi, kullanici metni ya da ham hata mesaji
+   * hicbir kosulda girmiyor.
+   */
+  uyelik_hatasi: {
+    aciklama: 'Kayit akisinda hata. Yalnizca sabit kod tasir; ham hata mesaji ve kisisel veri gonderilmez.',
+    alanlar: { kod: 'kod', adim: 'kod' },
+  },
 } satisfies Record<string, OlayTanimi>;
 
 export type OlayAdi = keyof typeof OLAYLAR;
