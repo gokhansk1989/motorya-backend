@@ -120,7 +120,7 @@ export const OLAYLAR = {
     alanlar: { adet: 'tamsayi' },
   },
   ilan_foto_hata: {
-    aciklama: 'Fotograf yukleme basarisiz. hataKodu: ag, sunucu, boyut, tip, limit.',
+    aciklama: 'Fotograf yukleme basarisiz. hataKodu: ag, sunucu, boyut, tip, heic, bozuk, limit, istek. Dosya adi ve icerigi GONDERILMIYOR.',
     akisGerekli: true,
     alanlar: { hataKodu: 'kod' },
   },

@@ -24,7 +24,24 @@ WORKDIR /app
 
 # Paylasim kartindaki yazilar sharp/librsvg ile ciziliyor; imajda hic font
 # olmadigi icin metinler bos cikiyordu. Saira SIL OFL lisanslidir.
-RUN apk add --no-cache dumb-init openssl fontconfig
+# ── HEIC/HEVC cozucusu ───────────────────────────────────────────────
+#
+# sharp'in hazir ikilisi kendi libvips'ini gomulu getiriyor ve o libvips
+# HEVC kod cozucusu OLMADAN derlenmis (patent/lisans). iPhone'dan gelen
+# .HEIC dosyalarinda `metadata()` kabi okudugu icin basariyla donuyor,
+# piksel cozumu ise patliyordu; kullaniciya "dosyan bozuk" deniyordu.
+#
+# sharp'i sistem libvips'ine karsi derlemek denendi: 0.35 sürümü
+# @img/sharp-libvips-* hazir paketini tercih ettigi icin
+# SHARP_FORCE_GLOBAL_LIBVIPS ve --build-from-source bayraklari ise
+# yaramadi. Ustelik o yol libvips surumunu degistirecegi icin paylasim
+# karti (rsvg) ve AVIF yollarini da riske atiyordu.
+#
+# Bunun yerine YALNIZCA HEIC icin ayri bir cozucu: libheif-tools.
+# 455 KiB, sharp'a hic dokunmuyor, derleme suresini uzatmiyor.
+# Gercek bir 4032x3024 iPhone dosyasiyla dogrulandi (2026-10-22):
+# 5,42 MB HEIC -> JPEG, 1,35 sn.
+RUN apk add --no-cache dumb-init openssl fontconfig libheif-tools
 COPY assets/fonts/*.ttf /usr/share/fonts/truetype/
 RUN fc-cache -f
 # Paylasim kartinda kullanilan logo. Calisma imajina kopyalanmadigi icin

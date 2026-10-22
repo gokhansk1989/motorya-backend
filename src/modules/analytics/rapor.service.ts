@@ -163,11 +163,26 @@ export class RaporService {
      * dogrular - "olcum calisiyor mu" sorusu onlara uygulanmiyor.
      */
     const [ilanOlcum, aramaOlcum, iletisimOlcum, uyelikOlcum] = await Promise.all([
-      this.olcumDurumu(['ilan_akis_basladi', 'ilan_adim_tamamlandi', 'ilan_gonderildi'], baslangic, bitis, ilkOlay),
-      this.olcumDurumu(['arama_yapildi'], baslangic, bitis, ilkOlay),
-      this.olcumDurumu(['mesaj_butonu_tiklandi'], baslangic, bitis, ilkOlay),
+      // Form ONCESI adimlar da listede: bunlar form adimlarindan gunler
+      // sonra olculmeye baslandi ve aradaki fark kullanici kaybi gibi
+      // okunuyordu.
       this.olcumDurumu(
-        ['uyelik_ekran_goruntulendi', 'uyelik_hesap_olusturuldu', 'uyelik_eposta_dogrulandi'],
+        ['ilan_sayfasi_acildi', 'ilan_giris_gerekti', 'ilan_girisden_donuldu',
+         'ilan_kimlik_gerekti', 'ilan_form_acildi',
+         'ilan_akis_basladi', 'ilan_adim_tamamlandi', 'ilan_gonderildi'],
+        baslangic, bitis, ilkOlay,
+      ),
+      this.olcumDurumu(['arama_yapildi'], baslangic, bitis, ilkOlay),
+      // Ara adimlar butona tiklamadan cok sonra eklendi; tek bir olay
+      // adina bakmak bolumun tamamini "olculuyor" gostermisti.
+      this.olcumDurumu(
+        ['ilan_detay_goruntulendi', 'mesaj_butonu_tiklandi', 'mesaj_giris_gerekti',
+         'mesaj_girisden_donuldu', 'mesaj_gonderim_denendi'],
+        baslangic, bitis, ilkOlay,
+      ),
+      this.olcumDurumu(
+        ['uyelik_ekran_goruntulendi', 'uyelik_basladi', 'uyelik_gonderildi',
+         'uyelik_hesap_olusturuldu', 'uyelik_dogrulama_maili', 'uyelik_eposta_dogrulandi'],
         baslangic, bitis, ilkOlay,
       ),
     ]);
@@ -630,14 +645,40 @@ export class RaporService {
         COUNT(*) FILTER (WHERE COALESCE("kayitYontemi",'form') <> 'google'
                            AND "emailVerifiedAt" IS NULL) AS bekleyen,
         COUNT(*) FILTER (WHERE "kayitGirisimId" IS NULL) AS iliskisiz,
+        -- Medyan YALNIZCA ayrica e-posta dogrulamasi GEREKEN hesaplardan.
+        --
+        -- Onceden Google hesaplari da iceridaydi; onlarin e-postasi
+        -- saglayici tarafindan zaten dogrulanmis geldigi icin
+        -- emailVerifiedAt = createdAt oluyor, yani sure sifir. Birkac
+        -- Google hesabi medyani sifira cekiyordu ve rapor "medyan
+        -- dogrulama suresi 0 dk" diyordu. Ornek sayisi da donemdeki
+        -- dogrulama gerektiren hesap sayisindan fazla gorunuyordu.
+        --
+        -- Negatif ya da sifir sureler de disarida: bunlar eksik veya
+        -- tutarsiz zaman damgasindan geliyor, gercek bir hiz degil.
         PERCENTILE_CONT(0.5) WITHIN GROUP (
           ORDER BY EXTRACT(EPOCH FROM ("emailVerifiedAt" - "createdAt")) / 3600.0
-        ) FILTER (WHERE "emailVerifiedAt" IS NOT NULL) AS medyan_saat,
-        COUNT(*) FILTER (WHERE "emailVerifiedAt" IS NOT NULL) AS ornek
+        ) FILTER (WHERE "emailVerifiedAt" IS NOT NULL
+                    AND COALESCE("kayitYontemi",'form') <> 'google'
+                    AND "emailVerifiedAt" > "createdAt") AS medyan_saat,
+        COUNT(*) FILTER (WHERE "emailVerifiedAt" IS NOT NULL
+                           AND COALESCE("kayitYontemi",'form') <> 'google'
+                           AND "emailVerifiedAt" > "createdAt") AS ornek
       FROM yeni
     `);
 
     /** Dogrulama bekleyenlerin yas araliklari. */
+    /**
+     * Dogrulama bekleyenlerin yasi.
+     *
+     * Bu sorgunun TARIH SUZGECI YOKTU: ustteki "0 bekliyor" donem
+     * icindeki hesaplari sayarken, bu kirilim tum zamanlari sayiyordu.
+     * Rapor ayni ekranda "0 bekliyor" ve "7+ gun: 2" diyordu - ikisi de
+     * dogru ama farkli seylerin sayisiydi, okuyan celiski goruyordu.
+     *
+     * Artik iki sayi da ayni donemi gosteriyor ve baslikta kapsam
+     * yaziyor. Tum zamanlarin birikimi ayri bir sayi olarak donuyor.
+     */
     const bekleyenYas = await this.prisma.$queryRaw<{ aralik: string; adet: bigint }[]>(Prisma.sql`
       SELECT CASE
                WHEN now() - "createdAt" < interval '1 hour'  THEN '0-1 saat'
@@ -651,7 +692,16 @@ export class RaporService {
         AND role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
         AND "emailVerifiedAt" IS NULL
         AND COALESCE("kayitYontemi",'form') <> 'google'
+        AND "createdAt" >= ${ts(baslangic)} AND "createdAt" < ${ts(bitis)}
       GROUP BY 1
+    `);
+
+    const [tumZamanBekleyen] = await this.prisma.$queryRaw<{ adet: bigint }[]>(Prisma.sql`
+      SELECT COUNT(*) AS adet FROM "User"
+      WHERE "deletedAt" IS NULL AND NOT "isTestAccount"
+        AND role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+        AND "emailVerifiedAt" IS NULL
+        AND COALESCE("kayitYontemi",'form') <> 'google'
     `);
 
     /** Mail durumlari ve yeniden gonderim. */
@@ -725,10 +775,14 @@ export class RaporService {
         medyanSaat: hareket?.medyan_saat ?? null,
         medyanOrnek: n(hareket?.ornek),
         bekleyenYas: bekleyenYas.map((b) => ({ aralik: b.aralik, adet: n(b.adet) })),
+        bekleyenYasKapsam: 'donem' as const,
+        tumZamanBekleyen: n(tumZamanBekleyen?.adet),
         not:
           'Bu sayılar seçilen tarihlerde GERÇEKLEŞEN hareketlerdir; aynı dönem kohortunun ' +
           'dönüşümü değildir. Google ile açılan hesaplar ayrıca e-posta doğrulaması ' +
-          'gerektirmediği için doğrulama paydasına girmez — huni kaybı sayılmazlar.',
+          'gerektirmediği için doğrulama paydasına girmez — huni kaybı sayılmazlar. ' +
+          'Medyan süre yalnızca ayrıca doğrulama gerektiren ve geçerli zaman damgası ' +
+          'olan hesaplardan hesaplanır; Google hesapları ve sıfır/negatif süreler dışarıdadır.',
       },
       mailDurumlari: mailDurum.map((m) => ({ durum: m.durum, tekrar: m.tekrar, adet: n(m.adet) })),
       mailNotu:
@@ -744,30 +798,73 @@ export class RaporService {
     };
   }
 
+  /**
+   * Bir bolumun olcumunun SU AN calistigina dair kanit.
+   *
+   * ── NEDEN DEGISTI ─────────────────────────────────────────────────
+   *
+   * Onceki surum "bu olay turunden gecmiste kayit var, oyleyse olcum
+   * calisiyor, demek ki bu donemdeki sifir GERCEK bir sifir" diyordu.
+   * Bu cikarim yanlis: olay turu Eylul'de calisip Ekim'de bozulmus
+   * olabilir, ya da olay yeni eklenmis olabilir. Gecmisteki varlik,
+   * bugunku sagligin kaniti degil.
+   *
+   * Simdi kanit olarak EN SON kaydin tarihi kullaniliyor ve her olay
+   * adi icin AYRI ilk/son gorulme donuyor. Boylece "3 tiklama ama 0
+   * giris yonlendirmesi" gibi bir tablo, adimlarin farkli tarihlerde
+   * olculmeye baslandigi gorulerek okunabiliyor - kullanici kaybi diye
+   * degil.
+   */
   private async olcumDurumu(
     olayAdlari: string[],
     baslangic: Date,
     bitis: Date,
     ilkOlay: Date | null,
   ) {
-    const [satir] = await this.prisma.$queryRaw<
-      { donem_gercek: bigint; donem_personel: bigint; hic_toplam: bigint }[]
+    const satirlar = await this.prisma.$queryRaw<
+      {
+        name: string;
+        ilk: Date | null;
+        son: Date | null;
+        donem_gercek: bigint;
+        donem_personel: bigint;
+      }[]
     >(Prisma.sql`
       SELECT
-        COUNT(*) FILTER (WHERE NOT "isStaff"
-          AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}) AS donem_gercek,
-        COUNT(*) FILTER (WHERE "isStaff"
-          AND "occurredAt" >= ${ts(baslangic)} AND "occurredAt" < ${ts(bitis)}) AS donem_personel,
-        COUNT(*) AS hic_toplam
-      FROM "AnalyticsEvent"
-      WHERE name = ANY(${olayAdlari}::text[])
+        n.name AS name,
+        MIN(e."occurredAt") AS ilk,
+        MAX(e."occurredAt") AS son,
+        COUNT(e.*) FILTER (WHERE NOT e."isStaff"
+          AND e."occurredAt" >= ${ts(baslangic)} AND e."occurredAt" < ${ts(bitis)}) AS donem_gercek,
+        COUNT(e.*) FILTER (WHERE e."isStaff"
+          AND e."occurredAt" >= ${ts(baslangic)} AND e."occurredAt" < ${ts(bitis)}) AS donem_personel
+      FROM UNNEST(${olayAdlari}::text[]) AS n(name)
+      LEFT JOIN "AnalyticsEvent" e ON e.name = n.name
+      GROUP BY n.name
+      ORDER BY n.name
     `);
 
-    const gercek = Number(satir?.donem_gercek ?? 0);
-    const personel = Number(satir?.donem_personel ?? 0);
-    const hicToplam = Number(satir?.hic_toplam ?? 0);
+    const olaylar = satirlar.map((r) => ({
+      ad: r.name,
+      olcumBaslangici: r.ilk ? r.ilk.toISOString() : null,
+      sonKayit: r.son ? r.son.toISOString() : null,
+      donemdeGercek: Number(r.donem_gercek),
+      /** Bu adim, donem BASLAMADAN once olculmeye basladi mi? */
+      donemBoyuncaOlculdu: !!r.ilk && r.ilk <= baslangic,
+    }));
 
-    // Donem tamamen olcum baslangicindan onceyse hicbir sey beklenemez.
+    const gercek = olaylar.reduce((a, o) => a + o.donemdeGercek, 0);
+    const personel = satirlar.reduce((a, r) => a + Number(r.donem_personel), 0);
+    const hicKayitYok = olaylar.every((o) => o.olcumBaslangici === null);
+    const enYeniKayit = satirlar.reduce<Date | null>(
+      (a, r) => (r.son && (!a || r.son > a) ? r.son : a),
+      null,
+    );
+    /** Donem icinde ya da sonrasinda kayit gormus mu? */
+    const guncelKanit = !!enYeniKayit && enYeniKayit >= baslangic;
+    /** Adimlarin bir kismi donem basladiktan SONRA olculmeye baslamis. */
+    const karmaYas = olaylar.some((o) => o.olcumBaslangici && !o.donemBoyuncaOlculdu);
+
     const donemOncesi = !!ilkOlay && bitis <= ilkOlay;
 
     let durum: 'veri_var' | 'gercek_sifir' | 'olcum_dogrulanamadi' | 'donem_oncesi';
@@ -779,20 +876,36 @@ export class RaporService {
     } else if (gercek > 0) {
       durum = 'veri_var';
       aciklama = `Dönemde ${gercek} gerçek kullanıcı olayı kaydedildi.`;
-    } else if (personel > 0 || hicToplam > 0) {
-      durum = 'gercek_sifir';
-      aciklama =
-        `Ölçüm çalışıyor — bu olay türünden toplam ${hicToplam} kayıt var` +
-        (personel > 0 ? ` (dönemde ${personel}'i personel/test)` : '') +
-        `. Dönemde gerçek kullanıcıdan hiç gelmedi: bu GERÇEK bir sıfır, bozuk ölçüm değil.`;
-    } else {
+    } else if (hicKayitYok) {
       durum = 'olcum_dogrulanamadi';
       aciklama =
         'Bu olay türünden hiç kayıt yok — ne gerçek kullanıcıdan ne personelden. ' +
         'Ölçümün çalıştığı doğrulanamıyor; sıfır olarak yorumlanmamalı.';
+    } else if (guncelKanit) {
+      durum = 'gercek_sifir';
+      aciklama =
+        `Ölçümün çalıştığının güncel kanıtı var: bu türden en son kayıt ` +
+        `${enYeniKayit!.toISOString().slice(0, 10)} tarihli` +
+        (personel > 0 ? `, dönemde ${personel} personel/test olayı geldi` : '') +
+        `. Dönemde gerçek kullanıcıdan hiç gelmedi.`;
+    } else {
+      durum = 'olcum_dogrulanamadi';
+      aciklama =
+        `Bu türden en son kayıt ${enYeniKayit!.toISOString().slice(0, 10)} tarihli, yani ` +
+        `dönemden önce. Geçmişte kayıt bulunması ölçümün BUGÜN çalıştığını kanıtlamaz; ` +
+        `dönemdeki sıfır, kullanıcı kaybı olarak okunmamalı.`;
     }
 
-    return { durum, aciklama, donemdeGercek: gercek, donemdePersonel: personel, hicZamanToplam: hicToplam };
+    return {
+      durum,
+      aciklama,
+      olaylar,
+      karmaYas,
+      karmaYasNotu: karmaYas
+        ? 'Bu bölümdeki adımların bir kısmı dönem başladıktan SONRA ölçülmeye başladı. ' +
+          'Aralarındaki düşüş, kullanıcı kaybı değil ölçüm yaşı farkı olabilir.'
+        : null,
+    };
   }
 
   private async ilanAkisi(baslangic: Date, bitis: Date) {
@@ -1029,17 +1142,31 @@ export class RaporService {
 
     const pencere = async (b: Date, s: Date) => {
       const [[r], [a]] = await Promise.all([
-        this.prisma.$queryRaw<{ hesap: bigint; ilan: bigint; mesaj: bigint }[]>(Prisma.sql`
+        this.prisma.$queryRaw<{ hesap: bigint; ilan: bigint; yayimlanan: bigint; mesaj: bigint }[]>(Prisma.sql`
           SELECT
             (SELECT COUNT(*) FROM "User" u
                WHERE u."deletedAt" IS NULL AND NOT u."isTestAccount"
                  AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
                  AND u."createdAt" >= ${ts(b)} AND u."createdAt" < ${ts(s)}) AS hesap,
+            -- "Olusturulan" ile "yayimlanan" AYRI iki kume.
+            --
+            -- Bu satir onceden "Yayimlanan ilan" basligiyla gosteriliyordu
+            -- ama createdAt sayiyordu; yani moderasyon bolumundeki
+            -- "Gonderilen ilan" ile ayni sorguydu. Iki farkli baslik
+            -- altinda ayni sayiyi gostermek, aralarindaki moderasyon
+            -- adimini gorunmez kiliyordu. Artik ikisi de var ve ayri
+            -- adlandiriliyor: eski donemde gonderilip bu donemde
+            -- yayimlanan bir ilan yalnizca "yayimlanan"a girer.
             (SELECT COUNT(*) FROM "Listing" l
                JOIN "User" u ON u.id = l."sellerId"
-               WHERE NOT u."isTestAccount"
+               WHERE NOT u."isTestAccount" AND NOT l."isTest" AND l."deletedAt" IS NULL
                  AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
                  AND l."createdAt" >= ${ts(b)} AND l."createdAt" < ${ts(s)}) AS ilan,
+            (SELECT COUNT(*) FROM "Listing" l
+               JOIN "User" u ON u.id = l."sellerId"
+               WHERE NOT u."isTestAccount" AND NOT l."isTest" AND l."deletedAt" IS NULL
+                 AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+                 AND l."publishedAt" >= ${ts(b)} AND l."publishedAt" < ${ts(s)}) AS yayimlanan,
             (SELECT COUNT(*) FROM "Message" m
                JOIN "User" u ON u.id = m."senderId"
                WHERE NOT u."isTestAccount"
@@ -1058,6 +1185,7 @@ export class RaporService {
       return {
         hesap: Number(r?.hesap ?? 0),
         ilan: Number(r?.ilan ?? 0),
+        yayimlanan: Number(r?.yayimlanan ?? 0),
         mesaj: Number(r?.mesaj ?? 0),
         arama: Number(a?.arama ?? 0),
         ilanSayfasi: Number(a?.ilan_sayfasi ?? 0),
@@ -1095,7 +1223,8 @@ export class RaporService {
       gun: Math.round(uzunlukMs / 86_400_000),
       satirlar: [
         satir('hesap', 'Yeni hesap', 'veritabani'),
-        satir('ilan', 'Yayinlanan ilan', 'veritabani'),
+        satir('ilan', 'Oluşturulan ilan', 'veritabani'),
+        satir('yayimlanan', 'Yayıma alınan ilan', 'veritabani'),
         satir('mesaj', 'Gonderilen mesaj', 'veritabani'),
         satir('arama', 'Arama', 'olay'),
         satir('ilanSayfasi', 'Ilan verme sayfasi acilisi', 'olay'),
@@ -1105,6 +1234,84 @@ export class RaporService {
           ASGARI_PAYDA +
           "'den buyukse hesaplaniyor; altinda ham fark gosteriliyor."
         : 'Olay tabanli satirlar onceki donemde henuz olculmuyordu; sifir gibi gosterilmiyor, "olculemez" isaretleniyor.',
+    };
+  }
+
+  /**
+   * Ilan sayimlarinin uzlastirilmasi (salt okunur).
+   *
+   * "Ust ozette 1 ilan, moderasyonda 1 ilan, gonderilen->yayimlanan
+   * 0/0" gibi tablolar rapor okuyan icin celiski gibi gorunuyor. Oysa
+   * her satir farkli bir KUME sayiyor. Bu uc, her ilanin hangi kumeye
+   * neden girdigini satir satir gosteriyor.
+   *
+   * Kisisel veri YOK: ilan basligi, satici adi, e-posta ya da
+   * kullanici kimligi donmuyor. Yalnizca ilan kimligi, zaman
+   * damgalari, durum ve hesaplanan sebep var.
+   */
+  async ilanUzlastirma(baslangic: Date, bitis: Date) {
+    const olgunSinir = new Date(Date.now() - OLGUNLASMA_SA * 60 * 60 * 1000);
+
+    const satirlar = await this.prisma.$queryRaw<
+      {
+        id: string; created: Date; published: Date | null; status: string;
+        istest: boolean; personel: boolean; silinmis: boolean;
+      }[]
+    >(Prisma.sql`
+      SELECT l.id, l."createdAt" AS created, l."publishedAt" AS published,
+             l.status::text AS status, l."isTest" AS istest,
+             (u.role IN ('ADMIN','SUPER_ADMIN','MODERATOR') OR u."isTestAccount") AS personel,
+             (l."deletedAt" IS NOT NULL) AS silinmis
+      FROM "Listing" l
+      JOIN "User" u ON u.id = l."sellerId"
+      WHERE (l."createdAt" >= ${ts(baslangic)} AND l."createdAt" < ${ts(bitis)})
+         OR (l."publishedAt" >= ${ts(baslangic)} AND l."publishedAt" < ${ts(bitis)})
+      ORDER BY l."createdAt"
+    `);
+
+    const icinde = (d: Date | null) =>
+      !!d && d >= baslangic && d < bitis;
+
+    const kayitlar = satirlar.map((r) => {
+      const haric = r.silinmis || r.istest || r.personel;
+      const olusturuldu = icinde(r.created);
+      const yayimlandi = icinde(r.published);
+      return {
+        id: r.id,
+        olusturma: r.created.toISOString(),
+        yayin: r.published ? r.published.toISOString() : null,
+        durum: r.status,
+        sayiliyor: {
+          olusturulan: !haric && olusturuldu,
+          yayimaAlinan: !haric && yayimlandi,
+          // Olgunlasma suresi dolmayanlar oran PAYDASINA girmiyor.
+          oranPaydasinda: !haric && olusturuldu && r.created < olgunSinir,
+        },
+        haricSebebi: r.silinmis ? 'silinmis' : r.istest ? 'test_ilani' : r.personel ? 'personel_hesabi' : null,
+        not:
+          olusturuldu && !yayimlandi && !r.published
+            ? 'Henüz yayıma alınmamış.'
+            : !olusturuldu && yayimlandi
+              ? 'Önceki dönemde oluşturuldu, bu dönemde yayıma alındı — yalnızca "yayıma alınan"a girer.'
+              : olusturuldu && yayimlandi
+                ? 'Aynı dönemde hem oluşturuldu hem yayıma alındı.'
+                : null,
+      };
+    });
+
+    return {
+      donem: { baslangic: baslangic.toISOString(), bitis: bitis.toISOString(), bitisHaric: true },
+      olgunlasmaSaati: OLGUNLASMA_SA,
+      ozet: {
+        olusturulan: kayitlar.filter((k) => k.sayiliyor.olusturulan).length,
+        yayimaAlinan: kayitlar.filter((k) => k.sayiliyor.yayimaAlinan).length,
+        oranPaydasinda: kayitlar.filter((k) => k.sayiliyor.oranPaydasinda).length,
+        haricTutulan: kayitlar.filter((k) => k.haricSebebi).length,
+      },
+      kayitlar,
+      not:
+        'Salt okunur. Hiçbir kayıt değiştirilmez. Kişisel veri (başlık, satıcı, e-posta) ' +
+        'bu çıktıda yer almaz. Tarih aralığı: başlangıç DAHİL, bitiş HARİÇ.',
     };
   }
 
@@ -1118,8 +1325,17 @@ export class RaporService {
   private async moderasyon(baslangic: Date, bitis: Date, olgunSinir: Date) {
     // Personel ilanlari disarida: kendi test ilanlarimiz yayin oranini
     // sisirir.
-    const personelVeya = Prisma.sql`l."sellerId" IN (
-      SELECT id FROM "User" WHERE role IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+    // Disfalama OLCUTU diger bolumlerle ayni olmali: rapordaki bir
+    // bolum test hesabini sayip digeri saymazsa, iki sayi arasindaki
+    // fark gercek bir is olayi saniliyor. Onceden burada YALNIZCA rol
+    // bakiliyordu; isTestAccount isaretli hesaplar ve isTest isaretli
+    // ilanlar moderasyon sayilarina giriyordu.
+    const personelVeya = Prisma.sql`(
+      l."sellerId" IN (
+        SELECT id FROM "User"
+        WHERE role IN ('ADMIN','SUPER_ADMIN','MODERATOR') OR "isTestAccount"
+      )
+      OR l."isTest"
     )`;
 
     const [satir] = await this.prisma.$queryRaw<

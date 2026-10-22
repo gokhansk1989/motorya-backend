@@ -55,6 +55,19 @@ export class AnalyticsController {
    * Yonetici raporu. Yetkilendirme sunucu tarafinda: panelde menuyu gizlemek
    * yetmez, ucun kendisi rol kontrol ediyor.
    */
+  /**
+   * Ilan sayimlarinin uzlastirilmasi. Salt okunur, kisisel veri icermez.
+   * Raporda farkli gorunen ilan sayilarinin hangi kumeden geldigini
+   * gosterir.
+   */
+  @Get('ilan-uzlastirma')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  ilanUzlastirma(@Query() q: AralikDto) {
+    const { baslangic, bitis } = q.coz();
+    return this.rapor.ilanUzlastirma(baslangic, bitis);
+  }
+
   @Get('rapor')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN', 'SUPER_ADMIN')
