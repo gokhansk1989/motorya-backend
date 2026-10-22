@@ -800,7 +800,13 @@ export class ListingsService {
         skip,
         take: limit,
         include: {
+          // Listede yalnizca KAPAK iniyor: 8 fotografin tamamini
+          // listelemek bant genisligini bosa harciyor.
           images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          // Toplam fotograf SAYISI ayrica geliyor. Kart "3 fotograf"
+          // rozetini bununla gosteriyor; `images.length` her zaman 1
+          // oldugu icin ondan okunamiyordu.
+          _count: { select: { images: true } },
           seller: { select: { id: true, displayName: true, avatarUrl: true, ratingAvg: true } },
           category: { select: { id: true, name: true, slug: true, parentId: true, parent: { select: { slug: true, name: true } } } },
           brand: { select: { id: true, name: true } },
