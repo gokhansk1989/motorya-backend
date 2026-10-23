@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { createHash } from 'crypto';
 import sharp from 'sharp';
+import { kadrajiCoz } from '../listings/kadraj';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { readFile, writeFile, rename } from 'fs/promises';
@@ -64,7 +66,7 @@ export class ShareService {
         city: true,
         sizeLabel: true,
         brand: { select: { name: true } },
-        images: { orderBy: { sortOrder: 'asc' }, take: 1, select: { url: true } },
+        images: { orderBy: { sortOrder: 'asc' }, take: 1, select: { url: true, crop: true } },
       },
     });
     if (!ilan) throw new NotFoundException('Ilan bulunamadi');
@@ -72,12 +74,32 @@ export class ShareService {
     // Kart uretimi istek basina ~1 saniye islemci harciyor ve uc herkese
     // acik. Onbelleklemeden, tek bir istemci mevcut hiz siniri icinde
     // kalarak sunucunun islemcisini doldurabiliyordu.
-    const onbellek = join(KART_DIZINI, `${ilan.id}-${ilan.updatedAt.getTime()}-${KART_SURUMU}.png`);
+    /**
+     * Onbellek anahtari kadraji da iceriyor.
+     *
+     * Kadraj `ListingImage` satirinda duruyor; `Listing.updatedAt`'in
+     * her kadraj degisikliginde kesinlikle degistigine guvenemeyiz.
+     * Anahtara koymazsak satici kadraji degistirdikten sonra ESKI kart
+     * donmeye devam ederdi - uretilmis ama kimsenin goremedigi bir
+     * duzeltme.
+     *
+     * Kadrajsiz ilanlarda ek bir parca eklenmiyor; mevcut kartlarin
+     * anahtarlari degismiyor, yani bu degisiklik onbellegi bosaltmiyor.
+     */
+    const kadrajImzasi = ilan.images[0]?.crop
+      ? '-k' + createHash('sha1').update(JSON.stringify(ilan.images[0].crop)).digest('hex').slice(0, 8)
+      : '';
+    const onbellek = join(
+      KART_DIZINI,
+      `${ilan.id}-${ilan.updatedAt.getTime()}-${KART_SURUMU}${kadrajImzasi}.png`,
+    );
     if (existsSync(onbellek)) {
       return readFile(onbellek);
     }
 
-    const foto = await this.fotoKatmani(ilan.images[0]?.url);
+    // Kapak kadraji da gonderiliyor: satici neyi kapak sectiyse Story
+    // karti da onu gostermeli.
+    const foto = await this.fotoKatmani(ilan.images[0]?.url, ilan.images[0]?.crop);
     const svg = this.kartSvg({
       fotoVar: !!foto,
       baslik: ilan.title,
@@ -127,9 +149,27 @@ export class ShareService {
     return png;
   }
 
-  // Urun fotografini kartin olcusune getirir ve kosegenleri yuvarlar.
-  // Fotograf yoksa kart yine uretilir; yerine bos bir alan kalir.
-  private async fotoKatmani(url?: string): Promise<Buffer | null> {
+  /**
+   * Urun fotografini kartin olcusune getirir ve kosegenleri yuvarlar.
+   *
+   * ── KADRAJ ────────────────────────────────────────────────────────
+   *
+   * Satici bir kapak kadraji sectiyse Story karti da ONU kullaniyor.
+   * Onceden kadraj hic okunmuyordu ve fotograf `position: 'attention'`
+   * ile OTOMATIK kirpiliyordu: sharp'in dikkat algoritmasi en "ilgi
+   * cekici" alani seciyor, bu da mont ve bot gibi uzun urunlerde
+   * urunun yarisini kesebiliyordu. Saticinin kart icin ozellikle
+   * sectigi cerceve gorunmuyordu.
+   *
+   * Kadraj yoksa eski davranis korunuyor: mevcut kartlarin gorunumu
+   * degismesin diye bilerek dokunulmadi.
+   *
+   * Kadraj orani (4/3.4 = 1.176) ile Story foto kutusunun orani
+   * (900/742 = 1.213) birebir ayni degil; secilen bolge kutuya `cover`
+   * ile oturtulurken yukaridan/asagidan ~%2 kirpilabiliyor. Bu fark
+   * gozle secilmiyor ve kadraji tamamen yok saymaktan cok daha iyi.
+   */
+  private async fotoKatmani(url?: string, kadraj?: unknown): Promise<Buffer | null> {
     if (!url) return null;
     const dosyaAdi = url.split('/').pop();
     if (!dosyaAdi) return null;
@@ -141,8 +181,27 @@ export class ShareService {
     );
 
     try {
-      return await sharp(yol)
-        .resize(FOTO.g, FOTO.y2, { fit: 'cover', position: 'attention' })
+      let boru = sharp(yol);
+      const k = kadrajiCoz(kadraj);
+
+      if (k) {
+        const m = await boru.metadata();
+        if (m.width && m.height) {
+          // Oransal kadraj -> piksel. Siniri asmamasi icin kirpiliyor;
+          // bozuk bir deger yuzunden kartin hic uretilememesi, kadrajsiz
+          // uretilmesinden kotu olurdu.
+          const left = Math.max(0, Math.min(m.width - 1, Math.round(k.x * m.width)));
+          const top = Math.max(0, Math.min(m.height - 1, Math.round(k.y * m.height)));
+          const width = Math.max(1, Math.min(m.width - left, Math.round(k.w * m.width)));
+          const height = Math.max(1, Math.min(m.height - top, Math.round(k.h * m.height)));
+          boru = boru.extract({ left, top, width, height });
+        }
+      }
+
+      return await boru
+        // Kadraj varsa bolge zaten secilmis; merkezden oturtuyoruz.
+        // Kadraj yoksa eski 'attention' davranisi suruyor.
+        .resize(FOTO.g, FOTO.y2, { fit: 'cover', position: k ? 'centre' : 'attention' })
         .composite([{ input: maske, blend: 'dest-in' }])
         .png()
         .toBuffer();
