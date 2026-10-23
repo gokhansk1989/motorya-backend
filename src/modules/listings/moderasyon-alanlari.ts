@@ -16,6 +16,12 @@
  * - Fiyat, liste fiyati, il ve ilce urunun ne oldugunu degistirmiyor.
  *   Satici fiyatini istedigi zaman degistirebilmeli; yanlis fiyat zaten
  *   moderasyonun degil pazarin duzelttigi bir sey.
+ *
+ * KADRAJ da incelemelik: kadraj gorunuru degistirir. Satici kadraji
+ * oynatarak onaydan gecmis bir fotografta bambaska bir alani one
+ * cikarabilir - urunun kusurunu cerceve disinda birakmak gibi. Ustelik
+ * kadraj listede YOKKEN yalnizca kadraj degistiren bir istek hicbir
+ * degisiklik sayilmiyor ve sessizce dusuyordu.
  */
 
 /** Degistiginde yeniden inceleme gereken alanlar. */
@@ -23,6 +29,7 @@ export const INCELEME_GEREKTIREN = [
   'title',
   'description',
   'imageUrls',
+  'imageCrops',
   'categoryId',
   'brandId',
   'condition',
@@ -47,10 +54,28 @@ export function degisenIncelemeAlanlari(
   dto: Record<string, unknown>,
   mevcut: Record<string, unknown>,
   mevcutGorseller: string[],
+  mevcutKadrajlar: Record<string, unknown> = {},
 ): IncelemeAlani[] {
   const degisen: IncelemeAlani[] = [];
 
   for (const alan of INCELEME_GEREKTIREN) {
+    if (alan === 'imageCrops') {
+      const yeni = dto.imageCrops as Record<string, unknown> | undefined;
+      if (yeni === undefined) continue;
+      // Kadrajlar adrese bagli; karsilastirma sirali bir dizgeye
+      // cevrilerek yapiliyor ki anahtar sirasi fark yaratmasin.
+      const diz = (o: Record<string, unknown>) =>
+        JSON.stringify(
+          Object.keys(o).sort().map((k) => {
+            const v = o[k] as Record<string, number> | null;
+            if (!v) return [k, null];
+            // Kucuk kayan nokta farklari degisiklik sayilmasin.
+            return [k, ['x', 'y', 'w', 'h'].map((a) => Math.round((v[a] ?? 0) * 1e4))];
+          }),
+        );
+      if (diz(yeni) !== diz(mevcutKadrajlar)) degisen.push('imageCrops');
+      continue;
+    }
     if (alan === 'imageUrls') {
       const yeni = dto.imageUrls as string[] | undefined;
       if (yeni === undefined) continue;

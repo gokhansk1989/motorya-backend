@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { kadrajHaritasiniCoz } from './kadraj';
 import { gorselleriDogrula } from './gorsel-dogrula';
 import { taslagiTemizle, TASLAK_EN_FAZLA_FOTO } from './taslak-alanlari';
 
@@ -23,6 +24,7 @@ export class TaslakService {
     return {
       payload: t.payload,
       imageUrls: t.imageUrls,
+      imageCrops: t.imageCrops ?? {},
       step: t.step,
       updatedAt: t.updatedAt,
     };
@@ -37,16 +39,23 @@ export class TaslakService {
    * dogrulamadan geciyor, yani yalnizca bizim yukleme dizinimiz kabul
    * ediliyor.
    */
-  async kaydet(userId: string, girdi: { payload?: unknown; imageUrls?: string[]; step?: number }) {
+  async kaydet(
+    userId: string,
+    girdi: { payload?: unknown; imageUrls?: string[]; imageCrops?: unknown; step?: number },
+  ) {
     const payload = taslagiTemizle(girdi.payload);
     const imageUrls = (girdi.imageUrls ?? []).slice(0, TASLAK_EN_FAZLA_FOTO);
     if (imageUrls.length) gorselleriDogrula(imageUrls);
     const step = Math.min(Math.max(Math.trunc(girdi.step ?? 1), 1), 4);
+    // Kadrajlar taslakta da ADRESE bagli tutuluyor; listede olmayan
+    // adreslerin kadraji dusuyor ki silinen fotograflarin kadrajlari
+    // birikmesin.
+    const imageCrops = kadrajHaritasiniCoz(girdi.imageCrops, imageUrls);
 
     await this.prisma.listingDraft.upsert({
       where: { userId },
-      create: { userId, payload, imageUrls, step },
-      update: { payload, imageUrls, step },
+      create: { userId, payload, imageUrls, imageCrops, step },
+      update: { payload, imageUrls, imageCrops, step },
     });
     return { kaydedildi: true };
   }

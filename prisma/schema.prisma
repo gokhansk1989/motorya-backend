@@ -441,6 +441,22 @@ model ListingImage {
   width     Int?
   height    Int?
 
+  /// Kapak kadraji — ORANSAL, piksel degil.
+  ///
+  /// {"x":0.12,"y":0.05,"w":0.76,"h":0.64} biciminde, hepsi 0..1
+  /// araliginda ve ORIJINAL fotografa gore. Piksel saklamak, farkli
+  /// cozunurluklerde ve kart genisliklerinde yanlis alani gosterirdi.
+  ///
+  /// null = kadraj yok, fotografin tamami kullanilir. "Fotografin
+  /// tamamini goster" bu alani null'a cekiyor; yani kadraj her zaman
+  /// geri alinabilir.
+  ///
+  /// Kirpma TURETILMIS DOSYA URETMIYOR: orijinal dosya oldugu gibi
+  /// duruyor, kart bu dikdortgeni CSS ile gosteriyor. Boylece detay
+  /// galerisi orijinali gosterebiliyor ve fotograf temizleme gorevi
+  /// icin "kullanilan dosya" tanimi degismiyor.
+  crop      Json?
+
   @@index([listingId])
 }
 
@@ -941,6 +957,11 @@ model ListingDraft {
   /// fotograflar kayboluyordu.
   imageUrls String[] @default([])
 
+  /// Adres -> kadraj eslemesi (bkz. ListingImage.crop).
+  /// Fotograf sirasi degisince kadrajlarin karismamasi icin diziye
+  /// degil ADRESE bagli: kapak degistirmek kadraji tasimiyor.
+  imageCrops Json @default("{}")
+
   /// Formun kacinci adiminda kalindi.
   step Int @default(1)
 
@@ -978,6 +999,9 @@ model ListingPendingEdit {
   imageUrls     String[]          @default([])
   /// imageUrls bos dizi mi yoksa "degismedi" mi ayirt etmek icin.
   imagesChanged Boolean           @default(false)
+  /// Adres -> kadraj eslemesi. Incelenmemis kadraj degisikligi de
+  /// burada bekliyor; onaylanana kadar yayindaki surume gecmiyor.
+  imageCrops    Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

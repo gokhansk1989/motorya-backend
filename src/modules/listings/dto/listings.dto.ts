@@ -1,15 +1,4 @@
-import {
-  IsString,
-  IsEnum,
-  IsOptional,
-  IsNumber,
-  IsPositive,
-  MinLength,
-  MaxLength,
-  Min,
-  Max,
-  IsInt,
-  IsBoolean, IsObject, IsArray, ArrayMaxSize, IsISO8601} from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsEnum, IsISO8601, IsInt, IsNumber, IsObject, IsOptional, IsPositive, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ListingCondition, ListingGender, ListingStatus } from '@prisma/client';
 
@@ -70,6 +59,14 @@ export class CreateListingDto {
   @IsOptional()
   @IsString({ each: true })
   imageUrls?: string[];
+
+  /**
+   * Adres -> kadraj eslemesi. Icerigi sunucuda `kadrajHaritasiniCoz`
+   * ile dogrulaniyor; buradaki gevsek kontrol yalnizca turu tutuyor.
+   */
+  @IsOptional()
+  @IsObject()
+  imageCrops?: Record<string, unknown>;
 }
 
 export class UpdateListingDto {
@@ -128,6 +125,14 @@ export class UpdateListingDto {
   @IsOptional()
   @IsString({ each: true })
   imageUrls?: string[];
+
+  /**
+   * Adres -> kadraj eslemesi. Icerigi sunucuda `kadrajHaritasiniCoz`
+   * ile dogrulaniyor; buradaki gevsek kontrol yalnizca turu tutuyor.
+   */
+  @IsOptional()
+  @IsObject()
+  imageCrops?: Record<string, unknown>;
 }
 
 export class ListingsQueryDto {
@@ -218,6 +223,11 @@ export class TaslakDto {
   @ArrayMaxSize(8)
   @IsString({ each: true })
   imageUrls?: string[];
+
+  /** Adres -> kadraj eslemesi (bkz. kadraj.ts). */
+  @IsOptional()
+  @IsObject()
+  imageCrops?: Record<string, unknown>;
 
   @IsOptional()
   @IsInt()

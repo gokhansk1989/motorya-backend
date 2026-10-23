@@ -1,3 +1,4 @@
+import { kadrajHaritasiniCoz } from './kadraj';
 import {
   Injectable,
   NotFoundException,
@@ -539,8 +540,11 @@ export class ListingsService {
       throw new BadRequestException('İlan vermek için önce profilinden bir kullanıcı adı belirlemen gerekiyor.');
     }
 
-    const { imageUrls = [], ...rest } = dto;
+    const { imageUrls = [], imageCrops, ...rest } = dto;
     gorselleriDogrula(imageUrls);
+    // Kadrajlar yalnizca GERCEKTEN eklenen fotograflar icin saklaniyor;
+    // listede olmayan adreslerin kadraji dusuyor.
+    const kadrajlar = kadrajHaritasiniCoz(imageCrops, imageUrls);
 
     const [category, brand] = await Promise.all([
       rest.categoryId ? this.prisma.category.findUnique({ where: { id: rest.categoryId } }) : null,
@@ -592,7 +596,7 @@ export class ListingsService {
         isTest: seller.isTestAccount,
         tags,
         images: {
-          create: imageUrls.map((url, i) => ({ url, sortOrder: i })),
+          create: imageUrls.map((url, i) => ({ url, sortOrder: i, crop: kadrajlar[url] ?? undefined })),
         },
       },
       include: { images: true, category: { include: { parent: { select: { slug: true, name: true } } } }, brand: true, seller: { select: { email: true, displayName: true } } },
@@ -1456,7 +1460,7 @@ export class ListingsService {
       throw new BadRequestException('Cannot edit listing with status: ' + listing.status);
     }
 
-    const { imageUrls, ...rest } = dto;
+    const { imageUrls, imageCrops, ...rest } = dto;
     if (imageUrls !== undefined) gorselleriDogrula(imageUrls);
 
     const categoryId = rest.categoryId ?? listing.categoryId;
@@ -1488,18 +1492,21 @@ export class ListingsService {
     // her zaman Listing satirini okudugu icin incelenmemis icerik hicbir
     // kanalda gorunmuyor.
     if (listing.status === 'ACTIVE') {
-      const mevcutGorseller = (
-        await this.prisma.listingImage.findMany({
-          where: { listingId: id },
-          orderBy: { sortOrder: 'asc' },
-          select: { url: true },
-        })
-      ).map((g) => g.url);
+      const mevcutSatirlar = await this.prisma.listingImage.findMany({
+        where: { listingId: id },
+        orderBy: { sortOrder: 'asc' },
+        select: { url: true, crop: true },
+      });
+      const mevcutGorseller = mevcutSatirlar.map((g) => g.url);
+      const mevcutKadrajlar = Object.fromEntries(
+        mevcutSatirlar.filter((g) => g.crop).map((g) => [g.url, g.crop]),
+      );
 
       const incelemelik = degisenIncelemeAlanlari(
         dto as Record<string, unknown>,
         listing as unknown as Record<string, unknown>,
         mevcutGorseller,
+        mevcutKadrajlar,
       );
 
       if (incelemelik.length > 0) {
@@ -1512,9 +1519,13 @@ export class ListingsService {
 
     return this.prisma.$transaction(async (tx) => {
       if (imageUrls !== undefined) {
+        const kadrajlar = kadrajHaritasiniCoz(imageCrops, imageUrls);
         await tx.listingImage.deleteMany({ where: { listingId: id } });
         await tx.listingImage.createMany({
-          data: imageUrls.map((url, i) => ({ listingId: id, url, sortOrder: i })),
+          data: imageUrls.map((url, i) => ({
+            listingId: id, url, sortOrder: i,
+            crop: kadrajlar[url] ?? undefined,
+          })),
         });
       }
 
@@ -1617,7 +1628,28 @@ export class ListingsService {
     tags: string[],
   ) {
     const d = dto as Record<string, unknown>;
-    const gorsellerDegisti = degisenAlanlar.includes('imageUrls');
+    // Kadraj degisikligi de gorselleri tasiyor: onay aninda
+    // ListingImage satirlari yeniden yazilacagi icin adresler de
+    // elimizde olmali, yoksa kadraj uygulanacak satir bulunamaz.
+    const gorsellerDegisti =
+      degisenAlanlar.includes('imageUrls') || degisenAlanlar.includes('imageCrops');
+
+    /**
+     * YALNIZCA kadraj degistiyse `imageUrls` istekte hic gelmiyor.
+     * Bos dizi yazmak, onay aninda ilanin TUM fotograflarini silerdi.
+     * Bu yuzden mevcut adresleri okuyup oldugu gibi tasiyoruz.
+     */
+    const gorselAdresleri =
+      (d.imageUrls as string[] | undefined) ??
+      (gorsellerDegisti
+        ? (
+            await this.prisma.listingImage.findMany({
+              where: { listingId: id },
+              orderBy: { sortOrder: 'asc' },
+              select: { url: true },
+            })
+          ).map((g) => g.url)
+        : []);
 
     const veri = {
       title: (d.title as string) ?? null,
@@ -1627,8 +1659,20 @@ export class ListingsService {
       condition: (d.condition as any) ?? null,
       gender: (d.gender as any) ?? null,
       sizeLabel: d.sizeLabel ? bedenNormalle(d.sizeLabel as string) : null,
-      imageUrls: gorsellerDegisti ? ((d.imageUrls as string[]) ?? []) : [],
+      imageUrls: gorsellerDegisti ? gorselAdresleri : [],
       imagesChanged: gorsellerDegisti,
+      /**
+       * Kadraj da INCELENMEMIS icerik.
+       *
+       * Kadraj degisikligi gorunuru degistirir: kullanici kadraji
+       * oynatarak kartta bambaska bir sey gosterebilir. Bu yuzden
+       * onaylanana kadar Listing satirina gecmiyor, burada bekliyor.
+       * Arama, detay ve Story karti her zaman Listing satirini
+       * okudugu icin incelenmemis kadraj hicbir kanalda gorunmuyor.
+       */
+      imageCrops: gorsellerDegisti
+        ? (kadrajHaritasiniCoz(d.imageCrops, gorselAdresleri) as any)
+        : undefined,
     };
 
     await this.prisma.listingPendingEdit.upsert({
@@ -1780,9 +1824,13 @@ export class ListingsService {
 
     const guncel = await this.prisma.$transaction(async (tx) => {
       if (bekleyen.imagesChanged) {
+        const kadrajlar = kadrajHaritasiniCoz(bekleyen.imageCrops, bekleyen.imageUrls);
         await tx.listingImage.deleteMany({ where: { listingId } });
         await tx.listingImage.createMany({
-          data: bekleyen.imageUrls.map((url, i) => ({ listingId, url, sortOrder: i })),
+          data: bekleyen.imageUrls.map((url, i) => ({
+            listingId, url, sortOrder: i,
+            crop: kadrajlar[url] ?? undefined,
+          })),
         });
       }
       await tx.listing.update({ where: { id: listingId }, data: veri });
