@@ -457,6 +457,22 @@ model ListingImage {
   /// icin "kullanilan dosya" tanimi degismiyor.
   crop      Json?
 
+  /// Kapak bu mu?
+  ///
+  /// Kapak secimi ile SIRALAMA ayri iki karar. Onceden kapak "dizinin
+  /// ilk ogesi" demekti; ikinci fotografi kapak yapmak onu basa
+  /// tasiyor, yani saticinin kurdugu sirayi bozuyordu.
+  ///
+  /// `sortOrder` saticinin sectigi sirayi tutuyor, `isCover` ise hangi
+  /// fotografin kart ve Story'de gorunecegini. Sunucu gorselleri
+  /// (isCover DESC, sortOrder ASC) ile donduruyor: boylece
+  /// `images[0]` her yerde kapak olmaya devam ediyor ve kapak
+  /// kavramini bilmeyen eski cagri yerleri calismaya devam ediyor.
+  ///
+  /// Eski ilanlarda hicbiri isaretli degil; o durumda sortOrder'i en
+  /// kucuk olan kapak sayiliyor, yani mevcut kapaklar korunuyor.
+  isCover   Boolean @default(false)
+
   @@index([listingId])
 }
 
@@ -962,6 +978,10 @@ model ListingDraft {
   /// degil ADRESE bagli: kapak degistirmek kadraji tasimiyor.
   imageCrops Json @default("{}")
 
+  /// Kapak olarak secilen fotografin adresi. Diziye degil ADRESE
+  /// bagli: siralama degisince kapak kaymiyor.
+  coverUrl String?
+
   /// Formun kacinci adiminda kalindi.
   step Int @default(1)
 
@@ -1002,6 +1022,8 @@ model ListingPendingEdit {
   /// Adres -> kadraj eslemesi. Incelenmemis kadraj degisikligi de
   /// burada bekliyor; onaylanana kadar yayindaki surume gecmiyor.
   imageCrops    Json?
+  /// Incelenmemis kapak secimi.
+  coverUrl      String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

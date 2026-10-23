@@ -30,6 +30,7 @@ export const INCELEME_GEREKTIREN = [
   'description',
   'imageUrls',
   'imageCrops',
+  'coverUrl',
   'categoryId',
   'brandId',
   'condition',
@@ -55,10 +56,18 @@ export function degisenIncelemeAlanlari(
   mevcut: Record<string, unknown>,
   mevcutGorseller: string[],
   mevcutKadrajlar: Record<string, unknown> = {},
+  mevcutKapak: string | null = null,
 ): IncelemeAlani[] {
   const degisen: IncelemeAlani[] = [];
 
   for (const alan of INCELEME_GEREKTIREN) {
+    if (alan === 'coverUrl') {
+      const yeni = dto.coverUrl as string | undefined;
+      if (yeni === undefined) continue;
+      // Mevcut kapak: isCover isaretli olan, yoksa ilk fotograf.
+      if (yeni !== (mevcutKapak ?? mevcutGorseller[0])) degisen.push('coverUrl');
+      continue;
+    }
     if (alan === 'imageCrops') {
       const yeni = dto.imageCrops as Record<string, unknown> | undefined;
       if (yeni === undefined) continue;

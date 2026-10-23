@@ -25,6 +25,7 @@ export class TaslakService {
       payload: t.payload,
       imageUrls: t.imageUrls,
       imageCrops: t.imageCrops ?? {},
+      coverUrl: t.coverUrl,
       step: t.step,
       updatedAt: t.updatedAt,
     };
@@ -41,7 +42,7 @@ export class TaslakService {
    */
   async kaydet(
     userId: string,
-    girdi: { payload?: unknown; imageUrls?: string[]; imageCrops?: unknown; step?: number },
+    girdi: { payload?: unknown; imageUrls?: string[]; imageCrops?: unknown; coverUrl?: string; step?: number },
   ) {
     const payload = taslagiTemizle(girdi.payload);
     const imageUrls = (girdi.imageUrls ?? []).slice(0, TASLAK_EN_FAZLA_FOTO);
@@ -51,11 +52,14 @@ export class TaslakService {
     // adreslerin kadraji dusuyor ki silinen fotograflarin kadrajlari
     // birikmesin.
     const imageCrops = kadrajHaritasiniCoz(girdi.imageCrops, imageUrls);
+    // Kapak listede yoksa (fotograf silinmisse) ilk fotografa dusuyor.
+    const coverUrl =
+      girdi.coverUrl && imageUrls.includes(girdi.coverUrl) ? girdi.coverUrl : (imageUrls[0] ?? null);
 
     await this.prisma.listingDraft.upsert({
       where: { userId },
-      create: { userId, payload, imageUrls, imageCrops, step },
-      update: { payload, imageUrls, imageCrops, step },
+      create: { userId, payload, imageUrls, imageCrops, coverUrl, step },
+      update: { payload, imageUrls, imageCrops, coverUrl, step },
     });
     return { kaydedildi: true };
   }

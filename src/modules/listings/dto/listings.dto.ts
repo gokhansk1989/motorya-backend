@@ -67,6 +67,17 @@ export class CreateListingDto {
   @IsOptional()
   @IsObject()
   imageCrops?: Record<string, unknown>;
+
+  /**
+   * Kapak olarak secilen fotografin adresi.
+   *
+   * Diziye degil ADRESE bagli: siralama degisince kapak kaymiyor.
+   * Gonderilmezse ya da listede yoksa ilk fotograf kapak olur.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  coverUrl?: string;
 }
 
 export class UpdateListingDto {
@@ -133,6 +144,17 @@ export class UpdateListingDto {
   @IsOptional()
   @IsObject()
   imageCrops?: Record<string, unknown>;
+
+  /**
+   * Kapak olarak secilen fotografin adresi.
+   *
+   * Diziye degil ADRESE bagli: siralama degisince kapak kaymiyor.
+   * Gonderilmezse ya da listede yoksa ilk fotograf kapak olur.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  coverUrl?: string;
 }
 
 export class ListingsQueryDto {
@@ -228,6 +250,12 @@ export class TaslakDto {
   @IsOptional()
   @IsObject()
   imageCrops?: Record<string, unknown>;
+
+  /** Kapak olarak secilen fotografin adresi. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  coverUrl?: string;
 
   @IsOptional()
   @IsInt()

@@ -1,3 +1,4 @@
+import { KAPAK_SIRASI } from '../listings/kapak';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ModerateListingDto, ModerateUserDto } from './dto/admin.dto';
@@ -339,7 +340,7 @@ export class AdminService {
       const full = await this.prisma.listing.findFirst({
         where: { id },
         include: {
-          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          images: { orderBy: KAPAK_SIRASI, take: 1 },
           category: { include: { parent: { select: { slug: true } } } },
           brand: true,
           seller: { select: { id: true, displayName: true, email: true } },
@@ -479,7 +480,7 @@ export class AdminService {
         where, skip, take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          images: { orderBy: KAPAK_SIRASI, take: 1 },
           seller: { select: { id: true, displayName: true, email: true } },
           category: { select: { id: true, name: true } },
         },

@@ -1,3 +1,4 @@
+import { KAPAK_SIRASI, gorselSatirlari } from './kapak';
 import { kadrajHaritasiniCoz } from './kadraj';
 import {
   Injectable,
@@ -540,7 +541,10 @@ export class ListingsService {
       throw new BadRequestException('İlan vermek için önce profilinden bir kullanıcı adı belirlemen gerekiyor.');
     }
 
-    const { imageUrls = [], imageCrops, ...rest } = dto;
+    // `coverUrl` ve `imageCrops` Listing tablosunda DEGIL; gorsel
+    // satirlarina gidiyorlar. Ayiklanmazlarsa `rest` ile birlikte
+    // listing.create'e dusup "Unknown arg" hatasi veriyorlar.
+    const { imageUrls = [], imageCrops, coverUrl, ...rest } = dto;
     gorselleriDogrula(imageUrls);
     // Kadrajlar yalnizca GERCEKTEN eklenen fotograflar icin saklaniyor;
     // listede olmayan adreslerin kadraji dusuyor.
@@ -596,7 +600,8 @@ export class ListingsService {
         isTest: seller.isTestAccount,
         tags,
         images: {
-          create: imageUrls.map((url, i) => ({ url, sortOrder: i, crop: kadrajlar[url] ?? undefined })),
+          // Kapak bayrakla isaretleniyor, siraya dokunulmuyor.
+          create: gorselSatirlari(imageUrls, coverUrl, kadrajlar, {}),
         },
       },
       include: { images: true, category: { include: { parent: { select: { slug: true, name: true } } } }, brand: true, seller: { select: { email: true, displayName: true } } },
@@ -806,7 +811,7 @@ export class ListingsService {
         include: {
           // Listede yalnizca KAPAK iniyor: 8 fotografin tamamini
           // listelemek bant genisligini bosa harciyor.
-          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          images: { orderBy: KAPAK_SIRASI, take: 1 },
           // Toplam fotograf SAYISI ayrica geliyor. Kart "3 fotograf"
           // rozetini bununla gosteriyor; `images.length` her zaman 1
           // oldugu icin ondan okunamiyordu.
@@ -861,7 +866,7 @@ export class ListingsService {
     const listing = await this.prisma.listing.findFirst({
       where: { id, deletedAt: null },
       include: {
-        images: { orderBy: { sortOrder: 'asc' } },
+        images: { orderBy: KAPAK_SIRASI },
         seller: {
           select: {
             id: true,
@@ -940,7 +945,7 @@ export class ListingsService {
     const listings = await this.prisma.listing.findMany({
       where: { id: { in: ids }, status: 'ACTIVE', deletedAt: null, isTest: false },
       include: {
-        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        images: { orderBy: KAPAK_SIRASI, take: 1 },
         seller: { select: { id: true, displayName: true } },
         brand: true,
       },
@@ -1012,7 +1017,7 @@ export class ListingsService {
       orderBy: { updatedAt: 'desc' },
       take: Math.max(limit * 4, 60),
       include: {
-        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        images: { orderBy: KAPAK_SIRASI, take: 1 },
         seller: { select: { id: true, displayName: true } },
         brand: true,
       },
@@ -1336,7 +1341,7 @@ export class ListingsService {
           { featuredUntil: 'asc' },
         ],
         include: {
-          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          images: { orderBy: KAPAK_SIRASI, take: 1 },
           seller: { select: { id: true, displayName: true } },
           category: { select: { id: true, name: true, slug: true, parentId: true, parent: { select: { slug: true } } } },
         },
@@ -1426,7 +1431,7 @@ export class ListingsService {
         orderBy: { createdAt: 'desc' },
         take: Math.min(limit, 50),
         include: {
-          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          images: { orderBy: KAPAK_SIRASI, take: 1 },
           seller: { select: { id: true, displayName: true } },
           brand: { select: { id: true, name: true } },
           category: { select: { id: true, name: true, slug: true, parentId: true, parent: { select: { slug: true } } } },
@@ -1460,7 +1465,7 @@ export class ListingsService {
       throw new BadRequestException('Cannot edit listing with status: ' + listing.status);
     }
 
-    const { imageUrls, imageCrops, ...rest } = dto;
+    const { imageUrls, imageCrops, coverUrl, ...rest } = dto;
     if (imageUrls !== undefined) gorselleriDogrula(imageUrls);
 
     const categoryId = rest.categoryId ?? listing.categoryId;
@@ -1495,18 +1500,21 @@ export class ListingsService {
       const mevcutSatirlar = await this.prisma.listingImage.findMany({
         where: { listingId: id },
         orderBy: { sortOrder: 'asc' },
-        select: { url: true, crop: true },
+        select: { url: true, crop: true, isCover: true },
       });
       const mevcutGorseller = mevcutSatirlar.map((g) => g.url);
       const mevcutKadrajlar = Object.fromEntries(
         mevcutSatirlar.filter((g) => g.crop).map((g) => [g.url, g.crop]),
       );
 
+      const mevcutKapak = mevcutSatirlar.find((g) => g.isCover)?.url ?? null;
+
       const incelemelik = degisenIncelemeAlanlari(
         dto as Record<string, unknown>,
         listing as unknown as Record<string, unknown>,
         mevcutGorseller,
         mevcutKadrajlar,
+        mevcutKapak,
       );
 
       if (incelemelik.length > 0) {
@@ -1522,10 +1530,7 @@ export class ListingsService {
         const kadrajlar = kadrajHaritasiniCoz(imageCrops, imageUrls);
         await tx.listingImage.deleteMany({ where: { listingId: id } });
         await tx.listingImage.createMany({
-          data: imageUrls.map((url, i) => ({
-            listingId: id, url, sortOrder: i,
-            crop: kadrajlar[url] ?? undefined,
-          })),
+          data: gorselSatirlari(imageUrls, coverUrl, kadrajlar, { listingId: id }),
         });
       }
 
@@ -1543,7 +1548,7 @@ export class ListingsService {
           status: newStatus as any,
           tags,
         },
-        include: { images: { orderBy: { sortOrder: 'asc' } }, category: true, brand: true, seller: true },
+        include: { images: { orderBy: KAPAK_SIRASI }, category: true, brand: true, seller: true },
       });
 
       // Fiyat düştüyse favorileyen kullanıcılara bildirim
@@ -1581,7 +1586,7 @@ export class ListingsService {
       where: { id },
       data: veri,
       include: {
-        images: { orderBy: { sortOrder: 'asc' } },
+        images: { orderBy: KAPAK_SIRASI },
         category: { include: { parent: { select: { slug: true, name: true } } } },
         brand: true,
         seller: true,
@@ -1632,7 +1637,9 @@ export class ListingsService {
     // ListingImage satirlari yeniden yazilacagi icin adresler de
     // elimizde olmali, yoksa kadraj uygulanacak satir bulunamaz.
     const gorsellerDegisti =
-      degisenAlanlar.includes('imageUrls') || degisenAlanlar.includes('imageCrops');
+      degisenAlanlar.includes('imageUrls') ||
+      degisenAlanlar.includes('imageCrops') ||
+      degisenAlanlar.includes('coverUrl');
 
     /**
      * YALNIZCA kadraj degistiyse `imageUrls` istekte hic gelmiyor.
@@ -1673,6 +1680,11 @@ export class ListingsService {
       imageCrops: gorsellerDegisti
         ? (kadrajHaritasiniCoz(d.imageCrops, gorselAdresleri) as any)
         : undefined,
+      // Kapak secimi de incelemelik: hangi fotografin kartta
+      // gorunecegini degistiriyor.
+      coverUrl: gorsellerDegisti
+        ? ((d.coverUrl as string | undefined) ?? gorselAdresleri[0] ?? null)
+        : null,
     };
 
     await this.prisma.listingPendingEdit.upsert({
@@ -1706,7 +1718,7 @@ export class ListingsService {
     const guncel = await this.prisma.listing.findUnique({
       where: { id },
       include: {
-        images: { orderBy: { sortOrder: 'asc' } },
+        images: { orderBy: KAPAK_SIRASI },
         category: { include: { parent: { select: { slug: true, name: true } } } },
         brand: true,
         seller: true,
@@ -1756,7 +1768,7 @@ export class ListingsService {
           select: {
             id: true, title: true, description: true, status: true, isTest: true,
             categoryId: true, brandId: true, condition: true, gender: true, sizeLabel: true,
-            images: { orderBy: { sortOrder: 'asc' }, select: { url: true } },
+            images: { orderBy: KAPAK_SIRASI, select: { url: true } },
             seller: { select: { id: true, displayName: true } },
           },
         },
@@ -1827,10 +1839,7 @@ export class ListingsService {
         const kadrajlar = kadrajHaritasiniCoz(bekleyen.imageCrops, bekleyen.imageUrls);
         await tx.listingImage.deleteMany({ where: { listingId } });
         await tx.listingImage.createMany({
-          data: bekleyen.imageUrls.map((url, i) => ({
-            listingId, url, sortOrder: i,
-            crop: kadrajlar[url] ?? undefined,
-          })),
+          data: gorselSatirlari(bekleyen.imageUrls, bekleyen.coverUrl, kadrajlar, { listingId }),
         });
       }
       await tx.listing.update({ where: { id: listingId }, data: veri });
@@ -1838,7 +1847,7 @@ export class ListingsService {
       return tx.listing.findUnique({
         where: { id: listingId },
         include: {
-          images: { orderBy: { sortOrder: 'asc' } },
+          images: { orderBy: KAPAK_SIRASI },
           category: { include: { parent: { select: { slug: true, name: true } } } },
           brand: true,
           seller: { select: { id: true, displayName: true } },
@@ -1950,7 +1959,7 @@ export class ListingsService {
       const tam = await this.prisma.listing.findUnique({
         where: { id: listingId },
         include: {
-          images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+          images: { orderBy: KAPAK_SIRASI, take: 1 },
           category: { include: { parent: { select: { slug: true, name: true } } } },
           brand: true,
           seller: { select: { id: true, displayName: true } },
@@ -2047,7 +2056,7 @@ export class ListingsService {
       where: { id },
       data: { status: newStatus },
       include: {
-        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        images: { orderBy: KAPAK_SIRASI, take: 1 },
         category: true,
         brand: true,
         seller: { select: { id: true, displayName: true } },
@@ -2089,7 +2098,7 @@ export class ListingsService {
       where: { sellerId, deletedAt: null, ...(status ? { status } : {}) },
       orderBy: { createdAt: 'desc' },
       include: {
-        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        images: { orderBy: KAPAK_SIRASI, take: 1 },
         category: { include: { parent: { select: { slug: true, name: true } } } },
         // Satici hangi ilanlarinda degisiklik bekledigini listede gormeli;
         // tek tek acip bakmasi gerekmesin.
@@ -2188,7 +2197,7 @@ export class ListingsService {
       include: {
         listing: {
           include: {
-            images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+            images: { orderBy: KAPAK_SIRASI, take: 1 },
             seller: { select: { id: true, displayName: true, avatarUrl: true } },
             category: { include: { parent: { select: { slug: true, name: true } } } },
           },
@@ -2204,7 +2213,7 @@ export class ListingsService {
     const listing = await this.prisma.listing.findFirst({
       where: { id, deletedAt: null },
       include: {
-        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        images: { orderBy: KAPAK_SIRASI, take: 1 },
         category: true,
         brand: true,
         seller: { select: { id: true, displayName: true } },
@@ -2219,7 +2228,7 @@ export class ListingsService {
         publishedAt: status === ListingStatus.ACTIVE && !listing.publishedAt ? new Date() : listing.publishedAt,
       },
       include: {
-        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        images: { orderBy: KAPAK_SIRASI, take: 1 },
         category: true,
         brand: true,
         seller: { select: { id: true, displayName: true } },
@@ -2308,7 +2317,7 @@ export class ListingsService {
       // Test ilanlari arama indeksine hic girmiyor.
       where: { status: ListingStatus.ACTIVE, deletedAt: null, isTest: false },
       include: {
-        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        images: { orderBy: KAPAK_SIRASI, take: 1 },
         category: true,
         brand: true,
         seller: { select: { id: true, displayName: true } },
@@ -2569,6 +2578,24 @@ export class ListingsService {
       // Test ilani piyasa fiyatini bozar: "1 TL test kask" ortalamayi
       // asagi, "999.999 TL" yukari ceker ve satici yanlis fiyat belirler.
       isTest: false,
+      /**
+       * Personel ve test hesaplarinin ilanlari da disarida.
+       *
+       * `isTest` bayragi YETMIYOR: isaretlenmeyi unutan bir test
+       * ilani piyasa fiyatini belirlemeye devam ediyor. 2026-10-23
+       * itibariyla sitedeki iki SOLD ilanin IKISI DE bir SUPER_ADMIN
+       * hesabina ait ve hicbirinde isTest isaretli degil - yani
+       * "satilan ortalamasi" tamamen personel verisinden
+       * hesaplaniyordu.
+       *
+       * Olcut basligi tahmin etmek degil: bir yoneticinin kendi
+       * ilani zaten piyasa fiyati belirlememeli. Ayni dislama
+       * analitik raporlarinda da uygulaniyor.
+       */
+      seller: {
+        isTestAccount: false,
+        role: { notIn: ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'] },
+      },
     };
     if (brandId) where.brandId = brandId;
 

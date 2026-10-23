@@ -103,7 +103,15 @@ export class UploadController {
         if (ALLOWED_MIME.includes(file.mimetype)) {
           cb(null, true);
         } else {
-          cb(new BadRequestException(`Desteklenmeyen format: ${file.mimetype}`), false);
+          // Kullaniciya MIME turu gostermenin bir faydasi yok;
+          // "text/plain" ne yapacagini soylemiyor. Ne kabul ettigimizi
+          // soyluyoruz.
+          cb(
+            new UnsupportedMediaTypeException(
+              'Bu dosya desteklenmiyor. JPEG, PNG, WebP veya HEIC fotoğraf seç.',
+            ),
+            false,
+          );
         }
       },
     }),
@@ -135,7 +143,7 @@ export class UploadController {
       try {
         bicim = (await sharp(file.buffer).metadata()).format;
       } catch {
-        hatalar.push({ ad, kod: 'bozuk', mesaj: `"${ad}" okunamadı — dosya bozuk olabilir` });
+        hatalar.push({ ad, kod: 'bozuk', mesaj: `"${ad}" açılamadı. Dosya bozulmuş olabilir; başka bir fotoğraf dene.` });
         continue;
       }
 
@@ -143,7 +151,7 @@ export class UploadController {
         hatalar.push({
           ad,
           kod: 'tip',
-          mesaj: `"${ad}" desteklenmeyen bir görsel biçimi (${bicim ?? 'tanınmadı'})`,
+          mesaj: `"${ad}" bir fotoğraf değil ya da biçimi desteklenmiyor. JPEG, PNG, WebP veya HEIC seç.`,
         });
         continue;
       }
@@ -181,7 +189,7 @@ export class UploadController {
             continue;
           }
         } else {
-          hatalar.push({ ad, kod: 'bozuk', mesaj: `"${ad}" işlenemedi — dosya bozuk olabilir` });
+          hatalar.push({ ad, kod: 'bozuk', mesaj: `"${ad}" açılamadı. Dosya bozulmuş olabilir; başka bir fotoğraf dene.` });
           continue;
         }
       }

@@ -1,3 +1,4 @@
+import { KAPAK_SIRASI } from '../listings/kapak';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { createHash } from 'crypto';
@@ -66,7 +67,7 @@ export class ShareService {
         city: true,
         sizeLabel: true,
         brand: { select: { name: true } },
-        images: { orderBy: { sortOrder: 'asc' }, take: 1, select: { url: true, crop: true } },
+        images: { orderBy: KAPAK_SIRASI, take: 1, select: { url: true, crop: true } },
       },
     });
     if (!ilan) throw new NotFoundException('Ilan bulunamadi');
