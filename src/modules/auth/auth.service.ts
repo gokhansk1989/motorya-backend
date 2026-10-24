@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException, ServiceUnavailableException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto, LoginDto, AuthResponseDto } from './dto/auth.dto';
@@ -75,6 +75,15 @@ function kampanyaDamgasi(gelen: unknown) {
     kampanyaIlkTemas: new Date(),
   };
 }
+
+/**
+ * Rotasyondan sonra ÖNCEKİ yenileme tokenının kabul edildiği süre.
+ *
+ * Eşzamanlı sekmelerin birbirini atmasını önlüyor. Dar tutuluyor:
+ * pencere büyüdükçe çalınmış bir tokenın fark edilmeden kullanılabildiği
+ * aralık da büyür.
+ */
+const YENILEME_PENCERESI_SN = 30;
 
 @Injectable()
 export class AuthService {
@@ -502,24 +511,109 @@ export class AuthService {
     const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
     if (!device || device.revokedAt) throw new UnauthorizedException('Oturum geçersiz, lütfen tekrar giriş yapın');
 
-    const valid = await bcrypt.compare(refreshToken, device.refreshTokenHash);
-    if (!valid) throw new UnauthorizedException('Oturum geçersiz, lütfen tekrar giriş yapın');
+    const guncelMi = await bcrypt.compare(refreshToken, device.refreshTokenHash);
+
+    /**
+     * ÖNCEKİ tokenın kısa geçerlilik penceresi.
+     *
+     * ── ÇÖZDÜĞÜ SORUN ────────────────────────────────────────────
+     *
+     * Rotasyon her yenilemede yeni token üretiyor. İki sekme aynı anda
+     * yenileme yaptığında ikincisi kaçınılmaz olarak ESKİ tokenı
+     * sunar. Tekrar kullanım koruması bunu hırsızlık sayıp cihazı
+     * iptal ederse, kullanıcı hiçbir şey yapmadığı hâlde tüm
+     * sekmelerden atılır — yani koruma kendi kullanıcımızı vurur.
+     *
+     * ── NEDEN KORUMAYI KALDIRMIYORUZ ─────────────────────────────
+     *
+     * Tekrar kullanım tespiti, çalınmış bir tokenı fark etmenin tek
+     * yolu. Kaldırmak yerine DARALTIYORUZ: yalnızca bir önceki token,
+     * yalnızca saniyeler boyunca kabul ediliyor.
+     *
+     * ── KABUL EDİLEN ÖDÜNÇ ───────────────────────────────────────
+     *
+     * Çalınan bir token, rotasyonundan sonraki pencere içinde
+     * kullanılırsa yakalanmaz. Pencere bu yüzden dar. Ondan eskisi ya
+     * da hiç eşleşmeyen bir token gelirse cihaz yine iptal ediliyor.
+     */
+    const simdi = new Date();
+    const penceredeMi =
+      !guncelMi &&
+      !!device.oncekiTokenHash &&
+      !!device.oncekiGecerlilik &&
+      device.oncekiGecerlilik > simdi &&
+      (await bcrypt.compare(refreshToken, device.oncekiTokenHash));
+
+    if (!guncelMi && !penceredeMi) {
+      /**
+       * TEKRAR KULLANIM TESPİTİ.
+       *
+       * Ne güncel token ne de pencere içindeki önceki token. Elinde
+       * böyle bir token olan ya çalınmış bir kopyayı deniyordur ya da
+       * çok eski bir sekmedir; ikisini ayırt edemeyiz.
+       *
+       * Cihazı iptal ediyoruz: en kötü durumda kullanıcı yeniden giriş
+       * yapar, alternatifte hırsız oturumu kullanmaya devam eder.
+       */
+      await this.prisma.device.update({
+        where: { id: deviceId },
+        data: { revokedAt: new Date() },
+      });
+      // Kayitta yalnizca cihaz kimligi var; token ya da kullanici
+      // verisi loga GIRMIYOR.
+      new Logger(AuthService.name).warn(
+        `Yenileme tokeni tekrar kullanildi, cihaz iptal edildi: ${deviceId}`,
+      );
+      throw new UnauthorizedException('Oturum geçersiz, lütfen tekrar giriş yapın');
+    }
 
     const user = await this.prisma.user.findUnique({ where: { id: device.userId } });
     if (!user || user.status === 'SUSPENDED' || user.status === 'BANNED') {
       throw new UnauthorizedException('Hesabınız askıya alınmıştır.');
     }
 
-    // Rotasyon: her refresh'te yeni refresh token üretilir, eskisi artık geçersiz.
+    // Rotasyon: her refresh'te yeni refresh token üretilir.
+    //
+    // Devredilen token, kısa bir pencere boyunca "önceki" olarak
+    // saklanıyor — eşzamanlı sekmeler bu pencere sayesinde atılmıyor
+    // (yukarıdaki açıklama).
     const newRefreshToken = generateRefreshToken();
     const newHash = await bcrypt.hash(newRefreshToken, 10);
     await this.prisma.device.update({
       where: { id: deviceId },
-      data: { refreshTokenHash: newHash, lastSeenAt: new Date() },
+      data: {
+        refreshTokenHash: newHash,
+        oncekiTokenHash: device.refreshTokenHash,
+        oncekiGecerlilik: new Date(Date.now() + YENILEME_PENCERESI_SN * 1000),
+        lastSeenAt: new Date(),
+      },
     });
 
     const accessToken = this.jwtService.sign({ sub: user.id, email: user.email }, { expiresIn: '2h' });
     return { accessToken, refreshToken: newRefreshToken };
+  }
+
+  /**
+   * Cihazı yenileme tokenıyla iptal eder (çıkış).
+   *
+   * `revokeDevice` kullanıcı kimliği istiyor; çıkış yaparken erişim
+   * tokenı süresi dolmuş olabilir, yani kullanıcıyı bilmiyor
+   * olabiliriz. Yetki burada tokenın KENDİSİNDEN geliyor: doğru
+   * tokenı sunan kişi zaten o oturumun sahibi.
+   *
+   * Token yanlışsa sessizce dönüyoruz — çıkış isteği hata vermemeli,
+   * ama yanlış tokenla başkasının oturumunu da kapatamamalı.
+   */
+  async cihaziIptalEt(deviceId: string, refreshToken: string): Promise<{ ok: boolean }> {
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device || device.revokedAt) return { ok: true };
+    const gecerli = await bcrypt.compare(refreshToken, device.refreshTokenHash);
+    if (!gecerli) return { ok: true };
+    await this.prisma.device.update({
+      where: { id: deviceId },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true };
   }
 
   async revokeDevice(userId: string, deviceId: string): Promise<{ ok: boolean }> {

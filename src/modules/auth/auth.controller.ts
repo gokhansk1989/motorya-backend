@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Query, Headers, UseGuards, Request, Res, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, Headers, UseGuards, Request, Res, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -8,6 +8,11 @@ import { RegisterDto, LoginDto, RefreshTokenDto, LogoutDeviceDto } from './dto/a
 import { IsBoolean, IsEmail, IsOptional, IsString, MinLength, Equals } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 import { devirKoduUret, devirKodunuTakasEt } from './oauth-devir';
+import {
+  oturumCereziniYaz, oturumCereziniOku, oturumCereziniSil,
+  istemciTuru, originKapisi, onbellegeAlma,
+} from './oturum-cerezi';
+import { getAllowedOrigins } from '../../common/cors-origins';
 
 class ForgotPasswordDto {
   @IsEmail() email: string;
@@ -74,25 +79,54 @@ export class AuthController {
   // uygulamanın gerçekten bizim uygulamamız olduğunu kanıtlamak.
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
-  async register(@Body() dto: RegisterDto, @Request() req, @Headers('x-client') client?: string) {
+  async register(
+    @Body() dto: RegisterDto,
+    @Request() req,
+    @Res({ passthrough: true }) res,
+    @Headers('x-client') client?: string,
+  ) {
     if (client !== 'mobile') {
       const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
       if (!ok) throw new BadRequestException('Bot doğrulaması başarısız');
     }
-    return this.authService.register(dto, req.ip);
+    // Kayıt da bir OTURUM AÇAR. `login` çerezden geçerken burası
+    // geçmiyordu: yeni üyenin yenileme tokenı gövdede dönüyor ve
+    // istemci onu `localStorage`'a yazabiliyordu — düzeltmenin tam
+    // olarak engellemek istediği şey, yalnızca başka bir kapıdan.
+    this.originiDogrula(req);
+    const sonuc = await this.authService.register(dto, req.ip);
+    onbellegeAlma(res);
+    return this.oturumuPaketle(req, res, sonuc);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  /**
+   * Giriş.
+   *
+   * Tarayıcıdan geldiyse yenileme tokenı GÖVDEDE DÖNMÜYOR; HttpOnly
+   * çereze yazılıyor ve yanıttan çıkarılıyor. Böylece istemci onu
+   * `localStorage`'a yazamaz bile.
+   *
+   * Native uygulamada `Origin` başlığı yok; orada davranış aynen
+   * eskisi gibi, token gövdede dönüyor.
+   */
   @Post('login')
-  async login(@Body() dto: LoginDto, @Request() req, @Headers('x-client') client?: string) {
+  async login(
+    @Body() dto: LoginDto,
+    @Request() req,
+    @Res({ passthrough: true }) res,
+    @Headers('x-client') client?: string,
+  ) {
     if (requiresCaptcha(dto.email)) {
       const ok = await verifyTurnstile(dto.turnstileToken, req.ip);
       if (!ok) throw new BadRequestException({ message: 'Bot doğrulaması gerekli', captchaRequired: true });
     }
+    this.originiDogrula(req);
     try {
       const result = await this.authService.login(dto, client === 'admin-panel', req.ip, req.headers['user-agent']);
       resetAttempts(dto.email);
-      return result;
+      onbellegeAlma(res);
+      return this.oturumuPaketle(req, res, result);
     } catch (err: any) {
       recordFailed(dto.email);
       if (requiresCaptcha(dto.email)) {
@@ -100,6 +134,34 @@ export class AuthController {
         throw new BadRequestException({ message: original, captchaRequired: true });
       }
       throw err;
+    }
+  }
+
+  /**
+   * Oturum yanıtını istemci türüne göre paketler.
+   *
+   * Tarayıcı: yenileme tokenı ve cihaz kimliği çereze gider, yanıttan
+   * ÇIKARILIR. Native: eskisi gibi gövdede döner.
+   */
+  private oturumuPaketle(req: any, res: any, sonuc: any) {
+    // Varsayılan GÜVENLİ taraf: yalnızca açıkça native olarak
+    // tanımlanmış istemciye gövdede token veriliyor.
+    if (istemciTuru(req) === 'native') return sonuc;
+    if (!sonuc?.refreshToken || !sonuc?.deviceId) return sonuc;
+    oturumCereziniYaz(res, sonuc.deviceId, sonuc.refreshToken);
+    const { refreshToken, deviceId, ...kalan } = sonuc;
+    return kalan;
+  }
+
+  /**
+   * Çerez akışındaki uçlar için origin kapısı.
+   *
+   * `Origin` varsa izin listesinde olmak zorunda; yoksa yalnızca
+   * çerezsiz (native) istek kabul ediliyor.
+   */
+  private originiDogrula(req: any) {
+    if (!originKapisi(req, getAllowedOrigins())) {
+      throw new BadRequestException('Geçersiz istek kaynağı');
     }
   }
 
@@ -139,10 +201,27 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('admin-mfa-verify')
-  verifyAdminMfa(@Body() dto: AdminMfaVerifyDto, @Request() req) {
+  async verifyAdminMfa(
+    @Body() dto: AdminMfaVerifyDto,
+    @Request() req,
+    @Res({ passthrough: true }) res,
+  ) {
+    // Admin oturumunu GERÇEKTEN açan uç bu: `login` yalnızca kodu
+    // gönderiyor, oturum burada doğuyor. Çerez paketlemesinden
+    // geçmediği için admin panelinde iki sorun birlikte vardı:
+    // yenileme tokenı yanıt gövdesinde JavaScript'e açık dönüyordu ve
+    // hiçbir çerez yazılmadığı için oturum sayfa yenilenince ölüyordu.
+    this.originiDogrula(req);
     // ip/userAgent denetim kaydı için: admin paneline kimin nereden girdiği
     // güvenlik incelemesinde gereken ilk bilgi.
-    return this.authService.verifyAdminMfa(dto.email, dto.otp, req.ip, req.headers['user-agent']);
+    const sonuc = await this.authService.verifyAdminMfa(
+      dto.email,
+      dto.otp,
+      req.ip,
+      req.headers['user-agent'],
+    );
+    onbellegeAlma(res);
+    return this.oturumuPaketle(req, res, sonuc);
   }
 
   @Get('google')
@@ -186,10 +265,14 @@ export class AuthController {
    */
   @Post('google/exchange')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  googleExchange(@Body() dto: GoogleExchangeDto) {
+  googleExchange(@Body() dto: GoogleExchangeDto, @Request() req, @Res({ passthrough: true }) res) {
+    onbellegeAlma(res);
+    this.originiDogrula(req);
     const yuk = devirKodunuTakasEt(dto.code);
     if (!yuk) throw new BadRequestException('Giriş tamamlanamadı, lütfen tekrar deneyin');
-    return yuk;
+    // Google turu de aynı kurala tabi: tarayıcıda yenileme tokenı
+    // çereze yazılıyor, gövdeye konmuyor.
+    return this.oturumuPaketle(req, res, yuk);
   }
 
   @Post('consents')
@@ -199,9 +282,70 @@ export class AuthController {
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  /**
+   * Erişim tokenını yeniler.
+   *
+   * Kaynak önce ÇEREZ: tarayıcıdan gelen istekte gövdede token
+   * beklemiyoruz, çünkü istemcinin onu okuyabilmesi gerekmiyor.
+   * Çerez yoksa gövdeye düşüyoruz — native uygulama böyle çalışıyor
+   * ve bu akışı bozmamak gerekiyor.
+   *
+   * Tarayıcıdan gelen isteklerde ORIGIN doğrulanıyor: `SameSite=Lax`
+   * ilk savunma, bu ikincisi.
+   */
   @Post('refresh')
-  refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshAccessToken(dto.deviceId, dto.refreshToken);
+  async refresh(@Body() dto: RefreshTokenDto, @Request() req, @Res({ passthrough: true }) res) {
+    onbellegeAlma(res);
+    this.originiDogrula(req);
+    const cerez = oturumCereziniOku(req);
+
+    // ÇEREZ ÖNCELİKLİ: gövdede de token gelmişse yok sayılıyor.
+    // Aksi halde saldırgan, kurbanın çerezini taşıyan bir isteğe kendi
+    // gövde tokenını iliştirip hangi oturumun yenileneceğini seçebilirdi.
+    const deviceId = cerez?.deviceId ?? dto?.deviceId;
+    const refreshToken = cerez?.refreshToken ?? dto?.refreshToken;
+    if (!deviceId || !refreshToken) {
+      // Çerez yoksa oturum da yok: tarayıcıya temiz bir 401 dönüyoruz.
+      oturumCereziniSil(res);
+      throw new UnauthorizedException('Oturum bulunamadı');
+    }
+
+    try {
+      const sonuc = await this.authService.refreshAccessToken(deviceId, refreshToken);
+      if (cerez) {
+        // Rotasyon: yeni token çereze yazılıyor, istemciye verilmiyor.
+        oturumCereziniYaz(res, deviceId, sonuc.refreshToken);
+        return { accessToken: sonuc.accessToken };
+      }
+      return sonuc;
+    } catch (e) {
+      // Yenileme başarısızsa çerez de temizleniyor; aksi halde tarayıcı
+      // her istekte geçersiz bir token göndermeye devam ederdi.
+      if (cerez) oturumCereziniSil(res);
+      throw e;
+    }
+  }
+
+  /**
+   * Çıkış.
+   *
+   * Hem sunucudaki cihaz kaydını iptal ediyor hem çerezi siliyor.
+   * Yalnızca çerezi silmek, tokenın hâlâ geçerli olduğu anlamına
+   * gelirdi: bir kopyası sızmışsa çıkış yapmak onu durdurmazdı.
+   *
+   * Kimlik doğrulaması ARANMIYOR: erişim tokenı süresi dolmuş bir
+   * kullanıcı da çıkış yapabilmeli. Yetki, çerezdeki yenileme
+   * tokenının kendisinden geliyor.
+   */
+  @Post('logout')
+  async logout(@Request() req, @Res({ passthrough: true }) res) {
+    onbellegeAlma(res);
+    this.originiDogrula(req);
+    const cerez = oturumCereziniOku(req);
+    oturumCereziniSil(res);
+    if (!cerez) return { ok: true };
+    await this.authService.cihaziIptalEt(cerez.deviceId, cerez.refreshToken);
+    return { ok: true };
   }
 
   @Post('logout-device')

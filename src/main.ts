@@ -6,6 +6,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
 import { AppModule } from './app.module';
+import cookieParser from 'cookie-parser';
 import { getAllowedOrigins } from './common/cors-origins';
 import { AllExceptionsFilter } from './modules/error-logs/all-exceptions.filter';
 import { SlowRequestInterceptor } from './modules/error-logs/slow-request.interceptor';
@@ -52,6 +53,24 @@ async function bootstrap() {
     }),
   );
 
+  /**
+   * Çerez okuma.
+   *
+   * Yenileme tokenı artık HttpOnly çerezde (bkz. oturum-cerezi.ts);
+   * sunucunun onu okuyabilmesi için gerekli.
+   */
+  app.use(cookieParser());
+
+  /**
+   * CORS izin listesi DAR ve AÇIK.
+   *
+   * `credentials: true` ile joker origin zaten tarayıcı tarafından
+   * reddedilir, ama yansıtmalı (gelen origin'i olduğu gibi geri veren)
+   * bir yapılandırma da aynı kapıya çıkar. Liste tek kaynaktan
+   * (`getAllowedOrigins`) geliyor ve CSRF origin kontrolü de aynı
+   * listeyi kullanıyor — iki yerde ayrı liste tutmak, birinin
+   * güncellenip diğerinin unutulmasıyla biter.
+   */
   app.enableCors({
     origin: getAllowedOrigins(),
     credentials: true,

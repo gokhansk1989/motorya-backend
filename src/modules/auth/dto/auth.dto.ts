@@ -129,12 +129,24 @@ export class LoginDto {
   appVersion?: string;
 }
 
+/**
+ * Yenileme istegi.
+ *
+ * Alanlar ISTEGE BAGLI: tarayicida token ve cihaz kimligi HttpOnly
+ * cerezde geliyor, govde bos. Zorunlu birakilsaydi dogrulama katmani
+ * cerezli istegi daha denetleyiciye ulasmadan 400 ile reddederdi.
+ *
+ * Native uygulama eskisi gibi govdeyle gonderiyor; iki yolu da ayni
+ * uc karsiliyor.
+ */
 export class RefreshTokenDto {
+  @IsOptional()
   @IsString()
-  deviceId: string;
+  deviceId?: string;
 
+  @IsOptional()
   @IsString()
-  refreshToken: string;
+  refreshToken?: string;
 }
 
 export class LogoutDeviceDto {

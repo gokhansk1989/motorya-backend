@@ -211,6 +211,22 @@ model Device {
   platform         Platform
   model            String? // "iPhone 15", "Pixel 8" vb.
   refreshTokenHash String // refresh token'ın hash'i; iptal/rotasyon için
+
+  /// Bir ONCEKI yenileme tokenının hash'i ve gecerlilik penceresi.
+  ///
+  /// Rotasyon her yenilemede yeni token uretiyor. Iki sekme ayni anda
+  /// yenileme yaparsa ikincisi ESKI tokeni sunar; tekrar kullanim
+  /// korumasi bunu hirsizlik sayip oturumu kapatir - yani koruma kendi
+  /// kullanicimizi atar.
+  ///
+  /// Bu yuzden rotasyondan sonra onceki token KISA BIR SURE daha kabul
+  /// ediliyor. Pencere disinda ayni token gelirse gercekten tekrar
+  /// kullanimdir ve cihaz iptal edilir.
+  ///
+  /// Odunc acik: calinan bir token, rotasyonundan sonraki pencere
+  /// icinde kullanilirsa yakalanmaz. Pencere bilerek dar (saniyeler).
+  oncekiTokenHash  String?
+  oncekiGecerlilik DateTime?
   appVersion       String? // zorunlu güncelleme kontrolü için
   lastSeenAt       DateTime  @default(now())
   createdAt        DateTime  @default(now())
