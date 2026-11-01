@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { IcAgThrottlerGuard } from './common/ic-ag-throttler.guard';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
@@ -64,7 +65,7 @@ import { ShareModule } from './modules/share/share.module';
   controllers: [HealthController, RootController],
   providers: [
     { provide: APP_FILTER, useClass: SentryGlobalFilter },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: IcAgThrottlerGuard },
   ],
 })
 export class AppModule {}
