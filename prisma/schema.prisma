@@ -1046,3 +1046,20 @@ model ListingPendingEdit {
 
   @@index([createdAt])
 }
+
+/// Gönderilen her mailin üstverisi (gövde SAKLANMAZ — token/link içerir).
+/// "En son kime ne mail attık" sorusunu admin panelinde cevaplıyor.
+model EmailLog {
+  id        String   @id @default(cuid())
+  alici     String   // ham saklanır (filtre için), ekranda maskelenir
+  tur       String   // 'hos_geldin', 'fiyat_dustu' ... (çağıran fonksiyondan)
+  etiket    String   // insan-okur Türkçe ad ("Hoş geldin rehberi")
+  konu      String   // mail konusu — hassas türlerde sabit metinle değiştirilir
+  durum     String   // 'kabul' | 'hata' | 'atlandi'
+  hata      String?  // başarısızsa sebep
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([tur])
+  @@index([alici])
+}

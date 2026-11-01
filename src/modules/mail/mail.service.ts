@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { ErrorLogsService } from '../error-logs/error-logs.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { MAIL_TURLERI, cagiranMail, maskeAlici } from './mail-turleri';
 
 
 /**
@@ -43,7 +45,11 @@ export class MailService {
   private readonly appUrl = 'https://motorya.com.tr';
   private readonly adminUrl = process.env.ADMIN_URL ?? 'https://admin.motorya.com.tr';
 
-  constructor(private integrations: IntegrationsService, private errorLogs: ErrorLogsService) {}
+  constructor(
+    private integrations: IntegrationsService,
+    private errorLogs: ErrorLogsService,
+    private prisma: PrismaService,
+  ) {}
 
   // Resend istemcisi API anahtarı başına önbelleklenir; panelden anahtar
   // değiştirildiğinde bir sonraki gönderimde yeni istemci kurulur.
@@ -682,8 +688,15 @@ export class MailService {
     subject: string,
     html: string,
   ): Promise<{ durum: 'atlandi' | 'kabul' | 'hata'; kod?: string }> {
+    // Türü çağıran fonksiyondan çöz — kayıt ve ekran bunu kullanıyor.
+    const cagiran = cagiranMail();
+    const meta = MAIL_TURLERI[cagiran ?? ''] ?? { tur: 'diger', etiket: cagiran ?? 'Bilinmiyor' };
+    // OTP gibi konusunda hassas veri taşıyan türlerde konu yerine sabit etiket.
+    const kayitKonu = meta.konuGizle ? `(${meta.etiket})` : subject;
+
     if (this.gonderilemezAdres(to)) {
-      // Hata günlüğüne yazmıyoruz: bu bir arıza değil, beklenen bir durum.
+      // Hata günlüğüne de EmailLog'a da yazmıyoruz: bu gerçek bir alıcı
+      // değil (test alan adı), beklenen bir atlama.
       this.logger.debug(`Test alan adı, mail atlandı (${to})`);
       return { durum: 'atlandi', kod: 'gonderilemez_adres' };
     }
@@ -696,6 +709,7 @@ export class MailService {
         message: `Resend yapılandırılmamış — mail gönderilemedi: "${subject}"`,
         context: { provider: 'resend', to, subject },
       });
+      await this.emailLogKaydet(to, meta, kayitKonu, 'atlandi', 'sağlayıcı yapılandırılmamış');
       return { durum: 'atlandi', kod: 'saglayici_yapilandirilmamis' };
     }
     try {
@@ -716,6 +730,7 @@ export class MailService {
         replyTo: cfg.from,
       });
       if (error) throw new Error(`${error.name}: ${error.message}`);
+      await this.emailLogKaydet(to, meta, kayitKonu, 'kabul');
       return { durum: 'kabul' };
     } catch (err: any) {
       this.logger.error(`Mail gönderilemedi (${to}): ${err?.message}`);
@@ -725,7 +740,32 @@ export class MailService {
         stack: err?.stack ?? null,
         context: { provider: 'resend', to, subject },
       });
+      await this.emailLogKaydet(to, meta, kayitKonu, 'hata', err?.message ?? 'bilinmeyen hata');
       return { durum: 'hata' };
+    }
+  }
+
+  /**
+   * Gönderim üstverisini EmailLog'a yazar.
+   *
+   * Gövde ASLA saklanmıyor — doğrulama ve sıfırlama mailleri token/link
+   * içeriyor. Yalnızca alıcı, tür, konu ve durum. Kayıt başarısızlığı
+   * mailin kendisini etkilemesin diye hatası yutuluyor; bir izleme
+   * aracı değil, mailin yan ürünü.
+   */
+  private async emailLogKaydet(
+    alici: string,
+    meta: { tur: string; etiket: string },
+    konu: string,
+    durum: 'kabul' | 'hata' | 'atlandi',
+    hata?: string,
+  ) {
+    try {
+      await this.prisma.emailLog.create({
+        data: { alici, tur: meta.tur, etiket: meta.etiket, konu, durum, hata: hata ?? null },
+      });
+    } catch (e: any) {
+      this.logger.warn(`EmailLog yazılamadı: ${e?.message}`);
     }
   }
 }

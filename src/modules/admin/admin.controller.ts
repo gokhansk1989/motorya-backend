@@ -276,4 +276,28 @@ export class AdminController {
   ) {
     return this.messagesService.getMessagesForAdmin(req.user.id, id, reason || 'admin_review');
   }
+  // ── Mail kayıtları ────────────────────────────────────────────────
+  // "En son kime ne mail attık" — gönderilen maillerin üstveri listesi.
+  // Alıcı maskeli döner (admin.service), gövde hiç saklanmıyor.
+  @Get('email-logs')
+  emailLoglari(
+    @Query('tur') tur?: string,
+    @Query('durum') durum?: string,
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.emailLoglari({
+      tur: tur || undefined,
+      durum: durum || undefined,
+      q: q || undefined,
+      page: Number(page) || 1,
+      limit: Number(limit) || 30,
+    });
+  }
+
+  @Get('email-logs/ozet')
+  emailOzet() {
+    return this.adminService.emailOzet();
+  }
 }

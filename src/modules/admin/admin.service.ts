@@ -1,4 +1,5 @@
 import { KAPAK_SIRASI } from '../listings/kapak';
+import { MAIL_TURLERI, maskeAlici } from '../mail/mail-turleri';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ModerateListingDto, ModerateUserDto } from './dto/admin.dto';
@@ -981,5 +982,70 @@ export class AdminService {
     this.mail
       .sendReportResolvedEmail(sikayetci.email, sikayetci.displayName, baslik, islemYapildi)
       .catch(() => null);
+  }
+  /**
+   * Gönderilen maillerin üstveri listesi (admin paneli).
+   *
+   * Alıcı DB'de ham duruyor ama panele MASKELİ dönüyor; "ne attık"
+   * sorusu tür ve konuyla cevaplanıyor, tam adres gerekmiyor. Filtre
+   * için alıcıya göre arama ham alan üzerinde yapılıyor, maske dönüşten
+   * önce uygulanıyor.
+   */
+  async emailLoglari(params: { tur?: string; durum?: string; q?: string; page?: number; limit?: number }) {
+    const page = Math.max(1, params.page ?? 1);
+    const limit = Math.min(params.limit ?? 30, 100);
+    const where: any = {};
+    if (params.tur) where.tur = params.tur;
+    if (params.durum) where.durum = params.durum;
+    if (params.q) where.alici = { contains: params.q, mode: 'insensitive' };
+
+    const [kayitlar, toplam] = await this.prisma.$transaction([
+      this.prisma.emailLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.emailLog.count({ where }),
+    ]);
+
+    return {
+      items: kayitlar.map((k) => ({
+        id: k.id,
+        alici: maskeAlici(k.alici),
+        tur: k.tur,
+        etiket: k.etiket,
+        konu: k.konu,
+        durum: k.durum,
+        hata: k.hata,
+        createdAt: k.createdAt,
+      })),
+      meta: { total: toplam, page, limit, totalPages: Math.ceil(toplam / limit) },
+      // Filtre açılır menüsü için bilinen türler (etiketleriyle).
+      turler: Object.values(MAIL_TURLERI)
+        .map((t) => ({ tur: t.tur, etiket: t.etiket }))
+        .filter((t, i, a) => a.findIndex((x) => x.tur === t.tur) === i)
+        .sort((a, b) => a.etiket.localeCompare(b.etiket, 'tr')),
+    };
+  }
+
+  /** Son 30 günün tür bazında gönderim özeti (ekranın üst şeridi). */
+  async emailOzet() {
+    const otuzGun = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const satirlar = await this.prisma.emailLog.groupBy({
+      by: ['tur', 'durum'],
+      where: { createdAt: { gte: otuzGun } },
+      _count: { _all: true },
+    });
+    const etiketler = new Map(Object.values(MAIL_TURLERI).map((t) => [t.tur, t.etiket]));
+    const birlesik: Record<string, { tur: string; etiket: string; kabul: number; hata: number; atlandi: number }> = {};
+    for (const r of satirlar) {
+      const g = (birlesik[r.tur] ??= { tur: r.tur, etiket: etiketler.get(r.tur) ?? r.tur, kabul: 0, hata: 0, atlandi: 0 });
+      (g as any)[r.durum] = r._count._all;
+    }
+    return {
+      gun: 30,
+      turler: Object.values(birlesik).sort((a, b) => (b.kabul + b.hata) - (a.kabul + a.hata)),
+    };
   }
 }
