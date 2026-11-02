@@ -21,7 +21,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const status = isHttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const body = isHttpException ? exception.getResponse() : { message: 'Internal server error' };
 
-    const source = status >= 500 ? 'api' : status === 429 ? 'rate-limit' : status === 404 ? '404' : null;
+    const source =
+      status >= 500 ? 'api'
+      : status === 429 ? 'rate-limit'
+      : status === 404 ? '404'
+      // Kayit ve Google giris akisinin BEKLENEN istemci hatalarini (zaten
+      // kayitli, bot dogrulamasi, gecersiz TC, giris tamamlanamadi) bilerek
+      // loglaya ALIYORUZ: "uye olamiyorum" sikayetlerini panelden gormenin
+      // tek yolu bu. Diger 4xx'ler hala loglanmiyor.
+      : this.kayitHatasiMi(request?.originalUrl ?? '', status) ? 'kayit'
+      : null;
 
     // 404 gurultusunu filtrele: bot/tarayıcı istekleri (favicon, .git,
     // meta tag'lerden URL uretimi, root path) log'a yazilmaz.
@@ -32,19 +41,54 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (source) {
       const err = exception as Error;
+      // 5xx: gercek exception mesaji (stack ile birlikte anlamli).
+      // 4xx: kullaniciya DONEN mesaj daha aciklayici ("Bu e-posta zaten
+      // kayitli", "Bot dogrulamasi basarisiz"); validasyonda dizi gelir,
+      // birlestiriyoruz. "Bad Request Exception" gibi jenerik ad yerine
+      // asil sebebi gormek teshis icin sart.
+      const ham = typeof body === 'string' ? body : (body as any)?.message;
+      const mesaj = status >= 500
+        ? (err?.message ?? 'Internal server error')
+        : (Array.isArray(ham) ? ham.join('; ') : (ham ?? err?.message ?? 'Unknown error'));
+
       this.errorLogs.log({
         source,
-        message: err?.message ?? (typeof body === 'string' ? body : (body as any)?.message) ?? 'Unknown error',
+        message: mesaj,
         stack: source === 'api' ? err?.stack ?? null : null,
         path: request?.originalUrl,
         method: request?.method,
         statusCode: status,
         userId: (request as any)?.user?.id ?? null,
-        context: source === 'rate-limit' ? { ip: request?.ip } : undefined,
+        context:
+          source === 'rate-limit' ? { ip: request?.ip }
+          // Parola ve diger govde alanlari ASLA loglanmiyor; yalnizca hangi
+          // adresin takildigini gormek icin MASKELI e-posta.
+          : source === 'kayit' ? { email: this.maskeEposta((request?.body as any)?.email) }
+          : undefined,
       });
     }
 
     response.status(status).json(typeof body === 'string' ? { message: body } : body);
+  }
+
+  /**
+   * Kayit / Google giris akisinin loglanacak istemci hatasi mi?
+   *
+   * Yalnizca bu akislarin anlamli basarisizliklari: 400 (bot dogrulamasi,
+   * gecersiz TC, kullanici adi), 409 (e-posta/TC/telefon zaten kayitli),
+   * 503 (yeni kayitlar kapali). Diger 4xx'ler disarida.
+   */
+  private kayitHatasiMi(url: string, status: number): boolean {
+    if (![400, 409, 503].includes(status)) return false;
+    const yol = (url || '').split('?')[0];
+    return /^\/auth\/(register|google)/.test(yol);
+  }
+
+  /** E-postayi maskeler (a***@site.com); parola gibi diger alanlar hic alinmiyor. */
+  private maskeEposta(eposta?: unknown): string | undefined {
+    if (typeof eposta !== 'string' || !eposta.includes('@')) return undefined;
+    const [yerel, alan] = eposta.split('@');
+    return `${yerel[0] ?? ''}***@${alan}`;
   }
 
   // 404'lerde mantik TERSINE cevrildi.
