@@ -31,7 +31,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const source =
       status >= 500 ? 'api'
-      : status === 429 ? 'rate-limit'
+      : status === 429 ? (this.throttleKaydaDeger(request?.originalUrl ?? '') ? 'rate-limit' : null)
       : status === 404 ? '404'
       // Kullaniciyi ENGELLEYEN akislarin beklenen hatalari bilerek loglaniyor:
       // "uye/giris/ilan yapamiyorum" sikayetlerini panelden gormenin tek yolu.
@@ -74,6 +74,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
    * gecersiz TC, kullanici adi), 409 (e-posta/TC/telefon zaten kayitli),
    * 503 (yeni kayitlar kapali). Diger 4xx'ler disarida.
    */
+  /**
+   * Hangi 429'lar kayda değer?
+   *
+   * Hata kaydinin %90'i rate-limit'ti ve neredeyse hepsi /users/me ile
+   * /auth/refresh'ti: bunlar kullanicinin sayfa acilisinda normal ama hizli
+   * istek atmasindan kaynaklaniyor, koruma zaten calisiyor ve teshis degeri
+   * yok. Yalnizca KOTUYE KULLANIM sinyali olan kimlik uclarinin throttle'ini
+   * tutuyoruz: brute-force ve otomatik kayit denemeleri burada gorulur.
+   */
+  private throttleKaydaDeger(url: string): boolean {
+    const yol = (url || '').split('?')[0];
+    return /^\/auth\/(login|register|forgot-password|reset-password|admin-mfa)/.test(yol);
+  }
+
   private islemHatasi(url: string, method: string, status: number, mesaj: string): string | null {
     const yol = (url || '').split('?')[0];
 
