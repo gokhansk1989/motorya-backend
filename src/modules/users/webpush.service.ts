@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Optional } from '@nestjs/common';
+import { ErrorLogsService } from '../error-logs/error-logs.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -21,6 +23,7 @@ export class WebPushService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    @Optional() private errorLogs?: ErrorLogsService,
   ) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -78,7 +81,15 @@ export class WebPushService {
           await this.webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, data);
         } catch (err: any) {
           if (err.statusCode === 410 || err.statusCode === 404) {
+            // Abonelik iptal edilmis (normal): sessizce temizle.
             await this.prisma.webPushSubscription.deleteMany({ where: { endpoint: s.endpoint } });
+          } else {
+            // Gercek gonderim hatasi (VAPID, ag, servis): panelde gorunmeli.
+            this.errorLogs?.log({
+              source: 'bildirim',
+              message: `Web push gonderilemedi (HTTP ${err?.statusCode ?? '?'}): ${err?.message ?? 'bilinmeyen hata'}`,
+              userId,
+            });
           }
         }
       }),

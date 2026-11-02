@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ErrorLogsModule } from '../error-logs/error-logs.module';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { WebPushService } from './webpush.service';
@@ -9,7 +10,7 @@ import { SocialModule } from '../social/social.module';
 import { MailModule } from '../mail/mail.module';
 
 @Module({
-  imports: [PrismaModule, SearchModule, SocialModule, MailModule],
+  imports: [PrismaModule, SearchModule, SocialModule, MailModule, ErrorLogsModule],
   providers: [UsersService, WebPushService, FcmService],
   controllers: [UsersController],
   exports: [UsersService, WebPushService, FcmService],

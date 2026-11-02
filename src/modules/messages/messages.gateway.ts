@@ -9,6 +9,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
+import { ErrorLogsService } from '../error-logs/error-logs.service';
 import { MessagesService } from './messages.service';
 import { getAllowedOrigins } from '../../common/cors-origins';
 
@@ -22,21 +23,33 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
   constructor(
     private jwt: JwtService,
     private messages: MessagesService,
+    private errorLogs: ErrorLogsService,
   ) {}
 
   async handleConnection(client: Socket) {
+    let payload: { sub: string };
     try {
       const token = client.handshake.auth?.token || client.handshake.headers?.authorization?.split(' ')[1];
-      const payload = this.jwt.verify(token) as { sub: string };
+      payload = this.jwt.verify(token) as { sub: string };
+    } catch {
+      // Gecersiz/eksik token: beklenen durum (gurultu), loglamiyoruz.
+      client.disconnect();
+      return;
+    }
+    try {
       client.data.userId = payload.sub;
-
       if (!this.onlineUsers.has(payload.sub)) this.onlineUsers.set(payload.sub, new Set());
       this.onlineUsers.get(payload.sub)!.add(client.id);
-
-      // Kullanıcıyı kendi odasına al (konuşma event'leri için)
       client.join(`user:${payload.sub}`);
       this.server.emit('user:online', { userId: payload.sub });
-    } catch {
+    } catch (e: any) {
+      // Dogrulama GECTIKTEN sonra beklenmedik hata: bu gercek bir sorun.
+      this.errorLogs.log({
+        source: 'mesaj',
+        message: `Soket baglanti hatasi: ${e?.message ?? 'bilinmeyen hata'}`,
+        stack: e?.stack ?? null,
+        userId: payload.sub,
+      });
       client.disconnect();
     }
   }
@@ -76,6 +89,14 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
       this.server.to(`conv:${data.conversationId}`).emit('message:new', message);
       return message;
     } catch (e: any) {
+      // Mesaj gonderilemedi: kullaniciya hata donuyor ama hicbir yere
+      // dusmuyordu. Sifre/DB hatasi burada sessizce kayboluyordu.
+      this.errorLogs.log({
+        source: 'mesaj',
+        message: `Mesaj gonderilemedi: ${e?.message ?? 'bilinmeyen hata'}`,
+        stack: e?.stack ?? null,
+        userId,
+      });
       return { error: e.message };
     }
   }

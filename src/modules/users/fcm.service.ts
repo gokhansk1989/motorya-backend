@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Optional } from '@nestjs/common';
+import { ErrorLogsService } from '../error-logs/error-logs.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import type { NotificationCategory } from './webpush.service';
@@ -20,6 +22,7 @@ export class FcmService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    @Optional() private errorLogs?: ErrorLogsService,
   ) {
     const raw = this.config.get<string>('FIREBASE_SERVICE_ACCOUNT_JSON');
     if (!raw) {
@@ -139,12 +142,19 @@ export class FcmService {
         await this.prisma.pushToken.updateMany({ where: { token: { in: invalid } }, data: { disabledAt: new Date() } });
       }
       if (digerHatalar.size > 0) {
-        this.logger.error(
-          `FCM gonderimi basarisiz (${res.failureCount}/${tokens.length} jeton) — kodlar: ${[...digerHatalar].join(', ')}`,
-        );
+        const ozet = `FCM gonderimi basarisiz (${res.failureCount}/${tokens.length} jeton) — kodlar: ${[...digerHatalar].join(', ')}`;
+        this.logger.error(ozet);
+        // Jeton-disi hata (orn. invalid-credential) TUM push'lari olduruyor;
+        // panelde gorunmeliydi -- yorumun uyardigi sessiz ariza buydu.
+        this.errorLogs?.log({ source: 'bildirim', message: ozet, context: { kodlar: [...digerHatalar] } });
       }
     } catch (err: any) {
       this.logger.error(`FCM send failed for user ${userId}: ${err.message}`);
+      this.errorLogs?.log({
+        source: 'bildirim',
+        message: `FCM (native push) gonderilemedi: ${err?.message ?? 'bilinmeyen hata'}`,
+        stack: err?.stack ?? null, userId,
+      });
     }
   }
 

@@ -19,6 +19,7 @@ import { tmpdir } from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import sharp from 'sharp';
+import { ErrorLogsService } from '../error-logs/error-logs.service';
 
 const calistir = promisify(execFile);
 
@@ -92,6 +93,8 @@ const WEBP_QUALITY = 82;
 
 @Controller('upload')
 export class UploadController {
+  constructor(private readonly errorLogs: ErrorLogsService) {}
+
   @Post('images')
   @UseGuards(AuthGuard('jwt'))
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
@@ -142,7 +145,11 @@ export class UploadController {
       let bicim: string | undefined;
       try {
         bicim = (await sharp(file.buffer).metadata()).format;
-      } catch {
+      } catch (e: any) {
+        // "Acilamadi" hem gercek bozuk dosya hem sistem arizasi (sharp/disk)
+        // olabilir; kullaniciya "bozuk" diyoruz ama panelde gorunsun ki
+        // bir arizaysa (SEL gibi kayit gelir) ayirt edilebilsin.
+        this.errorLogs.log({ source: 'yukleme', message: `Gorsel acilamadi (metadata): ${e?.message ?? '?'}`, context: { dosya: ad } });
         hatalar.push({ ad, kod: 'bozuk', mesaj: `"${ad}" açılamadı. Dosya bozulmuş olabilir; başka bir fotoğraf dene.` });
         continue;
       }
@@ -189,6 +196,7 @@ export class UploadController {
             continue;
           }
         } else {
+          this.errorLogs.log({ source: 'yukleme', message: `Gorsel islenemedi: ${e?.message ?? '?'}`, context: { dosya: ad } });
           hatalar.push({ ad, kod: 'bozuk', mesaj: `"${ad}" açılamadı. Dosya bozulmuş olabilir; başka bir fotoğraf dene.` });
           continue;
         }
