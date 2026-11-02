@@ -1,4 +1,6 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Optional } from '@nestjs/common';
+import { ErrorLogsService } from '../error-logs/error-logs.service';
 import { ConfigService } from '@nestjs/config';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { Meilisearch } = require('meilisearch');
@@ -42,7 +44,7 @@ export class SearchService implements OnModuleInit {
   private client: MeiliSearch;
   private index: Index;
 
-  constructor(private config: ConfigService) {
+  constructor(private config: ConfigService, @Optional() private errorLogs?: ErrorLogsService) {
     this.client = new Meilisearch({
       host: this.config.get('MEILI_HOST', 'http://localhost:7700'),
       apiKey: this.config.get('MEILI_MASTER_KEY', 'meili-dev-key'),
@@ -195,8 +197,17 @@ export class SearchService implements OnModuleInit {
         },
         facets: result.facetDistribution ?? {},
       };
-    } catch (err) {
+    } catch (err: any) {
+      // Arama SESSİZCE boş donuyordu: Meilisearch erisilemezse kullaniciya
+      // "sonuc yok" gosteriliyor ve kimse fark etmiyordu (fallback yok).
+      // ErrorLog'a yazarak "arama X saattir calismiyor"i gorunur kiliyoruz.
       this.logger.warn(`Search failed: ${err.message}`);
+      this.errorLogs?.log({
+        source: 'arama',
+        message: `Arama basarisiz (Meilisearch): ${err?.message ?? 'bilinmeyen hata'}`,
+        stack: err?.stack ?? null,
+        context: { q: q?.slice(0, 60) },
+      });
       return { items: [], meta: { total: 0, page, limit, totalPages: 0, relaxed: false }, facets: {} };
     }
   }

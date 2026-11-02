@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ErrorLogsService } from '../error-logs/error-logs.service';
+import { GorevKorumasi } from '../error-logs/gorev-korumasi';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
@@ -15,10 +17,12 @@ export class TasksService {
     private mail: MailService,
     private analytics: AnalyticsService,
     private taslak: TaslakService,
+    private errorLogs: ErrorLogsService,
   ) {}
 
   // Her 30 dakikada süresi dolan rezervasyonları kontrol et
   @Cron(CronExpression.EVERY_30_MINUTES)
+  @GorevKorumasi()
   async expireReservedListings() {
     const expired = await this.prisma.listing.findMany({
       where: {
@@ -67,6 +71,7 @@ export class TasksService {
   // şikâyet konusudur. Sorgu tek indeks taraması (@@index([isFeatured,
   // featuredUntil])), saatte bir koşması bedava sayılır.
   @Cron(CronExpression.EVERY_HOUR)
+  @GorevKorumasi()
   async expireFeaturedListings() {
     const sonuc = await this.prisma.listing.updateMany({
       where: {
@@ -88,6 +93,7 @@ export class TasksService {
 
   // Günlük: süresi dolan teklifleri EXPIRED'a çek
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @GorevKorumasi()
   async expireOffers() {
     const result = await this.prisma.offer.updateMany({
       where: {
@@ -111,6 +117,7 @@ export class TasksService {
    * hiç başlamıyor. Hatırlatma ilan başına yalnızca bir kez gönderilir.
    */
   @Cron(CronExpression.EVERY_DAY_AT_NOON)
+  @GorevKorumasi()
   async remindStaleListings() {
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
@@ -172,6 +179,7 @@ export class TasksService {
    * Her iki mail de Notification kaydıyla tek seferliğe kilitlenir.
    */
   @Cron(CronExpression.EVERY_DAY_AT_10AM)
+  @GorevKorumasi()
   async sendLifecycleReminders() {
     await this.sendFirstListingReminders();
     await this.sendReengagementReminders();
@@ -344,6 +352,7 @@ export class TasksService {
    * "messages" kapalıysa hiç gitmez.
    */
   @Cron('*/15 * * * *')
+  @GorevKorumasi()
   async remindUnreadMessages() {
     const simdi = Date.now();
     const esik = new Date(simdi - 15 * 60 * 1000);
@@ -450,6 +459,7 @@ export class TasksService {
    * Son 24 saate girmiş, hâlâ PENDING tekliflere tek bir hatırlatma.
    */
   @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  @GorevKorumasi()
   async remindExpiringOffers() {
     const simdi = new Date();
     const yarin = new Date(simdi.getTime() + 24 * 60 * 60 * 1000);
@@ -501,6 +511,7 @@ export class TasksService {
    * İlan başına ömür boyu tek mail - her ay hatırlatmak bunaltırdı.
    */
   @Cron(CronExpression.EVERY_DAY_AT_11AM)
+  @GorevKorumasi()
   async remindLongRunningListings() {
     const esik = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
@@ -568,6 +579,7 @@ export class TasksService {
    * bu özet alacak; şimdilik ikisi birlikte duruyor.
    */
   @Cron('0 9 * * 1')
+  @GorevKorumasi()
   async sendWeeklyModerationSummary() {
     const haftaOnce = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
@@ -615,6 +627,7 @@ export class TasksService {
   // geldin gider, yarım saat sonra çalışan görev onu görüp o kullanıcıyı
   // atlar.
   @Cron('30 9 * * *')
+  @GorevKorumasi()
   async sendWelcomeGuides() {
     // "Kayıttan EN AZ 2 gün geçmiş", "tam 2-3 gün arası" değil.
     //
@@ -680,6 +693,7 @@ export class TasksService {
    * demek için mail atmak, alarmı sildirmenin en hızlı yolu olurdu.
    */
   @Cron('0 10 * * 0')
+  @GorevKorumasi()
   async sendSavedSearchWeeklySummaries() {
     const haftaOnce = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
@@ -751,6 +765,7 @@ export class TasksService {
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
+  @GorevKorumasi()
   async pruneAuditLogs() {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const result = await this.prisma.auditLog.deleteMany({
@@ -767,6 +782,7 @@ export class TasksService {
   // duruyor. Tek bir saklama suresi tutmak, kod tarafinda da panelde de daha
   // anlasilir - "hangi kayit ne kadar duruyor" sorusu ortadan kalkiyor.
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @GorevKorumasi()
   async pruneErrorLogs() {
     const sinir = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
     const { count } = await this.prisma.errorLog.deleteMany({
@@ -782,6 +798,7 @@ export class TasksService {
    * iliskiyle birlikte zaten siliniyor, bu gorev yalnizca yas siniri.
    */
   @Cron('15 4 * * *')
+  @GorevKorumasi()
   async analitikOlaylariTemizle() {
     await this.analytics.eskileriSil(180);
   }
@@ -797,6 +814,7 @@ export class TasksService {
    * 04:15'te calisiyor, ust uste binmesin.
    */
   @Cron('40 4 * * *')
+  @GorevKorumasi()
   async yuklemeVeTaslakTemizligi() {
     await this.taslak.eskiTaslaklariSil(90);
     await this.taslak.sahipsizYuklemeleriTemizle(30);
