@@ -21,16 +21,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const status = isHttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const body = isHttpException ? exception.getResponse() : { message: 'Internal server error' };
 
+    // Mesaji once cozuyoruz: islem-hatasi siniflandirmasi (giris gurultusunu
+    // elemek icin) mesaja bakiyor.
+    const err0 = exception as Error;
+    const ham0 = typeof body === 'string' ? body : (body as any)?.message;
+    const mesaj0 = status >= 500
+      ? (err0?.message ?? 'Internal server error')
+      : (Array.isArray(ham0) ? ham0.join('; ') : (ham0 ?? err0?.message ?? 'Unknown error'));
+
     const source =
       status >= 500 ? 'api'
       : status === 429 ? 'rate-limit'
       : status === 404 ? '404'
-      // Kayit ve Google giris akisinin BEKLENEN istemci hatalarini (zaten
-      // kayitli, bot dogrulamasi, gecersiz TC, giris tamamlanamadi) bilerek
-      // loglaya ALIYORUZ: "uye olamiyorum" sikayetlerini panelden gormenin
-      // tek yolu bu. Diger 4xx'ler hala loglanmiyor.
-      : this.kayitHatasiMi(request?.originalUrl ?? '', status) ? 'kayit'
-      : null;
+      // Kullaniciyi ENGELLEYEN akislarin beklenen hatalari bilerek loglaniyor:
+      // "uye/giris/ilan yapamiyorum" sikayetlerini panelden gormenin tek yolu.
+      // Diger 4xx'ler ve giris "sifre hatali" gurultusu haric.
+      : this.islemHatasi(request?.originalUrl ?? '', request?.method ?? '', status, mesaj0);
 
     // 404 gurultusunu filtrele: bot/tarayıcı istekleri (favicon, .git,
     // meta tag'lerden URL uretimi, root path) log'a yazilmaz.
@@ -41,19 +47,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (source) {
       const err = exception as Error;
-      // 5xx: gercek exception mesaji (stack ile birlikte anlamli).
-      // 4xx: kullaniciya DONEN mesaj daha aciklayici ("Bu e-posta zaten
-      // kayitli", "Bot dogrulamasi basarisiz"); validasyonda dizi gelir,
-      // birlestiriyoruz. "Bad Request Exception" gibi jenerik ad yerine
-      // asil sebebi gormek teshis icin sart.
-      const ham = typeof body === 'string' ? body : (body as any)?.message;
-      const mesaj = status >= 500
-        ? (err?.message ?? 'Internal server error')
-        : (Array.isArray(ham) ? ham.join('; ') : (ham ?? err?.message ?? 'Unknown error'));
-
       this.errorLogs.log({
         source,
-        message: mesaj,
+        message: mesaj0,
         stack: source === 'api' ? err?.stack ?? null : null,
         path: request?.originalUrl,
         method: request?.method,
@@ -63,7 +59,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
           source === 'rate-limit' ? { ip: request?.ip }
           // Parola ve diger govde alanlari ASLA loglanmiyor; yalnizca hangi
           // adresin takildigini gormek icin MASKELI e-posta.
-          : source === 'kayit' ? { email: this.maskeEposta((request?.body as any)?.email) }
+          : (source === 'kayit' || source === 'giris') ? { email: this.maskeEposta((request?.body as any)?.email) }
           : undefined,
       });
     }
@@ -78,10 +74,26 @@ export class AllExceptionsFilter implements ExceptionFilter {
    * gecersiz TC, kullanici adi), 409 (e-posta/TC/telefon zaten kayitli),
    * 503 (yeni kayitlar kapali). Diger 4xx'ler disarida.
    */
-  private kayitHatasiMi(url: string, status: number): boolean {
-    if (![400, 409, 503].includes(status)) return false;
+  private islemHatasi(url: string, method: string, status: number, mesaj: string): string | null {
     const yol = (url || '').split('?')[0];
-    return /^\/auth\/(register|google)/.test(yol);
+
+    // Kayit / Google giris: zaten kayitli, bot dogrulamasi, gecersiz TC,
+    // kullanici adi, giris tamamlanamadi, yeni kayitlar kapali.
+    if ([400, 409, 503].includes(status) && /^\/auth\/(register|google)/.test(yol)) return 'kayit';
+
+    // Giris ENGELLERI: Google hesabini parolayla acma, dogrulanmamis e-posta,
+    // askiya alinmis hesap, gecersiz/suresi dolmus sifirlama linki, admin MFA.
+    // "E-posta veya sifre hatali" HARIC: o gurultu ve brute-force korumasi
+    // (rate-limit) zaten yakaliyor.
+    if ([400, 401, 403].includes(status)
+        && /^\/auth\/(login|admin-mfa-verify|reset-password)/.test(yol)
+        && !/şifre|parola|e-posta veya/i.test(mesaj)) return 'giris';
+
+    // ILAN VERME engelleri: TC eksik, kullanici adi eksik, kategori hatasi.
+    // Yalnizca create (POST /listings); admin alt yollari ve duzenleme haric.
+    if ([400, 403].includes(status) && method === 'POST' && /^\/listings\/?$/.test(yol)) return 'ilan';
+
+    return null;
   }
 
   /** E-postayi maskeler (a***@site.com); parola gibi diger alanlar hic alinmiyor. */
