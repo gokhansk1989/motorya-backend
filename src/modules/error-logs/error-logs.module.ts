@@ -2,12 +2,13 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ErrorLogsService } from './error-logs.service';
 import { ErrorLogsController, AdminErrorLogsController } from './error-logs.controller';
+import { SentryWebhookController } from './sentry-webhook.controller';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { SlowRequestInterceptor } from './slow-request.interceptor';
 
 @Module({
   imports: [PrismaModule],
-  controllers: [ErrorLogsController, AdminErrorLogsController],
+  controllers: [ErrorLogsController, AdminErrorLogsController, SentryWebhookController],
   providers: [ErrorLogsService, AllExceptionsFilter, SlowRequestInterceptor],
   exports: [ErrorLogsService, AllExceptionsFilter, SlowRequestInterceptor],
 })

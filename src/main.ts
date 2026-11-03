@@ -12,7 +12,7 @@ import { AllExceptionsFilter } from './modules/error-logs/all-exceptions.filter'
 import { SlowRequestInterceptor } from './modules/error-logs/slow-request.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
 
   // Ziyaretcinin gercek IP'sini gorebilmek icin proxy zincirine guven.
   // Bu ayar olmadan req.ip, konteynerin komsusu olan docker koprusunu
