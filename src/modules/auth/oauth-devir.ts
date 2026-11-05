@@ -37,6 +37,8 @@ import { randomBytes, timingSafeEqual } from 'crypto';
  */
 
 export interface DevirYuku {
+  /** Google turunde hesap bu takasta YENI mi olustu — kampanya atifi icin. */
+  yeniHesap?: boolean;
   accessToken: string;
   refreshToken?: string;
   deviceId?: string;

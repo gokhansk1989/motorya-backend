@@ -732,7 +732,39 @@ export class AuthService {
       deviceId,
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, emailVerifiedAt: user.emailVerifiedAt ?? null },
       needsConsent: !termsConsent,
+      // Yalnizca GERCEKTEN yeni olusturulan hesapta true. Google turunde
+      // hesap callback'te olusuyor; kampanya ise exchange'te geliyor.
+      // Bu bayrak, kampanyanin yalnizca yeni hesaba yazilmasini saglar;
+      // mevcut hesabin Google ile girisi atif yazdirmiyor.
+      yeniHesap,
     } as any;
+  }
+
+  /**
+   * Google ile YENI olusan hesaba kampanyayi yazar (atif).
+   *
+   * Hesap callback'te olusuyor ama kampanya exchange'te geliyor; bu yuzden
+   * atif burada, sonradan vuruluyor. GUVENLIK:
+   *  - Yalnizca kampanyaKaynak'i NULL olan hesaba yaziyor: mevcut atifi
+   *    ezmiyor, Google ile tekrar giren eski kullaniciya kampanya
+   *    yazdirmiyor (onlarin hesabi zaten eski, bu cagri yeniHesap=false
+   *    ile hic gelmiyor; NULL kontrolu ikinci emniyet).
+   *  - Kampanya yoksa hicbir sey yapmiyor (tahminle doldurmuyor).
+   * Kampanya hic bir yetki kararina girmiyor; yalnizca User.kampanya*
+   * alanlarina yaziliyor.
+   */
+  async googleYeniHesabaKampanya(userId: string, kampanya: unknown) {
+    if (!kampanya) return;
+    const damga = kampanyaDamgasi(kampanya);
+    if (!damga || !damga.kampanyaKaynak) return;
+    try {
+      await this.prisma.user.updateMany({
+        where: { id: userId, kampanyaKaynak: null },
+        data: damga,
+      });
+    } catch {
+      // Atif yazilamazsa oturum bundan etkilenmesin.
+    }
   }
 
   // Google ile kayıt sözleşme/KVKK onaylarını atlıyor — ilk girişte ayrı bir ekranla tamamlanır.

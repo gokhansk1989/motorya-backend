@@ -5,7 +5,7 @@ import { AuthService } from './auth.service';
 import { verifyTurnstile } from '../../common/turnstile';
 import { requiresCaptcha, recordFailed, resetAttempts } from '../../common/login-attempts';
 import { RegisterDto, LoginDto, RefreshTokenDto, LogoutDeviceDto } from './dto/auth.dto';
-import { IsBoolean, IsEmail, IsOptional, IsString, MinLength, Equals } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, MinLength, Equals, IsObject } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 import { devirKoduUret, devirKodunuTakasEt } from './oauth-devir';
 import {
@@ -21,7 +21,11 @@ class ForgotPasswordDto {
 class ResetPasswordDto { @IsString() token: string; @IsString() @MinLength(8) password: string; }
 class ResendVerificationDto { @IsEmail() email: string; }
 /** Google turunden donen tek kullanimlik devir kodu. */
-class GoogleExchangeDto { @IsString() @MinLength(16) code: string; }
+class GoogleExchangeDto {
+  @IsString() @MinLength(16) code: string;
+  /** Hesabi getiren kampanya (yalnizca yeni hesaba atif icin). */
+  @IsOptional() @IsObject() kampanya?: Record<string, unknown>;
+}
 class AdminMfaVerifyDto { @IsEmail() email: string; @IsString() otp: string; }
 /**
  * Turnstile jetonu tasiyan istek govdeleri.
@@ -246,9 +250,9 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleCallback(@Request() req, @Res() res) {
-    const { accessToken, refreshToken, deviceId, user, needsConsent } = req.user as any;
+    const { accessToken, refreshToken, deviceId, user, needsConsent, yeniHesap } = req.user as any;
     const frontendUrl = this.config.get('FRONTEND_URL', 'https://motorya.com.tr');
-    const kod = devirKoduUret({ accessToken, refreshToken, deviceId, user, needsConsent: !!needsConsent });
+    const kod = devirKoduUret({ accessToken, refreshToken, deviceId, user, needsConsent: !!needsConsent, yeniHesap: !!yeniHesap });
     return res.redirect(`${frontendUrl}/callback?code=${encodeURIComponent(kod)}`);
   }
 
@@ -270,6 +274,12 @@ export class AuthController {
     this.originiDogrula(req);
     const yuk = devirKodunuTakasEt(dto.code);
     if (!yuk) throw new BadRequestException('Giriş tamamlanamadı, lütfen tekrar deneyin');
+    // Kampanya atifi: hesap callback'te olustu, kampanya burada geldi.
+    // Yalnizca YENI hesaba ve yalnizca kampanyaKaynak NULL ise yaziliyor;
+    // bekletmeden (fire-and-forget), oturum teslimi gecikmesin.
+    if (dto.kampanya && (yuk as any).yeniHesap && (yuk as any).user?.id) {
+      void this.authService.googleYeniHesabaKampanya((yuk as any).user.id, dto.kampanya);
+    }
     // Google turu de aynı kurala tabi: tarayıcıda yenileme tokenı
     // çereze yazılıyor, gövdeye konmuyor.
     return this.oturumuPaketle(req, res, yuk);
