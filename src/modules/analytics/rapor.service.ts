@@ -136,11 +136,12 @@ export class RaporService {
     const simdi = new Date();
     const olgunSinir = new Date(simdi.getTime() - OLGUNLASMA_SA * 60 * 60 * 1000);
 
-    const [ilkOlay, ilanAkisi, arama, moderasyon, iletisim, teklif, sosyal, uyelik] = await Promise.all([
+    const [ilkOlay, ilanAkisi, arama, moderasyon, aktivasyon, iletisim, teklif, sosyal, uyelik] = await Promise.all([
       this.ilkOlayTarihi(),
       this.ilanAkisi(baslangic, bitis),
       this.aramaAkisi(baslangic, bitis),
       this.moderasyon(baslangic, bitis, olgunSinir),
+      this.aktivasyon(baslangic, bitis),
       this.iletisimHazirla(baslangic, bitis, olgunSinir),
       this.teklifler(baslangic, bitis),
       this.sosyalKaynaklar(baslangic, bitis, olgunSinir, kontrolDahil),
@@ -219,7 +220,7 @@ export class RaporService {
           `Teklifin kabul edilmesi gerceklesmis satis anlamina gelmez.`,
         ],
       },
-      bolumler: [uyelik, ilanAkisi, moderasyon, arama, iletisim, teklif],
+      bolumler: [uyelik, aktivasyon, ilanAkisi, moderasyon, arama, iletisim, teklif],
       sosyal,
     };
   }
@@ -231,16 +232,18 @@ export class RaporService {
    *
    * IKI AYRI KAPSAM, bilerek ayri raporlaniyor:
    *
-   *   ZIYARET  - olaylardan. Kampanya ziyaret boyunca bellekte tasiniyor
-   *              (cihazda saklama yok), son temas kazaniyor. Sayfa
-   *              yenilenince kaynak kayboluyor.
+   *   ZIYARET  - olaylardan. Kampanya ziyaret boyunca sekme-omurlu
+   *              sessionStorage'da tasiniyor (cerez/parmak izi yok), son
+   *              temas kazaniyor. Yenileme ve Google turunda korunur; yeni
+   *              sekmede/sekme kapaninca kaynak kaybolur. (5 Kas 2026
+   *              oncesi yalnizca bellekteydi; o donem atfi guvenilmez.)
    *   HESAP    - User.kampanya* damgasindan. KAYIT aninda bir kez
    *              yaziliyor, kalici.
    *
    * DIKKAT: hesap kapsamindaki damga "ilk temas" DEGIL. Oyle
    * adlandirilmisti ve yanlisti: gercek ilk ziyaret kaynagi hicbir yerde
-   * saklanmiyor (cihazda depolama yok). Damga, kayit aninda bellekte
-   * hangi kampanya varsa onu gosterir - yani o ziyaretin son temasi.
+   * saklanmiyor. Damga, kayit aninda o sekmede hangi kampanya varsa onu
+   * gosterir - yani o ziyaretin son temasi.
    * Raporda adi "Kayit kampanyasi".
    *
    * Oranlar yalnizca KENDI kapsami icinde hesaplaniyor. Ziyaret bazli bir
@@ -458,9 +461,9 @@ export class RaporService {
         aciklama: kontrolAciklamasi(),
       },
       kurallar: [
-        'Ziyaret kapsamı: kampanya ziyaret boyunca yalnızca bellekte taşınır (cihazda saklanmaz). Son açılan kampanya bağlantısı öncekinin yerini alır. Sayfa yenilenince kaynak kaybolur ve "belirlenemedi" olur.',
-        'Hesap kapsamı — KAYIT KAMPANYASI: kullanıcı kayıt olurken bellekte hangi kampanya varsa o damgalanır ve değişmez. Bu kişinin siteyi İLK KEZ hangi kaynaktan bulduğu DEĞİLDİR: gerçek ilk ziyaret kaynağı hiçbir yerde saklanmıyor. Kullanıcı önce doğrudan gelip gezinmiş, günler sonra bir reklam bağlantısıyla dönüp kayıt olmuş olabilir; damga o son bağlantıyı gösterir.',
-        'Kampanya yalnızca bellekte taşındığı için kayıt akışı sırasında sayfa yenilenirse (ya da e-posta doğrulama bağlantısı yeni bir sekmede açılırsa) damga BOŞ kalır. Bu kayıtlar "kaynak belirlenemedi" olarak durur, tahminle doldurulmaz.',
+        'Ziyaret kapsamı: kampanya ziyaret boyunca SEKME-ÖMÜRLÜ birinci-taraf depoda (sessionStorage) taşınır — çerez, localStorage ya da parmak izi YOK; sekmeye bağlı, sekme kapanınca silinir, sekmeler arasında paylaşılmaz. Son açılan kampanya bağlantısı öncekinin yerini alır (son temas). Sayfa yenileme, aynı sekmede gezinme ve Google ile giriş turunda kaynak KORUNUR; yeni bir sekmede ya da sekme kapanınca kaybolur ve "belirlenemedi" olur.',
+        'Hesap kapsamı — KAYIT KAMPANYASI: kullanıcı kayıt olurken o anki kampanya varsa o damgalanır ve değişmez. Bu kişinin siteyi İLK KEZ hangi kaynaktan bulduğu DEĞİLDİR: gerçek ilk ziyaret kaynağı hiçbir yerde saklanmıyor. Kullanıcı önce doğrudan gelip gezinmiş, günler sonra bir reklam bağlantısıyla dönüp kayıt olmuş olabilir; damga o son bağlantıyı gösterir. Damga kayıt anında vurulur; sonrasında kampanya o sekmeden silinir, başka bir hesaba bağlanamaz.',
+        'ÖLÇÜM FARKI — 5 KASIM 2026: Bu tarihten ÖNCE kampanya yalnızca bellekte taşınıyordu; sayfa yenileme, Google turu ve yeni sekme kaynağı sessizce kaybediyordu. O yüzden 5 Kasım öncesi kayıt olan hesapların "kaynak belirlenemedi" oranı ŞİŞKİN ve bu dönemin kampanya atfı güvenilmezdir. 5 Kasım\'dan sonra sessionStorage ile yenileme, aynı sekmede gezinme ve Google turunda korunuyor. Yine de e-posta doğrulama bağlantısı BAŞKA bir sekmede/cihazda açılırsa damga boş kalabilir; bu kayıtlar "kaynak belirlenemedi" olarak durur, tahminle doldurulmaz.',
         'Oranlar yalnızca kendi kapsamı içinde hesaplanır; ziyaret bazlı pay hesap bazlı paydaya bölünmez.',
         'Trafik türü utm_medium etiketinden okunur: paid_social = ücretli, organic_social = organik. Tanınmayan ya da boş bir değer "belirsiz" olarak durur ve tahminle sınıflandırılmaz.',
         'Sitenin TOPLAM açılış sayısı ölçülmüyor: genel bir sayfa görüntüleme olayı yok. Bu yüzden "kampanyaların trafiğin yüzde kaçını getirdiği" bu rapordan hesaplanamaz; yalnızca kampanya etiketli açılışlar ve kaynağı belirlenemeyen olaylar ayrı ayrı sayılır.',
@@ -1395,6 +1398,12 @@ export class RaporService {
         ),
         sayiMetrigi('Hala onay bekleyen', 'Donemde gonderilmis ve su an PENDING_REVIEW olan ilan sayisi.', Number(satir?.beklemede ?? 0), 'veritabani'),
         sayiMetrigi(
+          'Gozlem suresi dolmamis',
+          `Donemde gonderilen ama henuz ${OLGUNLASMA_SA} saati doldurmamis ilan sayisi. Bunlar yayin oraninin PAYDASINDA yok (moderasyon suresi dolmadi). "Gonderilen" ile yayin oranindaki payda arasindaki farki bu aciklar: gonderilen = yayin paydasi + bu + hala bekleyen.`,
+          Math.max(0, g - olgun),
+          'veritabani',
+        ),
+        sayiMetrigi(
           'Reddedilen',
           'Donemde gonderilip reddedilen ilan sayisi. Neden kirilimi asagida.',
           Number(satir?.reddedilen ?? 0),
@@ -1410,6 +1419,118 @@ export class RaporService {
         ),
       ],
       retKirilimi: retKirilimi.map((r) => ({ kod: r.kod, adet: Number(r.adet) })),
+    };
+  }
+
+  // ── 2b. Yeni uye aktivasyonu — 7 gunluk kohort (veritabani) ────────────
+  /**
+   * Donemde kayit olan GERCEK kullanicilarin, KENDI kayit anindan itibaren
+   * 7 gun icinde ilk ilanini gondermesi / yayimlanmasi ve alici olarak ilk
+   * mesajini gondermesi.
+   *
+   * PAYDA NETLIGI (bu bolumun amaci):
+   *  - Oranlar YALNIZCA "gozlem suresi tamamlanan" (kayittan bu yana >=7 gun)
+   *    kohort uzerinden hesaplaniyor. 7 gunu dolmayanlar ayri sayiliyor ve
+   *    ORANA GIRMIYOR - yoksa daha vakti olan hesap "aktive olmadi" sayilirdi.
+   *  - Tekil SATICI sayiliyor: ayni kisinin cok sayida ilani tekil sayiyi
+   *    artirmiyor (kohort hesap bazli).
+   *  - "Alici olarak ilk mesaj", saticinin gelen mesaja YANITI degil; kohort
+   *    uyesinin BASKASININ ilanina gonderdigi ilk mesaj.
+   *  - Ilan verenler ve mesaj gonderenler CAKISABILIR; toplamlari "benzersiz
+   *    aktif kullanici" gibi sunulmuyor.
+   */
+  private async aktivasyon(baslangic: Date, bitis: Date) {
+    const [k] = await this.prisma.$queryRaw<{
+      kohort: bigint; olgun: bigint; ham: bigint; kaynaksiz: bigint;
+      olgun_ilan: bigint; olgun_yayin: bigint; olgun_mesaj: bigint;
+      ham_ilan: bigint; ham_mesaj: bigint; medyan_ilan_saat: number | null;
+    }[]>(Prisma.sql`
+      WITH kohort AS (
+        SELECT u.id, u."createdAt" AS reg,
+               (u."createdAt" <= now() - interval '7 days') AS olgun,
+               (u."kampanyaKaynak" IS NOT NULL) AS damgali
+        FROM "User" u
+        WHERE u."deletedAt" IS NULL AND NOT u."isTestAccount"
+          AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+          AND u."createdAt" >= ${ts(baslangic)} AND u."createdAt" < ${ts(bitis)}
+      ),
+      ilan AS (
+        SELECT k.id,
+          MIN(l."createdAt") FILTER (WHERE l."createdAt" <= k.reg + interval '7 days') AS ilk_ilan,
+          MIN(l."publishedAt") FILTER (WHERE l."publishedAt" IS NOT NULL AND l."publishedAt" <= k.reg + interval '7 days') AS ilk_yayin
+        FROM kohort k
+        LEFT JOIN "Listing" l ON l."sellerId" = k.id AND l."deletedAt" IS NULL
+        GROUP BY k.id
+      ),
+      mesaj AS (
+        SELECT k.id,
+          MIN(m."createdAt") FILTER (WHERE m."createdAt" <= k.reg + interval '7 days') AS ilk_mesaj
+        FROM kohort k
+        JOIN "Message" m ON m."senderId" = k.id
+        JOIN "Conversation" c ON c.id = m."conversationId"
+        JOIN "Listing" l ON l.id = c."listingId" AND l."sellerId" <> k.id
+        GROUP BY k.id
+      )
+      SELECT
+        COUNT(*) AS kohort,
+        COUNT(*) FILTER (WHERE k.olgun) AS olgun,
+        COUNT(*) FILTER (WHERE NOT k.olgun) AS ham,
+        COUNT(*) FILTER (WHERE NOT k.damgali) AS kaynaksiz,
+        COUNT(*) FILTER (WHERE k.olgun AND i.ilk_ilan IS NOT NULL) AS olgun_ilan,
+        COUNT(*) FILTER (WHERE k.olgun AND i.ilk_yayin IS NOT NULL) AS olgun_yayin,
+        COUNT(*) FILTER (WHERE k.olgun AND ms.ilk_mesaj IS NOT NULL) AS olgun_mesaj,
+        COUNT(*) FILTER (WHERE NOT k.olgun AND i.ilk_ilan IS NOT NULL) AS ham_ilan,
+        COUNT(*) FILTER (WHERE NOT k.olgun AND ms.ilk_mesaj IS NOT NULL) AS ham_mesaj,
+        percentile_cont(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (i.ilk_ilan - k.reg)) / 3600.0
+        ) FILTER (WHERE k.olgun AND i.ilk_ilan IS NOT NULL) AS medyan_ilan_saat
+      FROM kohort k
+      LEFT JOIN ilan i ON i.id = k.id
+      LEFT JOIN mesaj ms ON ms.id = k.id
+    `);
+
+    // Donem icinde olusturulan ilanlar: yeni uye (kohort) vs eski uye.
+    const [ilanlar] = await this.prisma.$queryRaw<{ yeni: bigint; eski: bigint }[]>(Prisma.sql`
+      SELECT
+        COUNT(*) FILTER (WHERE u."createdAt" >= ${ts(baslangic)} AND u."createdAt" < ${ts(bitis)}) AS yeni,
+        COUNT(*) FILTER (WHERE NOT (u."createdAt" >= ${ts(baslangic)} AND u."createdAt" < ${ts(bitis)})) AS eski
+      FROM "Listing" l JOIN "User" u ON u.id = l."sellerId"
+      WHERE l."deletedAt" IS NULL AND NOT u."isTestAccount"
+        AND u.role NOT IN ('ADMIN','SUPER_ADMIN','MODERATOR')
+        AND l."createdAt" >= ${ts(baslangic)} AND l."createdAt" < ${ts(bitis)}
+    `);
+
+    const n = (v: bigint | null | undefined) => Number(v ?? 0);
+    const olgun = n(k?.olgun);
+    const olgunIlan = n(k?.olgun_ilan);
+    const medyan = k?.medyan_ilan_saat ?? null;
+    const medyanNot =
+      `Medyan ${medyan !== null ? medyan.toFixed(1) + ' saat' : '—'}, ornek ${olgunIlan} ` +
+      `(yalnizca ilk 7 gunde ilan verenler). Kucuk orneklemde kesin yorum yapilmaz; ` +
+      `dusuk medyan "tum uyeler hemen aktif" demek DEGIL, yalnizca ilan verenlerin davranisidir.`;
+
+    return {
+      baslik: 'Yeni uye aktivasyonu (7 gun)',
+      kaynak: 'veritabani' as MetrikKaynagi,
+      aciklama:
+        'Donemde kayit olan gercek kullanicilarin kendi kayit anindan itibaren 7 gun icindeki ilk hareketleri. ' +
+        'Oranlar YALNIZCA gozlem suresi tamamlanan (>=7 gun) kohort uzerinden; 7 gunu dolmayanlar ayri sayilir, orana girmez. ' +
+        'Tekil satici sayilir (ayni kisinin cok ilani tekil sayiyi artirmaz). "Alici olarak ilk mesaj" saticinin yaniti degildir. ' +
+        'Ilan verenlerle mesaj gonderenler cakisabilir; toplamlari "benzersiz aktif kullanici" gibi okunamaz.',
+      metrikler: [
+        sayiMetrigi('Donem kaydi (kohort)', 'Donemde kayit olan gercek (personel/test haric) tekil hesap.', n(k?.kohort), 'veritabani'),
+        sayiMetrigi('Gozlem suresi tamamlanan (>=7g)', 'Kayittan bu yana en az 7 gun gecmis hesaplar. Oranlarin PAYDASI bunlar.', olgun, 'veritabani'),
+        sayiMetrigi('Gozlem suresi dolmayan (<7g)', 'Kayittan bu yana 7 gun gecmemis hesaplar. Henuz "aktive olmadi" denemez; orana girmez.', n(k?.ham), 'veritabani'),
+        oranMetrigi('Ilk 7 gunde ilan gonderen', 'Pay: tamamlanan kohortta ilk 7 gunde en az bir ilan gonderen tekil satici. Payda: gozlem suresi tamamlanan hesaplar.', olgunIlan, olgun, 'veritabani'),
+        oranMetrigi('Ilk 7 gunde ilk ilani yayimlanan', 'Pay: tamamlanan kohortta ilk 7 gunde ilani YAYIMLANAN satici. Payda: gozlem suresi tamamlanan hesaplar.', n(k?.olgun_yayin), olgun, 'veritabani'),
+        oranMetrigi('Ilk 7 gunde alici olarak ilk mesaj', 'Pay: tamamlanan kohortta ilk 7 gunde BASKASININ ilanina ilk mesaji gonderen. Payda: gozlem suresi tamamlanan hesaplar. Saticinin gelen mesaja yaniti DEGIL.', n(k?.olgun_mesaj), olgun, 'veritabani'),
+        sureMetrigi('Medyan ilk ilan suresi (saat)', 'Yalnizca ilk 7 gunde ilan verenlerde kayit -> ilk ilan suresinin medyani.', medyan, olgunIlan, 'veritabani', medyanNot),
+        sayiMetrigi('Kaynagi bilinmeyen kayit', 'Kohortta kampanya damgasi olmayan hesap. Tahminle kaynak atanmaz. (5 Kas 2026 oncesi kampanya kaybi nedeniyle bu oran o donemde siskin.)', n(k?.kaynaksiz), 'veritabani'),
+        sayiMetrigi('Donem ilanlari — yeni uye', 'Donemde olusturulan ilanlardan donem icinde kayit olan uyelere ait olanlar.', n(ilanlar?.yeni), 'veritabani'),
+        sayiMetrigi('Donem ilanlari — eski uye', 'Donemde olusturulan ilanlardan daha once kayit olmus uyelere ait olanlar.', n(ilanlar?.eski), 'veritabani'),
+        sayiMetrigi('Gozlem dolmayan — su ana kadar ilan veren', 'Gozlem suresi dolmayan kohortta su ana kadar ilan vermis hesap (bilgi amacli; orana girmez).', n(k?.ham_ilan), 'veritabani'),
+        sayiMetrigi('Gozlem dolmayan — su ana kadar alici mesaji', 'Gozlem suresi dolmayan kohortta su ana kadar alici mesaji gondermis hesap (bilgi amacli; orana girmez).', n(k?.ham_mesaj), 'veritabani'),
+      ],
     };
   }
 

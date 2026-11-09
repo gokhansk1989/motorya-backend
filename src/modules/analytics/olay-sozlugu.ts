@@ -115,14 +115,16 @@ export const OLAYLAR = {
     alanlar: { adim: 'tamsayi' },
   },
   ilan_foto_yuklendi: {
-    aciklama: 'Fotograf yukleme istegi sunucuda basariyla tamamlandi.',
+    aciklama:
+      'Fotograf yukleme istegi sunucuda basariyla tamamlandi. Istek basina TEK dosya; adet genellikle 1 (payda birimi: dosya). tekrar=true ise bu bir yeniden deneme sonucu.',
     akisGerekli: true,
-    alanlar: { adet: 'tamsayi' },
+    alanlar: { adet: 'tamsayi', tekrar: 'bayrak' },
   },
   ilan_foto_hata: {
-    aciklama: 'Fotograf yukleme basarisiz. hataKodu: ag, sunucu, boyut, tip, heic, bozuk, limit, istek. Dosya adi ve icerigi GONDERILMIYOR.',
+    aciklama:
+      'Fotograf yukleme/hazirlama basarisiz (birim: dosya). asama: hazirlik (tarayicida kuculturken / sunucuya gitmeden boyut) ya da yukleme (sunucu yaniti). hataKodu: ag, sunucu, boyut, tip, heic, bozuk, limit, istek, bellek. tekrar=true ise yeniden deneme. Dosya adi ve icerigi GONDERILMIYOR.',
     akisGerekli: true,
-    alanlar: { hataKodu: 'kod' },
+    alanlar: { hataKodu: 'kod', asama: 'kod', tekrar: 'bayrak' },
   },
   ilan_form_hatasi: {
     aciklama:

@@ -6,16 +6,23 @@
  * Iki AYRI kapsam var ve bunlar birbirine karistirilmamali:
  *
  * 1. ZIYARET KAPSAMI (olaylar)
- *    Kampanya, sayfa oturumu boyunca BELLEKTE tutuluyor. Cerez,
- *    localStorage ve sessionStorage KULLANILMIYOR - olcum sisteminin
- *    tamaminda oldugu gibi cihazda hicbir sey saklanmiyor.
- *    NOT: "cihazda depolama yok" teknik bir olgu; bunun hukuken izin
+ *    Kampanya, sekme omru boyunca BIRINCI-TARAF sessionStorage'da
+ *    (`motorya-kampanya`) tutuluyor. Cerez, localStorage ve parmak izi
+ *    KULLANILMIYOR; yalnizca UTM dizgileri saklaniyor (kimlik/cihaz-id
+ *    yok), sekmeye bagli, sekme kapaninca siliniyor, sekmeler arasinda
+ *    paylasilmiyor.
+ *    NOT (5 Kas 2026 oncesi): kampanya yalnizca bellekteydi ve sayfa
+ *    yenileme/Google turu/yeni sekmede kayboluyordu; bu yuzden cogu kayit
+ *    damgayi hic alamiyordu. sessionStorage'a gecis bunu duzeltti.
+ *    NOT: cerez/parmak izi kullanmamak teknik bir olgu; bunun hukuken izin
  *    gerektirip gerektirmedigi ayri bir degerlendirme konusu ve burada
- *    bir iddia olarak yazilmamali.
+ *    kesin bir iddia olarak yazilmamali.
  *    Son temas kazanir: ziyaret sirasinda yeni bir kampanya baglantisi
  *    acilirsa oncekinin yerini alir.
- *    SURE: sayfa yenilenene ya da sekme kapanana kadar. Yenilemeden
- *    sonra kaynak "belirlenemedi" olur - tahminle doldurmuyoruz.
+ *    SURE: sekme kapanana kadar; sayfa yenileme, ayni sekmede gezinme ve
+ *    Google turunda KORUNUR. Yeni sekmede ya da sekme kapaninca kaynak
+ *    "belirlenemedi" olur - tahminle doldurmuyoruz. Hesap olusturulurken
+ *    damga vuruldugunda kampanya o sekmeden silinir (yanlis atfi onler).
  *
  * 2. HESAP KAPSAMI (sunucu tarafi donusumler)
  *    Kullanici kampanya etkinken KAYIT OLURSA, kampanya User satirina
@@ -28,7 +35,7 @@
  *
  * ── DOGRUDAN ZIYARET ─────────────────────────────────────────────────
  *
- * UTM etiketi olmayan bir acilis, bellekteki kampanyayi SILMEZ: kampanya
+ * UTM etiketi olmayan bir acilis, sakli kampanyayi SILMEZ: kampanya
  * baglantisindan gelip sonra site icinde gezinen kullanici kaynagini
  * kaybetmemeli. Yalnizca yeni bir UTM'li acilis mevcut kampanyanin yerini
  * alir.
