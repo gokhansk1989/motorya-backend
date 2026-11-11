@@ -154,11 +154,6 @@ export class ListingsController {
     return this.listingsService.getFacets(categorySlug);
   }
 
-  @Get('meta/vitrin-ozeti')
-  getVitrinOzeti() {
-    return this.listingsService.getVitrinOzeti();
-  }
-
   @Get('meta/category/:slug')
   getCategoryBySlug(@Param('slug') slug: string) {
     return this.listingsService.getCategoryBySlug(slug);

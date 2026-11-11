@@ -164,43 +164,6 @@ export class ListingsService {
     return hepsi.filter(c => !c.parentId || aktifIdler.has(c.parentId));
   }
 
-  /**
-   * Ana sayfa icin sayilar: toplam aktif ilan, son 7 gunde yayinlananlar
-   * ve ust kategori basina ilan sayisi (alt kategoriler ustune toplanir).
-   */
-  async getVitrinOzeti() {
-    const where = { status: ListingStatus.ACTIVE, deletedAt: null, isTest: false };
-    const haftaOnce = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-    const [kategoriler, gruplar, buHafta] = await Promise.all([
-      this.prisma.category.findMany({ select: { id: true, parentId: true } }),
-      this.prisma.listing.groupBy({ by: ['categoryId'], where, _count: { id: true } }),
-      this.prisma.listing.count({ where: { ...where, publishedAt: { gte: haftaOnce } } }),
-    ]);
-
-    const ust = new Map(kategoriler.map((c) => [c.id, c.parentId]));
-    const kokBul = (id: string) => {
-      let simdiki = id;
-      // Derinlik siniri: bozuk veride dongu olursa sonsuza kadar donmesin.
-      for (let i = 0; i < 10; i++) {
-        const p = ust.get(simdiki);
-        if (!p) break;
-        simdiki = p;
-      }
-      return simdiki;
-    };
-
-    const kategoriSayilari: Record<string, number> = {};
-    let toplam = 0;
-    for (const g of gruplar) {
-      toplam += g._count.id;
-      const kok = kokBul(g.categoryId);
-      kategoriSayilari[kok] = (kategoriSayilari[kok] ?? 0) + g._count.id;
-    }
-
-    return { toplam, buHafta, kategoriler: kategoriSayilari };
-  }
-
   async adminGetCategories() {
     return this.prisma.category.findMany({ orderBy: { sortOrder: 'asc' } });
   }
